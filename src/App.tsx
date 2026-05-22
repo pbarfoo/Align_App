@@ -317,12 +317,15 @@ export default function App() {
   // Explicit delete helpers (upsert doesn't remove rows)
   const deleteGoalFromDb = (ids: string[]) => {
     if (!session) return;
-    supabase.from('goals').delete().in('id', ids);
-    supabase.from('habits').delete().in('goal_id', ids);
+    supabase.from('habits').delete().in('goal_id', ids)
+      .then(({ error }) => { if (error) console.error('delete habits for goal:', error); });
+    supabase.from('goals').delete().in('id', ids)
+      .then(({ error }) => { if (error) { console.error('delete goals:', error); flash('Delete failed: ' + error.message, true); } });
   };
   const deleteHabitFromDb = (id: string) => {
     if (!session) return;
-    supabase.from('habits').delete().eq('id', id);
+    supabase.from('habits').delete().eq('id', id)
+      .then(({ error }) => { if (error) { console.error('delete habit:', error); flash('Delete failed: ' + error.message, true); } });
   };
 
   const [reviewOpen, setReviewOpen] = useState(false);
