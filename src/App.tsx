@@ -233,24 +233,34 @@ export default function App() {
         setDataLoaded(true);
         return;
       }
+
+      // Seed default content ONLY for brand-new accounts. Once an account has
+      // been seeded, never repopulate defaults — an empty table means the user
+      // deleted everything, not that they're new. This prevents deploys/reloads
+      // from wiping saved data.
+      const alreadySeeded = session.user.user_metadata?.seeded === true;
+
       if (d.data?.length) {
         setDomains(d.data.map(domainFromRow));
-      } else {
+      } else if (!alreadySeeded) {
         supabase.from('domains').insert(seedDomains.map((x) => domainToRow(x, userId)));
       }
       if (g.data?.length) {
         setGoals(g.data.map(goalFromRow));
-      } else {
+      } else if (!alreadySeeded) {
         supabase.from('goals').insert(initialGoals.map((x) => goalToRow(x, userId)));
         setGoals(initialGoals);
       }
       if (h.data?.length) {
         setHabits(h.data.map(habitFromRow));
-      } else {
+      } else if (!alreadySeeded) {
         supabase.from('habits').insert(initialHabits.map((x) => habitToRow(x, userId)));
         setHabits(initialHabits);
       }
       if (r.data?.length) setReflections(r.data.map(reflFromRow));
+
+      // Mark this account as seeded so we never reseed/overwrite again.
+      if (!alreadySeeded) supabase.auth.updateUser({ data: { seeded: true } });
       setDataLoaded(true);
     });
   }, [session]);
