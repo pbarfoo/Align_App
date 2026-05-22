@@ -344,6 +344,12 @@ export default function App() {
             onReflect={() => setReflectOpen(true)}
           />
         )}
+        <div className="signout-row">
+          <span className="signout-email">{session.user.email}</span>
+          <button className="signout-btn" onClick={() => supabase.auth.signOut()}>
+            Sign out
+          </button>
+        </div>
       </main>
 
       {reflectOpen && (() => {
