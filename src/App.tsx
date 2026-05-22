@@ -16,6 +16,8 @@ import {
   type CustomUnit,
   type ReflectionEntry,
 } from './data';
+import { supabase } from './supabase';
+import type { Session } from '@supabase/supabase-js';
 
 type Tab = 'foundation' | 'align' | 'today';
 
@@ -28,10 +30,6 @@ interface ActionInput {
   dueTime?: string;
 }
 
-const DOMAINS_KEY = 'align-domains-v1';
-const GOALS_KEY = 'align-goals-v1';
-const HABITS_KEY = 'align-habits-v1';
-const REFLECTIONS_KEY = 'align-reflections-v1';
 const TAB_KEY = 'align-tab-v1';
 
 function loadOr<T>(key: string, fallback: T): T {
@@ -43,31 +41,225 @@ function loadOr<T>(key: string, fallback: T): T {
   }
 }
 
-export default function App() {
-  const [tab, setTab] = useState<Tab>(() => loadOr<Tab>(TAB_KEY, 'align'));
-  const [domains, setDomains] = useState<Domain[]>(() => loadOr(DOMAINS_KEY, seedDomains));
-  const [goals, setGoals] = useState<Goal[]>(() => loadOr(GOALS_KEY, initialGoals));
-  const [habits, setHabits] = useState<Habit[]>(() => loadOr(HABITS_KEY, initialHabits));
-  const [reflectOpen, setReflectOpen] = useState(false);
-  const [reflections, setReflections] = useState<ReflectionEntry[]>(() =>
-    dedupeByWeek(loadOr<ReflectionEntry[]>(REFLECTIONS_KEY, [])),
+/* ---- Supabase row mappers ---- */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Row = Record<string, any>;
+
+function domainToRow(d: Domain, userId: string): Row {
+  return { id: d.id, user_id: userId, name: d.name, blurb: d.blurb, values: d.values, vision: d.vision };
+}
+function domainFromRow(row: Row): Domain {
+  return { id: row.id as DomainId, name: row.name, blurb: row.blurb, values: row.values, vision: row.vision };
+}
+
+function goalToRow(g: Goal, userId: string): Row {
+  return {
+    id: g.id, user_id: userId, domain_id: g.domainId,
+    value_indexes: g.valueIndexes, horizon: g.horizon,
+    title: g.title, parent_goal_id: g.parentGoalId ?? null,
+    created_at: g.createdAt, timeframe: g.timeframe,
+    completed_at: g.completedAt ?? null,
+  };
+}
+function goalFromRow(row: Row): Goal {
+  return {
+    id: row.id, domainId: row.domain_id as DomainId,
+    valueIndexes: row.value_indexes ?? [],
+    horizon: row.horizon as 'long' | 'short',
+    title: row.title,
+    parentGoalId: row.parent_goal_id ?? undefined,
+    createdAt: row.created_at,
+    timeframe: row.timeframe,
+    completedAt: row.completed_at ?? undefined,
+  };
+}
+
+function habitToRow(h: Habit, userId: string): Row {
+  return {
+    id: h.id, user_id: userId, goal_id: h.goalId,
+    title: h.title, kind: h.kind, done_today: h.doneToday,
+    start_date: h.startDate ?? null, recurrence: h.recurrence ?? null,
+    custom_interval: h.customInterval ?? null, custom_unit: h.customUnit ?? null,
+    due_date: h.dueDate ?? null, due_time: h.dueTime ?? null,
+    completed: h.completed ?? null, completed_at: h.completedAt ?? null,
+    streak: h.streak ?? 0,
+  };
+}
+function habitFromRow(row: Row): Habit {
+  return {
+    id: row.id, goalId: row.goal_id,
+    title: row.title, kind: row.kind as 'habit' | 'task',
+    doneToday: row.done_today ?? false,
+    startDate: row.start_date ?? undefined,
+    recurrence: (row.recurrence as Recurrence) ?? undefined,
+    customInterval: row.custom_interval ?? undefined,
+    customUnit: (row.custom_unit as CustomUnit) ?? undefined,
+    dueDate: row.due_date ?? undefined,
+    dueTime: row.due_time ?? undefined,
+    completed: row.completed ?? undefined,
+    completedAt: row.completed_at ?? undefined,
+    streak: row.streak ?? 0,
+  };
+}
+
+function reflToRow(r: ReflectionEntry, userId: string): Row {
+  const year = new Date(r.date).getFullYear();
+  return {
+    id: `${userId.slice(0, 8)}-${year}-W${r.weekNumber}`,
+    user_id: userId, week_number: r.weekNumber, year,
+    date: r.date, scores: r.scores, note: r.note,
+  };
+}
+function reflFromRow(row: Row): ReflectionEntry {
+  return { weekNumber: row.week_number, date: row.date, scores: row.scores, note: row.note };
+}
+
+/* ---- Login screen ---- */
+function LoginScreen() {
+  const [email, setEmail] = useState('');
+  const [sent, setSent] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const send = async () => {
+    if (!email.trim()) return;
+    setLoading(true);
+    await supabase.auth.signInWithOtp({
+      email: email.trim(),
+      options: { emailRedirectTo: window.location.origin },
+    });
+    setSent(true);
+    setLoading(false);
+  };
+
+  return (
+    <div className="login-screen">
+      <div className="login-card">
+        <div className="login-logo">Align</div>
+        {sent ? (
+          <>
+            <p className="login-msg">Check your inbox for a magic link.</p>
+            <p className="login-sub">Click it on any device to sign in.</p>
+          </>
+        ) : (
+          <>
+            <p className="login-msg">Enter your email to sign in.</p>
+            <input
+              className="login-input"
+              type="email"
+              placeholder="you@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && send()}
+              autoFocus
+            />
+            <button className="login-btn" onClick={send} disabled={loading}>
+              {loading ? 'Sending…' : 'Send magic link'}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
   );
+}
+
+export default function App() {
+  // Auth
+  const [session, setSession] = useState<Session | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [dataLoaded, setDataLoaded] = useState(false);
 
   useEffect(() => {
-    localStorage.setItem(DOMAINS_KEY, JSON.stringify(domains));
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      setAuthLoading(false);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
+      setSession(s);
+      if (!s) setDataLoaded(false);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // App state
+  const [tab, setTab] = useState<Tab>(() => loadOr<Tab>(TAB_KEY, 'align'));
+  const [domains, setDomains] = useState<Domain[]>(seedDomains);
+  const [goals, setGoals] = useState<Goal[]>([]);
+  const [habits, setHabits] = useState<Habit[]>([]);
+  const [reflectOpen, setReflectOpen] = useState(false);
+  const [reflections, setReflections] = useState<ReflectionEntry[]>([]);
+
+  // Load data from Supabase on sign-in
+  useEffect(() => {
+    if (!session) return;
+    const userId = session.user.id;
+    Promise.all([
+      supabase.from('domains').select('*').eq('user_id', userId),
+      supabase.from('goals').select('*').eq('user_id', userId),
+      supabase.from('habits').select('*').eq('user_id', userId),
+      supabase.from('reflections').select('*').eq('user_id', userId).order('date'),
+    ]).then(([d, g, h, r]) => {
+      if (d.data?.length) {
+        setDomains(d.data.map(domainFromRow));
+      } else {
+        supabase.from('domains').insert(seedDomains.map((x) => domainToRow(x, userId)));
+      }
+      if (g.data?.length) {
+        setGoals(g.data.map(goalFromRow));
+      } else {
+        supabase.from('goals').insert(initialGoals.map((x) => goalToRow(x, userId)));
+        setGoals(initialGoals);
+      }
+      if (h.data?.length) {
+        setHabits(h.data.map(habitFromRow));
+      } else {
+        supabase.from('habits').insert(initialHabits.map((x) => habitToRow(x, userId)));
+        setHabits(initialHabits);
+      }
+      if (r.data?.length) setReflections(r.data.map(reflFromRow));
+      setDataLoaded(true);
+    });
+  }, [session]);
+
+  // Sync domains to Supabase
+  useEffect(() => {
+    if (!session || !dataLoaded) return;
+    supabase.from('domains').upsert(domains.map((x) => domainToRow(x, session.user.id)), { onConflict: 'id,user_id' });
   }, [domains]);
+
+  // Sync goals to Supabase
   useEffect(() => {
-    localStorage.setItem(GOALS_KEY, JSON.stringify(goals));
+    if (!session || !dataLoaded || !goals.length) return;
+    supabase.from('goals').upsert(goals.map((x) => goalToRow(x, session.user.id)));
   }, [goals]);
+
+  // Sync habits to Supabase
   useEffect(() => {
-    localStorage.setItem(HABITS_KEY, JSON.stringify(habits));
+    if (!session || !dataLoaded || !habits.length) return;
+    supabase.from('habits').upsert(habits.map((x) => habitToRow(x, session.user.id)));
   }, [habits]);
+
+  // Sync reflections to Supabase
   useEffect(() => {
-    localStorage.setItem(REFLECTIONS_KEY, JSON.stringify(reflections));
+    if (!session || !dataLoaded || !reflections.length) return;
+    supabase.from('reflections').upsert(reflections.map((x) => reflToRow(x, session.user.id)));
   }, [reflections]);
+
+  // Tab persists in localStorage (UI preference)
   useEffect(() => {
     localStorage.setItem(TAB_KEY, JSON.stringify(tab));
   }, [tab]);
+
+  // Explicit delete helpers (upsert doesn't remove rows)
+  const deleteGoalFromDb = (ids: string[]) => {
+    if (!session) return;
+    supabase.from('goals').delete().in('id', ids);
+    supabase.from('habits').delete().in('goal_id', ids);
+  };
+  const deleteHabitFromDb = (id: string) => {
+    if (!session) return;
+    supabase.from('habits').delete().eq('id', id);
+  };
+
   const [reviewOpen, setReviewOpen] = useState(false);
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -76,6 +268,15 @@ export default function App() {
     setToast(msg);
     setTimeout(() => setToast(null), 1800);
   };
+
+  if (authLoading || (session && !dataLoaded)) {
+    return (
+      <div className="app-loading">
+        <div className="app-loading-text">Loading…</div>
+      </div>
+    );
+  }
+  if (!session) return <LoginScreen />;
 
   return (
     <div className="app">
@@ -90,6 +291,8 @@ export default function App() {
           habits={habits}
           setHabits={setHabits}
           flash={flash}
+          onDeleteGoalFromDb={deleteGoalFromDb}
+          onDeleteHabitFromDb={deleteHabitFromDb}
         />
       )}
       {tab === 'today' && (
@@ -152,7 +355,10 @@ export default function App() {
           domains={domains}
           goals={goals}
           reflections={reflections}
-          onReset={() => setReflections([])}
+          onReset={() => {
+            setReflections([]);
+            if (session) supabase.from('reflections').delete().eq('user_id', session.user.id);
+          }}
           onClose={() => setReviewOpen(false)}
         />
       )}
@@ -338,6 +544,8 @@ function Align({
   habits,
   setHabits,
   flash,
+  onDeleteGoalFromDb,
+  onDeleteHabitFromDb,
 }: {
   domains: Domain[];
   goals: Goal[];
@@ -345,6 +553,8 @@ function Align({
   habits: Habit[];
   setHabits: React.Dispatch<React.SetStateAction<Habit[]>>;
   flash: (m: string) => void;
+  onDeleteGoalFromDb: (ids: string[]) => void;
+  onDeleteHabitFromDb: (id: string) => void;
 }) {
   const [domainId, setDomainId] = useState<DomainId>('self');
   const [lit, setLit] = useState<string | null>(null);
@@ -456,20 +666,20 @@ function Align({
     setGoals((prev) => prev.map((g) => (g.id === id ? { ...g, valueIndexes } : g)));
 
   const deleteGoal = (id: string) => {
-    setGoals((prev) => {
-      const remove = new Set<string>([id]);
-      prev.forEach((g) => {
-        if (g.parentGoalId && remove.has(g.parentGoalId)) remove.add(g.id);
-      });
-      if (addingFor && remove.has(addingFor)) setAddingFor(null);
-      setHabits((ph) => ph.filter((h) => !remove.has(h.goalId)));
-      return prev.filter((g) => !remove.has(g.id));
+    const remove = new Set<string>([id]);
+    goals.forEach((g) => {
+      if (g.parentGoalId && remove.has(g.parentGoalId)) remove.add(g.id);
     });
+    if (addingFor && remove.has(addingFor)) setAddingFor(null);
+    setGoals((prev) => prev.filter((g) => !remove.has(g.id)));
+    setHabits((ph) => ph.filter((h) => !remove.has(h.goalId)));
+    onDeleteGoalFromDb([...remove]);
     flash('Deleted');
   };
 
   const deleteHabit = (id: string) => {
     setHabits((prev) => prev.filter((h) => h.id !== id));
+    onDeleteHabitFromDb(id);
     flash('Deleted');
   };
 
@@ -2076,17 +2286,6 @@ function ReviewPanel({
 }
 
 /* ---------------- helpers ---------------- */
-/** Collapse entries that share a week+year, keeping the most recent. One reflection per week. */
-function dedupeByWeek(entries: ReflectionEntry[]): ReflectionEntry[] {
-  const byKey = new Map<string, ReflectionEntry>();
-  for (const e of entries) {
-    const key = `${new Date(e.date).getFullYear()}-${e.weekNumber}`;
-    const existing = byKey.get(key);
-    if (!existing || e.date > existing.date) byKey.set(key, e);
-  }
-  return [...byKey.values()].sort((a, b) => a.date - b.date);
-}
-
 function getISOWeek(d: Date): number {
   const target = new Date(d.valueOf());
   const dayNr = (d.getDay() + 6) % 7;
