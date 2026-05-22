@@ -116,47 +116,75 @@ function reflFromRow(row: Row): ReflectionEntry {
 
 /* ---- Login screen ---- */
 function LoginScreen() {
+  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
-  const [sent, setSent] = useState(false);
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
-  const send = async () => {
-    if (!email.trim()) return;
+  const submit = async () => {
+    if (!email.trim() || !password) return;
     setLoading(true);
-    await supabase.auth.signInWithOtp({
-      email: email.trim(),
-      options: { emailRedirectTo: window.location.origin },
-    });
-    setSent(true);
+    setError(null);
+    setNotice(null);
+
+    if (mode === 'signin') {
+      const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+      if (error) setError(error.message);
+    } else {
+      const { data, error } = await supabase.auth.signUp({ email: email.trim(), password });
+      if (error) {
+        setError(error.message);
+      } else if (!data.session) {
+        setNotice('Account created — check your email to confirm, then sign in.');
+        setMode('signin');
+      }
+      // If session exists (email confirm disabled), onAuthStateChange handles it.
+    }
+
     setLoading(false);
+  };
+
+  const switchMode = () => {
+    setMode((m) => (m === 'signin' ? 'signup' : 'signin'));
+    setError(null);
+    setNotice(null);
   };
 
   return (
     <div className="login-screen">
       <div className="login-card">
         <div className="login-logo">Align</div>
-        {sent ? (
-          <>
-            <p className="login-msg">Check your inbox for a magic link.</p>
-            <p className="login-sub">Click it on any device to sign in.</p>
-          </>
-        ) : (
-          <>
-            <p className="login-msg">Enter your email to sign in.</p>
-            <input
-              className="login-input"
-              type="email"
-              placeholder="you@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && send()}
-              autoFocus
-            />
-            <button className="login-btn" onClick={send} disabled={loading}>
-              {loading ? 'Sending…' : 'Send magic link'}
-            </button>
-          </>
-        )}
+        <p className="login-msg">{mode === 'signin' ? 'Sign in to continue.' : 'Create your account.'}</p>
+        <input
+          className="login-input"
+          type="email"
+          placeholder="you@example.com"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && submit()}
+          autoFocus
+        />
+        <input
+          className="login-input"
+          type="password"
+          placeholder="Password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && submit()}
+        />
+        {error && <p className="login-error">{error}</p>}
+        {notice && <p className="login-sub">{notice}</p>}
+        <button className="login-btn" onClick={submit} disabled={loading}>
+          {loading ? '…' : mode === 'signin' ? 'Sign in' : 'Create account'}
+        </button>
+        <p className="login-switch">
+          {mode === 'signin' ? "Don't have an account? " : 'Already have an account? '}
+          <button className="login-switch-btn" onClick={switchMode}>
+            {mode === 'signin' ? 'Create one' : 'Sign in'}
+          </button>
+        </p>
       </div>
     </div>
   );

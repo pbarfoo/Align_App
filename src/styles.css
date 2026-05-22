@@ -1762,6 +1762,12 @@ h1 {
   text-align: center;
   margin-top: -8px;
 }
+.login-error {
+  font-size: 13px;
+  color: #ff6b6b;
+  text-align: center;
+  margin: -8px 0 0;
+}
 .login-input {
   background: var(--surface-2);
   border: 1px solid var(--line);
@@ -1790,4 +1796,19 @@ h1 {
 .login-btn:disabled {
   opacity: 0.6;
   cursor: default;
+}
+.login-switch {
+  font-size: 13px;
+  color: var(--muted);
+  text-align: center;
+  margin: 0;
+}
+.login-switch-btn {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
 }
