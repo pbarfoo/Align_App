@@ -226,6 +226,13 @@ export default function App() {
       supabase.from('habits').select('*').eq('user_id', userId),
       supabase.from('reflections').select('*').eq('user_id', userId).order('date'),
     ]).then(([d, g, h, r]) => {
+      const dbError = d.error || g.error || h.error || r.error;
+      if (dbError) {
+        console.error('Supabase load error:', dbError.message);
+        setToast(`⚠ DB error: ${dbError.message} — run supabase/schema.sql`);
+        setDataLoaded(true);
+        return;
+      }
       if (d.data?.length) {
         setDomains(d.data.map(domainFromRow));
       } else {
@@ -292,9 +299,9 @@ export default function App() {
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
-  const flash = (msg: string) => {
-    setToast(msg);
-    setTimeout(() => setToast(null), 1800);
+  const flash = (msg: string, isError = false) => {
+    setToast(isError ? `⚠ ${msg}` : msg);
+    setTimeout(() => setToast(null), 2500);
   };
 
   if (authLoading || (session && !dataLoaded)) {
@@ -308,30 +315,32 @@ export default function App() {
 
   return (
     <div className="app">
-      {tab === 'foundation' && (
-        <Foundation domains={domains} setDomains={setDomains} />
-      )}
-      {tab === 'align' && (
-        <Align
-          domains={domains}
-          goals={goals}
-          setGoals={setGoals}
-          habits={habits}
-          setHabits={setHabits}
-          flash={flash}
-          onDeleteGoalFromDb={deleteGoalFromDb}
-          onDeleteHabitFromDb={deleteHabitFromDb}
-        />
-      )}
-      {tab === 'today' && (
-        <Today
-          habits={habits}
-          setHabits={setHabits}
-          goals={goals}
-          domains={domains}
-          onReflect={() => setReflectOpen(true)}
-        />
-      )}
+      <main>
+        {tab === 'foundation' && (
+          <Foundation domains={domains} setDomains={setDomains} />
+        )}
+        {tab === 'align' && (
+          <Align
+            domains={domains}
+            goals={goals}
+            setGoals={setGoals}
+            habits={habits}
+            setHabits={setHabits}
+            flash={flash}
+            onDeleteGoalFromDb={deleteGoalFromDb}
+            onDeleteHabitFromDb={deleteHabitFromDb}
+          />
+        )}
+        {tab === 'today' && (
+          <Today
+            habits={habits}
+            setHabits={setHabits}
+            goals={goals}
+            domains={domains}
+            onReflect={() => setReflectOpen(true)}
+          />
+        )}
+      </main>
 
       {reflectOpen && (() => {
         const week = getISOWeek(new Date());
@@ -1610,7 +1619,7 @@ function Reflect({
 
   if (step === 'insight') {
     return (
-      <div className="scrim" onClick={onClose}>
+      <div className="scrim" role="dialog" aria-modal="true" onClick={onClose}>
         <div className="sheet" onClick={(e) => e.stopPropagation()}>
           <h2>This week</h2>
           {bestEntry && (
@@ -1647,7 +1656,7 @@ function Reflect({
   }
 
   return (
-    <div className="scrim" onClick={onClose}>
+    <div className="scrim" role="dialog" aria-modal="true" onClick={onClose}>
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
         <h2>This week</h2>
         <p>How well did your week reflect each value?</p>
