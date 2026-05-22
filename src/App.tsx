@@ -1822,7 +1822,7 @@ function DashSpider({
   };
 
   return (
-    <svg viewBox="0 0 320 350" className="radar-chart">
+    <svg viewBox="-80 0 480 350" className="radar-chart">
       {/* Grid rings */}
       {rings.map((t) => {
         const pts = longGoals.map((_, i) => pt(i, t));
@@ -1846,7 +1846,7 @@ function DashSpider({
         const color = DOMAIN_COLORS[g.domainId] ?? 'var(--muted)';
         const lp    = pt(i, 1.34);
         const anchor = labelAnchor(i);
-        const title  = g.title.length > 18 ? g.title.slice(0, 17) + '…' : g.title;
+        const title  = g.title.length > 12 ? g.title.slice(0, 11) + '…' : g.title;
         return (
           <text key={i} x={lp.x} y={lp.y} textAnchor={anchor} dominantBaseline="middle"
             fontSize="11" fill={color}>
@@ -2119,7 +2119,7 @@ function RadarChart({
   };
 
   return (
-    <svg viewBox="0 0 320 310" className="radar-chart">
+    <svg viewBox="-80 0 480 310" className="radar-chart">
       {rings.map((t) => {
         const pts = axes.map((_, i) => pt(i, t));
         const d = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ') + 'Z';
@@ -2138,10 +2138,11 @@ function RadarChart({
       {/* labels coloured by domain */}
       {axes.map((ax, i) => {
         const lp = pt(i, 1.50);
+        const label = ax.label.length > 12 ? ax.label.slice(0, 11) + '…' : ax.label;
         return (
           <text key={i} x={lp.x} y={lp.y} textAnchor={labelAnchor(i)}
             dominantBaseline="middle" fontSize="10" fill={ax.color} opacity="0.9">
-            {ax.label}
+            {label}
           </text>
         );
       })}
