@@ -75,7 +75,7 @@ export const domains: Domain[] = [
   },
   {
     id: 'community',
-    name: 'Others',
+    name: 'Family/Others',
     blurb: 'The people you belong to.',
     values: ['Show up in person', 'Generous with time', 'Keep promises'],
     vision:
