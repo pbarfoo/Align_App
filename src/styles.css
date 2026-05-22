@@ -1018,29 +1018,24 @@ h1 {
 .profile-btn:hover { border-color: var(--accent); color: var(--accent); }
 .profile-btn svg { width: 18px; height: 18px; }
 
-.signout-row {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  margin: 32px 0 96px;
-}
-.signout-email {
-  font-size: 12px;
-  color: var(--muted);
-}
 .signout-btn {
+  position: fixed;
+  right: 12px;
+  bottom: calc(72px + env(safe-area-inset-bottom));
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 10px 20px;
+  border-radius: 8px;
+  padding: 4px 9px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 10px;
   font-weight: 600;
+  letter-spacing: 0.02em;
   cursor: pointer;
-  transition: border-color 0.18s, color 0.18s;
+  opacity: 0.6;
+  z-index: 10;
+  transition: opacity 0.18s, border-color 0.18s, color 0.18s;
 }
-.signout-btn:hover { border-color: var(--accent); color: var(--accent); }
+.signout-btn:hover { opacity: 1; border-color: var(--accent); color: var(--accent); }
 
 /* ---------- Review panel ---------- */
 .review-panel {
