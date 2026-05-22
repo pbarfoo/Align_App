@@ -63,6 +63,12 @@ alter table public.goals       enable row level security;
 alter table public.habits      enable row level security;
 alter table public.reflections enable row level security;
 
+-- Drop policies first so this script is safe to re-run
+drop policy if exists "own domains"     on public.domains;
+drop policy if exists "own goals"       on public.goals;
+drop policy if exists "own habits"      on public.habits;
+drop policy if exists "own reflections" on public.reflections;
+
 create policy "own domains"     on public.domains     for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "own goals"       on public.goals       for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "own habits"      on public.habits      for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
