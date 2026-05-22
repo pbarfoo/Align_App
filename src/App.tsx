@@ -258,25 +258,29 @@ export default function App() {
   // Sync domains to Supabase
   useEffect(() => {
     if (!session || !dataLoaded) return;
-    supabase.from('domains').upsert(domains.map((x) => domainToRow(x, session.user.id)), { onConflict: 'id,user_id' });
+    supabase.from('domains').upsert(domains.map((x) => domainToRow(x, session.user.id)), { onConflict: 'id,user_id' })
+      .then(({ error }) => { if (error) { console.error('sync domains:', error); setToast(`⚠ Save failed: ${error.message}`); } });
   }, [domains]);
 
   // Sync goals to Supabase
   useEffect(() => {
     if (!session || !dataLoaded || !goals.length) return;
-    supabase.from('goals').upsert(goals.map((x) => goalToRow(x, session.user.id)));
+    supabase.from('goals').upsert(goals.map((x) => goalToRow(x, session.user.id)))
+      .then(({ error }) => { if (error) { console.error('sync goals:', error); setToast(`⚠ Save failed: ${error.message}`); } });
   }, [goals]);
 
   // Sync habits to Supabase
   useEffect(() => {
     if (!session || !dataLoaded || !habits.length) return;
-    supabase.from('habits').upsert(habits.map((x) => habitToRow(x, session.user.id)));
+    supabase.from('habits').upsert(habits.map((x) => habitToRow(x, session.user.id)))
+      .then(({ error }) => { if (error) { console.error('sync habits:', error); setToast(`⚠ Save failed: ${error.message}`); } });
   }, [habits]);
 
   // Sync reflections to Supabase
   useEffect(() => {
     if (!session || !dataLoaded || !reflections.length) return;
-    supabase.from('reflections').upsert(reflections.map((x) => reflToRow(x, session.user.id)));
+    supabase.from('reflections').upsert(reflections.map((x) => reflToRow(x, session.user.id)))
+      .then(({ error }) => { if (error) { console.error('sync reflections:', error); setToast(`⚠ Save failed: ${error.message}`); } });
   }, [reflections]);
 
   // Tab persists in localStorage (UI preference)
