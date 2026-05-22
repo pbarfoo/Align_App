@@ -354,6 +354,12 @@ export default function App() {
             onReflect={() => setReflectOpen(true)}
           />
         )}
+        <div className="signout-row">
+          <span className="signout-email">{session.user.email}</span>
+          <button className="signout-btn" onClick={() => supabase.auth.signOut()}>
+            Sign out
+          </button>
+        </div>
       </main>
 
       {reflectOpen && (() => {
@@ -431,14 +437,6 @@ export default function App() {
       </button>
 
       {toast && <div className="toast">{toast}</div>}
-
-      <button
-        className="signout-btn"
-        onClick={() => supabase.auth.signOut()}
-        title={`Sign out (${session.user.email})`}
-      >
-        Sign out
-      </button>
 
       <nav className="nav">
         <NavBtn label="Foundation" active={tab === 'foundation'} onClick={() => setTab('foundation')} icon={<IconBase />} />
