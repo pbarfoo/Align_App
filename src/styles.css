@@ -1030,18 +1030,18 @@ h1 {
   color: var(--muted);
 }
 .signout-btn {
-  background: var(--surface);
-  border: 1px solid var(--line);
+  background: var(--surface-2);
+  border: 1px solid var(--muted);
   border-radius: 8px;
-  padding: 7px 16px;
-  color: var(--muted);
+  padding: 8px 18px;
+  color: var(--text);
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.02em;
   cursor: pointer;
-  transition: border-color 0.18s, color 0.18s;
+  transition: border-color 0.18s, color 0.18s, background 0.18s;
 }
-.signout-btn:hover { border-color: var(--accent); color: var(--accent); }
+.signout-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--surface); }
 
 /* ---------- Review panel ---------- */
 .review-panel {

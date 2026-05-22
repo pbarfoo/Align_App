@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   domains as seedDomains,
   initialGoals,
@@ -216,7 +216,15 @@ export default function App() {
   const [reflectOpen, setReflectOpen] = useState(false);
   const [reflections, setReflections] = useState<ReflectionEntry[]>([]);
 
-  // Load data from Supabase on sign-in
+  // True while applying data freshly loaded from the DB, so the sync effects
+  // don't immediately re-upsert it (which could overwrite newer data written
+  // by another session/tab).
+  const hydrating = useRef(false);
+
+  // Load data from Supabase on sign-in. Keyed on the user id (not the whole
+  // session object) so it runs ONCE per user — not on every token refresh or
+  // tab-focus auth event, which would otherwise re-read stale data and clobber
+  // in-progress local edits.
   useEffect(() => {
     if (!session) return;
     const userId = session.user.id;
@@ -239,6 +247,8 @@ export default function App() {
       // deleted everything, not that they're new. This prevents deploys/reloads
       // from wiping saved data.
       const alreadySeeded = session.user.user_metadata?.seeded === true;
+
+      hydrating.current = true; // skip the sync effects triggered by these setState calls
 
       if (d.data?.length) {
         setDomains(d.data.map(domainFromRow));
@@ -263,35 +273,41 @@ export default function App() {
       if (!alreadySeeded) supabase.auth.updateUser({ data: { seeded: true } });
       setDataLoaded(true);
     });
-  }, [session]);
+  }, [session?.user?.id]);
 
   // Sync domains to Supabase
   useEffect(() => {
-    if (!session || !dataLoaded) return;
+    if (!session || !dataLoaded || hydrating.current) return;
     supabase.from('domains').upsert(domains.map((x) => domainToRow(x, session.user.id)), { onConflict: 'id,user_id' })
       .then(({ error }) => { if (error) { console.error('sync domains:', error); setToast(`⚠ Save failed: ${error.message}`); } });
   }, [domains]);
 
   // Sync goals to Supabase
   useEffect(() => {
-    if (!session || !dataLoaded || !goals.length) return;
+    if (!session || !dataLoaded || hydrating.current || !goals.length) return;
     supabase.from('goals').upsert(goals.map((x) => goalToRow(x, session.user.id)))
       .then(({ error }) => { if (error) { console.error('sync goals:', error); setToast(`⚠ Save failed: ${error.message}`); } });
   }, [goals]);
 
   // Sync habits to Supabase
   useEffect(() => {
-    if (!session || !dataLoaded || !habits.length) return;
+    if (!session || !dataLoaded || hydrating.current || !habits.length) return;
     supabase.from('habits').upsert(habits.map((x) => habitToRow(x, session.user.id)))
       .then(({ error }) => { if (error) { console.error('sync habits:', error); setToast(`⚠ Save failed: ${error.message}`); } });
   }, [habits]);
 
   // Sync reflections to Supabase
   useEffect(() => {
-    if (!session || !dataLoaded || !reflections.length) return;
+    if (!session || !dataLoaded || hydrating.current || !reflections.length) return;
     supabase.from('reflections').upsert(reflections.map((x) => reflToRow(x, session.user.id)))
       .then(({ error }) => { if (error) { console.error('sync reflections:', error); setToast(`⚠ Save failed: ${error.message}`); } });
   }, [reflections]);
+
+  // Clear the hydration flag after the sync effects above have evaluated for
+  // this render, so subsequent user edits sync normally.
+  useEffect(() => {
+    hydrating.current = false;
+  });
 
   // Tab persists in localStorage (UI preference)
   useEffect(() => {
