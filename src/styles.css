@@ -866,9 +866,22 @@ h1 {
 
 .focus-section-header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 10px;
   margin-bottom: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.focus-chevron {
+  margin-left: auto;
+  color: var(--muted);
+  flex-shrink: 0;
+  transition: transform 0.2s;
+}
+
+.focus-chevron.collapsed {
+  transform: rotate(-90deg);
 }
 
 .focus-section-label {

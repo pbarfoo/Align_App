@@ -1637,7 +1637,9 @@ function Today({
 }) {
   const now = new Date();
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const toggleExpand = (id: string) => setExpandedId(prev => prev === id ? null : id);
+  const toggleSection = (label: string) => setCollapsed(prev => ({ ...prev, [label]: !prev[label] }));
   const todayStr = now.toISOString().slice(0, 10);
   const daysToSunday = now.getDay() === 0 ? 0 : 7 - now.getDay();
   const weekEnd     = new Date(now.getFullYear(), now.getMonth(), now.getDate() + daysToSunday).toISOString().slice(0, 10);
@@ -1745,21 +1747,27 @@ function Today({
     );
   };
 
-  const Section = ({ label, period, children }: { label: string; period: string; children: React.ReactNode }) => (
-    <div className="focus-section">
-      <div className="focus-spine">
-        <span className="focus-spine-dot" />
-        <span className="focus-spine-line" />
-      </div>
-      <div className="focus-body">
-        <div className="focus-section-header">
-          <span className="focus-section-label">{label}</span>
-          <span className="focus-section-period">{period}</span>
+  const Section = ({ label, period, children }: { label: string; period: string; children: React.ReactNode }) => {
+    const isCollapsed = !!collapsed[label];
+    return (
+      <div className="focus-section">
+        <div className="focus-spine">
+          <span className="focus-spine-dot" />
+          {!isCollapsed && <span className="focus-spine-line" />}
         </div>
-        {children}
+        <div className="focus-body">
+          <div className="focus-section-header" onClick={() => toggleSection(label)}>
+            <span className="focus-section-label">{label}</span>
+            <span className="focus-section-period">{period}</span>
+            <svg className={`focus-chevron${isCollapsed ? ' collapsed' : ''}`} width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
+          {!isCollapsed && children}
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const allDone = habits.filter((h) => h.kind === 'task' ? !!h.completed : isHabitDoneThisPeriod(h)).length;
   const pct = habits.length ? Math.round((allDone / habits.length) * 100) : 0;
