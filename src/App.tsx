@@ -1918,6 +1918,15 @@ function DashSpider({
   longGoals: Goal[];
   values: number[];
 }) {
+  const wrapLabel = (text: string): string[] => {
+    if (text.length <= 14) return [text];
+    const mid = Math.ceil(text.length / 2);
+    const before = text.lastIndexOf(' ', mid);
+    const after = text.indexOf(' ', mid);
+    const split = before > 0 ? before : after > 0 ? after : -1;
+    if (split < 0) return [text];
+    return [text.slice(0, split), text.slice(split + 1)];
+  };
   const N = longGoals.length;
   if (N < 3) return null;
   const cx = 160, cy = 165, r = 115;
@@ -1964,11 +1973,12 @@ function DashSpider({
         const color = DOMAIN_COLORS[g.domainId] ?? 'var(--muted)';
         const lp    = pt(i, 1.34);
         const anchor = labelAnchor(i);
-        const title  = g.title.length > 12 ? g.title.slice(0, 11) + '…' : g.title;
+        const lines = wrapLabel(g.title);
         return (
-          <text key={i} x={lp.x} y={lp.y} textAnchor={anchor} dominantBaseline="middle"
-            fontSize="11" fill={color}>
-            {title}
+          <text key={i} x={lp.x} textAnchor={anchor} fontSize="11" fill={color}>
+            {lines.map((line, j) => (
+              <tspan key={j} x={lp.x} y={lp.y + (j - (lines.length - 1) / 2) * 13}>{line}</tspan>
+            ))}
           </text>
         );
       })}
@@ -2256,11 +2266,19 @@ function RadarChart({
       {/* labels coloured by domain */}
       {axes.map((ax, i) => {
         const lp = pt(i, 1.50);
-        const label = ax.label.length > 12 ? ax.label.slice(0, 11) + '…' : ax.label;
+        const lines = ax.label.length <= 14 ? [ax.label]
+          : (() => {
+              const mid = Math.ceil(ax.label.length / 2);
+              const before = ax.label.lastIndexOf(' ', mid);
+              const after = ax.label.indexOf(' ', mid);
+              const split = before > 0 ? before : after > 0 ? after : -1;
+              return split < 0 ? [ax.label] : [ax.label.slice(0, split), ax.label.slice(split + 1)];
+            })();
         return (
-          <text key={i} x={lp.x} y={lp.y} textAnchor={labelAnchor(i)}
-            dominantBaseline="middle" fontSize="10" fill={ax.color} opacity="0.9">
-            {label}
+          <text key={i} x={lp.x} textAnchor={labelAnchor(i)} fontSize="10" fill={ax.color} opacity="0.9">
+            {lines.map((line, j) => (
+              <tspan key={j} x={lp.x} y={lp.y + (j - (lines.length - 1) / 2) * 12}>{line}</tspan>
+            ))}
           </text>
         );
       })}
