@@ -935,6 +935,24 @@ h1 {
   font-weight: 500;
 }
 
+.focus-complete-btn {
+  margin-top: 6px;
+  width: 100%;
+  padding: 6px 0;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.focus-complete-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .focus-goal-pill {
   display: flex;
   align-items: flex-start;

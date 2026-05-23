@@ -392,6 +392,7 @@ export default function App() {
             habits={habits}
             setHabits={setHabits}
             goals={goals}
+            setGoals={setGoals}
             onReflect={() => setReflectOpen(true)}
           />
         )}
@@ -1628,11 +1629,13 @@ function Today({
   habits,
   setHabits,
   goals,
+  setGoals,
   onReflect,
 }: {
   habits: Habit[];
   setHabits: React.Dispatch<React.SetStateAction<Habit[]>>;
   goals: Goal[];
+  setGoals: React.Dispatch<React.SetStateAction<Goal[]>>;
   onReflect: () => void;
 }) {
   const now = new Date();
@@ -1661,6 +1664,9 @@ function Today({
       };
     }));
   };
+
+  const toggleGoalComplete = (id: string) =>
+    setGoals(prev => prev.map(g => g.id === id ? { ...g, completedAt: g.completedAt ? undefined : Date.now() } : g));
 
   const goalTitle = (goalId: string) => goals.find((g) => g.id === goalId)?.title ?? '';
   const domainColor = (domainId: string) => DOMAIN_COLORS[domainId] ?? 'var(--accent)';
@@ -1739,6 +1745,10 @@ function Today({
                   {[habitCount > 0 && `${habitCount} habit${habitCount !== 1 ? 's' : ''}`, taskCount > 0 && `${taskCount} task${taskCount !== 1 ? 's' : ''}`].filter(Boolean).join(' · ')}
                 </span>
               )}
+              <button
+                className="focus-complete-btn"
+                onClick={(e) => { e.stopPropagation(); toggleGoalComplete(g.id); }}
+              >{g.completedAt ? 'Undo complete' : 'Mark complete'}</button>
             </div>
           )}
         </div>
