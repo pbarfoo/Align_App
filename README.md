@@ -12,7 +12,7 @@ Align helps you stay on track with what matters most. You start by defining your
 - **Align** — Goals dashboard with Health / Done / Time bars per goal and a domain spider chart
 - **Today** — Quick-complete today's habits and tasks; weekly Sunday reflection on your values
 - **Reflection log** — Full history of weekly reflections with domain-grouped value scores
-- **Auth + cloud sync** — Magic-link email login; all data persisted to Supabase per account
+- **Auth + cloud sync** — Email and password login; all data persisted to Supabase per account
 
 ---
 
@@ -22,7 +22,7 @@ No setup required. Just visit:
 
 **[align-app-nine.vercel.app](https://align-app-nine.vercel.app)**
 
-Enter your email, click the magic link, and you're in. Your data is private to your account.
+Create an account with your email and password, or sign in if you already have one. Your data is private to your account.
 
 ---
 
@@ -59,7 +59,7 @@ VITE_SUPABASE_ANON_KEY=your-anon-key
 npm run dev
 ```
 
-Open [http://localhost:5173](http://localhost:5173). Log in with your email — the magic link will redirect back to localhost.
+Open [http://localhost:5173](http://localhost:5173). Create an account or sign in with your email and password.
 
 ### 5. Deploy to Vercel
 
