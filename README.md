@@ -26,9 +26,24 @@ Create an account with your email and password, or sign in if you already have o
 
 ---
 
-## Option 2: Self-host your own instance
+## Option 2: Run locally (no account needed)
 
-Run your own copy with your own database. You'll need a free [Supabase](https://supabase.com) account and a free [Vercel](https://vercel.com) account.
+Your data stays in your browser. No login, no server, no setup beyond Node.
+
+```bash
+git clone https://github.com/pbarfoo/Align_App.git
+cd Align_App
+npm install
+npm run dev
+```
+
+Open [http://localhost:5173](http://localhost:5173) — the app opens straight away and saves everything to localStorage.
+
+---
+
+## Option 3: Self-host with cloud sync
+
+Run your own copy backed by your own database. You'll need a free [Supabase](https://supabase.com) account and a free [Vercel](https://vercel.com) account.
 
 ### 1. Clone the repo
 
@@ -44,13 +59,7 @@ npm install
 2. In the Supabase dashboard, open the **SQL editor** and run the contents of [`supabase/schema.sql`](supabase/schema.sql)
 3. Copy your project URL and anon key from **Project Settings → API**
 
-### 3. Choose a storage mode
-
-**Local-only (no account needed)**
-
-Skip this step entirely. Just run the app and your data is saved to your browser's localStorage. No login, no server.
-
-**Cloud sync (Supabase)**
+### 3. Configure environment variables
 
 Create a `.env` file in the project root:
 
@@ -59,15 +68,13 @@ VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-key
 ```
 
-If these variables are not set, the app automatically runs in local-only mode.
-
 ### 4. Run locally
 
 ```bash
 npm run dev
 ```
 
-Open [http://localhost:5173](http://localhost:5173). In local-only mode the app opens straight to the app. With Supabase configured, you'll be prompted to create an account or sign in.
+Open [http://localhost:5173](http://localhost:5173). You'll be prompted to create an account or sign in.
 
 ### 5. Deploy to Vercel
 
