@@ -737,11 +737,11 @@ function Align({
     flash('Long-term goal added');
   };
 
-  const addShortGoal = (parent: Goal, title: string, months: number) => {
+  const addShortGoal = (parent: Goal, title: string, months: number, valueIndexes: number[] = []) => {
     setGoals((prev) => [...prev, {
       id: uid('g'),
       domainId,
-      valueIndexes: [],
+      valueIndexes,
       horizon: 'short' as const,
       title,
       parentGoalId: parent.id,
@@ -752,11 +752,11 @@ function Align({
     flash('Short-term goal added');
   };
 
-  const addLooseShortGoal = (title: string, months: number) => {
+  const addLooseShortGoal = (title: string, months: number, valueIndexes: number[] = []) => {
     setGoals((prev) => [...prev, {
       id: uid('g'),
       domainId,
-      valueIndexes: [],
+      valueIndexes,
       horizon: 'short' as const,
       title,
       createdAt: Date.now(),
@@ -949,28 +949,12 @@ function Align({
                 />
               ))}
             {addingFor === lg.id && (
-              <InlineAdd
-                indent="short"
+              <AddShortGoalForm
+                domainValues={domain.values}
                 forceOpen
                 onClose={() => setAddingFor(null)}
-                fields={[
-                  {
-                    key: 'title',
-                    placeholder: 'e.g. Run 3x a week through spring',
-                  },
-                  {
-                    key: 'timeframe',
-                    type: 'select',
-                    options: [
-                      { label: '1 Month', value: '1' },
-                      { label: '3 Months', value: '3' },
-                      { label: '6 Months', value: '6' },
-                    ],
-                  },
-                ]}
-                onSubmit={(v) =>
-                  addShortGoal(lg, v.title, Number(v.timeframe ?? '1'))
-                }
+                indent="short"
+                onAdd={(title, months, vi) => addShortGoal(lg, title, months, vi)}
               />
             )}
           </div>
@@ -1002,7 +986,7 @@ function Align({
           />
         ))}
 
-        <AddShortGoalStandalone onAdd={addLooseShortGoal} />
+        <AddShortGoalForm domainValues={domain.values} onAdd={addLooseShortGoal} />
         <AddGoalForm
           domainValues={domain.values}
           onAdd={(idxs, title, years) => addLongGoal(idxs, title, years)}
@@ -1259,27 +1243,47 @@ function AddActionForm({
   );
 }
 
-function AddShortGoalStandalone({ onAdd }: { onAdd: (title: string, months: number) => void }) {
+function AddShortGoalForm({
+  domainValues,
+  onAdd,
+  forceOpen,
+  onClose,
+  indent,
+}: {
+  domainValues: string[];
+  onAdd: (title: string, months: number, valueIndexes: number[]) => void;
+  forceOpen?: boolean;
+  onClose?: () => void;
+  indent?: string;
+}) {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [months, setMonths] = useState('1');
+  const [picked, setPicked] = useState<number[]>([]);
+
+  const isOpen = forceOpen || open;
+  const cls = `inline-add${indent ? ` ${indent}` : ''}`;
+
+  const reset = () => { setTitle(''); setMonths('1'); setPicked([]); };
+  const close = () => { reset(); forceOpen ? onClose?.() : setOpen(false); };
 
   const submit = () => {
     if (!title.trim()) return;
-    onAdd(title.trim(), Number(months));
-    setTitle('');
-    setMonths('1');
-    setOpen(false);
+    onAdd(title.trim(), Number(months), [...picked].sort((a, b) => a - b));
+    close();
   };
 
-  if (!open) return (
-    <button className="inline-add add-btn" onClick={() => setOpen(true)}>
+  const togglePick = (i: number) =>
+    setPicked((p) => p.includes(i) ? p.filter((x) => x !== i) : [...p, i]);
+
+  if (!isOpen) return (
+    <button className={`${cls} add-btn`} onClick={() => setOpen(true)}>
       + Short-term goal
     </button>
   );
 
   return (
-    <div className="inline-add add-form">
+    <div className={`${cls} add-form`}>
       <input
         autoFocus
         placeholder="e.g. Run a 5K"
@@ -1287,6 +1291,21 @@ function AddShortGoalStandalone({ onAdd }: { onAdd: (title: string, months: numb
         onChange={(e) => setTitle(e.target.value)}
         onKeyDown={(e) => e.key === 'Enter' && submit()}
       />
+      {domainValues.length > 0 && (
+        <>
+          <div className="field-label">Values (optional)</div>
+          <div className="value-check">
+            {domainValues.map((v, i) => (
+              <button
+                key={v}
+                type="button"
+                className={`value-chip small${picked.includes(i) ? ' on' : ''}`}
+                onClick={() => togglePick(i)}
+              >{v}</button>
+            ))}
+          </div>
+        </>
+      )}
       <select value={months} onChange={(e) => setMonths(e.target.value)}>
         {[1, 3, 6].map((m) => (
           <option key={m} value={m}>{m} Month{m > 1 ? 's' : ''}</option>
@@ -1294,7 +1313,7 @@ function AddShortGoalStandalone({ onAdd }: { onAdd: (title: string, months: numb
       </select>
       <div className="add-actions">
         <button className="mini-primary" onClick={submit}>Add</button>
-        <button className="mini-ghost" onClick={() => { setTitle(''); setOpen(false); }}>Cancel</button>
+        <button className="mini-ghost" onClick={close}>Cancel</button>
       </div>
     </div>
   );
@@ -1587,98 +1606,6 @@ function GoalNode({
   );
 }
 
-type Field = {
-  key: string;
-  type?: 'text' | 'date' | 'select';
-  placeholder?: string;
-  options?: { label: string; value: string }[];
-};
-
-function InlineAdd({
-  label,
-  fields,
-  onSubmit,
-  indent,
-  forceOpen,
-  onClose,
-}: {
-  label?: string;
-  fields: Field[];
-  onSubmit: (values: Record<string, string>) => void;
-  indent?: 'short' | 'habit';
-  forceOpen?: boolean;
-  onClose?: () => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [values, setValues] = useState<Record<string, string>>({});
-
-  const isOpen = forceOpen || open;
-
-  const close = () => {
-    setValues({});
-    if (forceOpen) onClose?.();
-    else setOpen(false);
-  };
-
-  const submit = () => {
-    if (!values.title || !values.title.trim()) return;
-    onSubmit(values);
-    close();
-  };
-
-  const cls = `inline-add${indent ? ` ${indent}` : ''}`;
-
-  if (!isOpen) {
-    return (
-      <button className={`${cls} add-btn`} onClick={() => setOpen(true)}>
-        {label}
-      </button>
-    );
-  }
-
-  return (
-    <div className={`${cls} add-form`}>
-      {fields.map((f) =>
-        f.type === 'select' ? (
-          <select
-            key={f.key}
-            value={values[f.key] ?? f.options?.[0]?.value ?? ''}
-            onChange={(e) =>
-              setValues((v) => ({ ...v, [f.key]: e.target.value }))
-            }
-          >
-            {f.options?.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <input
-            key={f.key}
-            autoFocus={f.key === 'title'}
-            type={f.type === 'date' ? 'date' : 'text'}
-            placeholder={f.placeholder}
-            value={values[f.key] ?? ''}
-            onChange={(e) =>
-              setValues((v) => ({ ...v, [f.key]: e.target.value }))
-            }
-            onKeyDown={(e) => e.key === 'Enter' && submit()}
-          />
-        ),
-      )}
-      <div className="add-actions">
-        <button className="mini-primary" onClick={submit}>
-          Add
-        </button>
-        <button className="mini-ghost" onClick={close}>
-          Cancel
-        </button>
-      </div>
-    </div>
-  );
-}
-
 /* ---------------- Today ---------------- */
 function Today({
   habits,
@@ -1962,9 +1889,13 @@ function vitalityFor(
   const doneW     = allItems.filter((x) => x.done).reduce((s, x) => s + x.w, 0);
   const completion = totalW > 0 ? doneW / totalW : 0;
 
-  // Health bar: completionRate × recencyScore over ACTIVE items only
-  // (LT goal excluded — it can't be realistically "done" until years from now)
-  const activeItems     = allItems.slice(1); // drop LT goal entry
+  // Health bar: include LT goal with weight proportional to elapsed time so
+  // it exerts more pressure as its deadline approaches, but negligible impact
+  // when the goal was just created.
+  const activeItems     = [
+    { w: 50 * elapsed, done: !!lg.completedAt, r: recency(lg.completedAt) },
+    ...allItems.slice(1),
+  ];
   const activeTotalW    = activeItems.reduce((s, x) => s + x.w, 0);
   const activeDoneItems = activeItems.filter((x) => x.done);
   const activeDoneW     = activeDoneItems.reduce((s, x) => s + x.w, 0);
