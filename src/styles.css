@@ -829,16 +829,46 @@ h1 {
 }
 
 .focus-section {
-  margin-bottom: 28px;
+  display: flex;
+  gap: 14px;
+  margin-bottom: 32px;
+}
+
+.focus-spine {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+  width: 14px;
+  padding-top: 4px;
+}
+
+.focus-spine-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+
+.focus-spine-line {
+  flex: 1;
+  width: 2px;
+  background: var(--line);
+  margin-top: 8px;
+  min-height: 16px;
+}
+
+.focus-body {
+  flex: 1;
+  min-width: 0;
 }
 
 .focus-section-header {
   display: flex;
   align-items: baseline;
   gap: 10px;
-  margin-bottom: 10px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--line);
+  margin-bottom: 8px;
 }
 
 .focus-section-label {
@@ -861,15 +891,52 @@ h1 {
   font-style: italic;
 }
 
+.focus-row {
+  cursor: pointer;
+}
+
+.focus-row.open {
+  background: var(--surface-2);
+  border-radius: 8px;
+  padding: 12px 8px;
+  margin: 0 -8px;
+  border-bottom: none;
+}
+
+.focus-expand {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  align-items: center;
+}
+
+.focus-expand-detail {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.focus-expand-streak {
+  font-size: 12px;
+  color: var(--accent);
+  font-weight: 500;
+}
+
 .focus-goal-pill {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   border: 1px solid;
   border-radius: 10px;
   padding: 9px 12px;
   margin-bottom: 6px;
   background: var(--surface);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.focus-goal-pill.open {
+  background: var(--surface-2);
 }
 
 .focus-goal-dot {
@@ -877,10 +944,10 @@ h1 {
   height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
+  margin-top: 4px;
 }
 
 .focus-goal-title {
-  flex: 1;
   font-size: 13px;
   color: var(--fg);
 }

@@ -1636,6 +1636,8 @@ function Today({
   onReflect: () => void;
 }) {
   const now = new Date();
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const toggleExpand = (id: string) => setExpandedId(prev => prev === id ? null : id);
   const todayStr = now.toISOString().slice(0, 10);
   const daysToSunday = now.getDay() === 0 ? 0 : 7 - now.getDay();
   const weekEnd     = new Date(now.getFullYear(), now.getMonth(), now.getDate() + daysToSunday).toISOString().slice(0, 10);
@@ -1660,6 +1662,7 @@ function Today({
 
   const goalTitle = (goalId: string) => goals.find((g) => g.id === goalId)?.title ?? '';
   const domainColor = (domainId: string) => DOMAIN_COLORS[domainId] ?? 'var(--accent)';
+  const domainLabel = (id: string) => ({ career: 'Career', self: 'Self', community: 'Family/Others' } as Record<string, string>)[id] ?? id;
 
   // Bucket habits by recurrence
   const dayHabits   = habits.filter((h) => h.kind === 'habit' && (h.recurrence === 'daily' || (h.recurrence === 'weekdays' && isWeekday)));
@@ -1684,17 +1687,31 @@ function Today({
 
   const HabitRow = ({ h }: { h: Habit }) => {
     const isDone = h.kind === 'task' ? !!h.completed : isHabitDoneThisPeriod(h);
+    const gObj = goals.find(g => g.id === h.goalId);
+    const color = domainColor(gObj?.domainId ?? '');
+    const isOpen = expandedId === h.id;
     return (
-      <div className={`habit-row${isDone ? ' done' : ''}`} key={h.id}>
-        <button className={`check${isDone ? ' on' : ''}`} onClick={() => toggle(h.id)} aria-label="toggle">
+      <div className={`habit-row focus-row${isDone ? ' done' : ''}${isOpen ? ' open' : ''}`} onClick={() => toggleExpand(h.id)}>
+        <button className={`check${isDone ? ' on' : ''}`} onClick={(e) => { e.stopPropagation(); toggle(h.id); }} aria-label="toggle">
           <Tick />
         </button>
-        <div>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <div className={`habit-title${isDone ? ' done' : ''}`}>{h.title}</div>
           <div className="habit-meta">
             {h.kind === 'task' ? getTaskCountdown(h) : getRecurrenceString(h)}
-            {' · '}<span style={{ color: domainColor(goals.find(g => g.id === h.goalId)?.domainId ?? '') }}>{goalTitle(h.goalId)}</span>
+            {' · '}<span style={{ color }}>{goalTitle(h.goalId)}</span>
           </div>
+          {isOpen && (
+            <div className="focus-expand">
+              <span style={{ color, fontWeight: 600, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{domainLabel(gObj?.domainId ?? '')}</span>
+              {h.kind === 'habit' && (h.streak ?? 0) > 0 && (
+                <span className="focus-expand-streak">{h.streak}-day streak</span>
+              )}
+              {h.kind === 'task' && h.dueDate && (
+                <span className="focus-expand-detail">{new Date(h.dueDate + 'T00:00:00').toLocaleDateString('en', { weekday: 'long', month: 'short', day: 'numeric' })}</span>
+              )}
+            </div>
+          )}
         </div>
       </div>
     );
@@ -1702,22 +1719,45 @@ function Today({
 
   const GoalPill = ({ g }: { g: Goal }) => {
     const color = domainColor(g.domainId);
+    const isOpen = expandedId === g.id;
+    const linked = habits.filter(h => h.goalId === g.id);
+    const habitCount = linked.filter(h => h.kind === 'habit').length;
+    const taskCount  = linked.filter(h => h.kind === 'task').length;
     return (
-      <div className="focus-goal-pill" style={{ borderColor: color }}>
+      <div className={`focus-goal-pill${isOpen ? ' open' : ''}`} style={{ borderColor: color }} onClick={() => toggleExpand(g.id)}>
         <span className="focus-goal-dot" style={{ background: color }} />
-        <span className="focus-goal-title">{g.title}</span>
-        <span className="focus-goal-tf" style={{ color }}>{g.horizon === 'long' ? `${g.timeframe}yr` : `${g.timeframe}mo`}</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="focus-goal-title">{g.title}</div>
+          {isOpen && (
+            <div className="focus-expand">
+              <span style={{ color, fontWeight: 600, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{domainLabel(g.domainId)}</span>
+              <span className="focus-expand-detail">{getGoalCountdown(g)}</span>
+              {(habitCount + taskCount) > 0 && (
+                <span className="focus-expand-detail">
+                  {[habitCount > 0 && `${habitCount} habit${habitCount !== 1 ? 's' : ''}`, taskCount > 0 && `${taskCount} task${taskCount !== 1 ? 's' : ''}`].filter(Boolean).join(' · ')}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+        <span className="focus-goal-tf" style={{ color, flexShrink: 0 }}>{g.horizon === 'long' ? `${g.timeframe}yr` : `${g.timeframe}mo`}</span>
       </div>
     );
   };
 
   const Section = ({ label, period, children }: { label: string; period: string; children: React.ReactNode }) => (
     <div className="focus-section">
-      <div className="focus-section-header">
-        <span className="focus-section-label">{label}</span>
-        <span className="focus-section-period">{period}</span>
+      <div className="focus-spine">
+        <span className="focus-spine-dot" />
+        <span className="focus-spine-line" />
       </div>
-      {children}
+      <div className="focus-body">
+        <div className="focus-section-header">
+          <span className="focus-section-label">{label}</span>
+          <span className="focus-section-period">{period}</span>
+        </div>
+        {children}
+      </div>
     </div>
   );
 
