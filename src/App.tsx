@@ -1847,7 +1847,7 @@ function vitalityFor(
   lg: Goal,
   goals: Goal[],
   habits: Habit[],
-): { time: number; completion: number; health: number; completionRate: number; recencyScore: number; momentum: number } {
+): { time: number; completion: number; health: number; completionRate: number; recencyScore: number; momentum: number; breakdown: Breakdown } {
   const totalMs = (lg.timeframe || 1) * 365.25 * 86_400_000;
   const elapsed = Math.min(1, Math.max(0, (Date.now() - lg.createdAt) / totalMs));
 
@@ -1889,22 +1889,34 @@ function vitalityFor(
   const doneW     = allItems.filter((x) => x.done).reduce((s, x) => s + x.w, 0);
   const completion = totalW > 0 ? doneW / totalW : 0;
 
-  // Health: simple count-based completion × average recency of done sub-items
-  // (ST goals, tasks, habits). LT goal completion lives in the Done bar.
-  type SimpleItem = { done: boolean; r: number };
-  const activeItems: SimpleItem[] = [
-    ...shortGoals.map((g): SimpleItem => ({ done: !!g.completedAt, r: recency(g.completedAt) })),
-    ...subtreeHabits.filter((h) => h.kind === 'task').map((h): SimpleItem => ({ done: !!h.completed, r: recency(h.completedAt) })),
-    ...subtreeHabits.filter((h) => h.kind === 'habit').map((h): SimpleItem => ({ done: isHabitDoneThisPeriod(h), r: habitRecency(h, h.completedAt) })),
-  ];
-  const doneItems      = activeItems.filter((x) => x.done);
-  const completionRate = activeItems.length > 0 ? doneItems.length / activeItems.length : 0;
-  const recencyScore   = doneItems.length > 0 ? doneItems.reduce((s, x) => s + x.r, 0) / doneItems.length : 0;
+  // Health: weighted completion × weighted recency over active sub-items only
+  // (ST goals 10×, tasks 2×, habits 1–4×). LT goal completion lives in Done bar.
+  const activeItems     = allItems.slice(1);
+  const activeTotalW    = activeItems.reduce((s, x) => s + x.w, 0);
+  const activeDoneItems = activeItems.filter((x) => x.done);
+  const activeDoneW     = activeDoneItems.reduce((s, x) => s + x.w, 0);
+  const completionRate  = activeTotalW > 0 ? activeDoneW / activeTotalW : 0;
+  const recencyScore    = activeDoneW > 0
+    ? activeDoneItems.reduce((s, x) => s + x.r * x.w, 0) / activeDoneW : 0;
   const health = completionRate * recencyScore;
 
+  const sgTasks  = subtreeHabits.filter((h) => h.kind === 'task');
+  const sgHabits = subtreeHabits.filter((h) => h.kind === 'habit');
+  const breakdown = {
+    stGoals: { done: shortGoals.filter((g) => !!g.completedAt).length,   total: shortGoals.length },
+    tasks:   { done: sgTasks.filter((h) => !!h.completed).length,         total: sgTasks.length },
+    habits:  { done: sgHabits.filter((h) => isHabitDoneThisPeriod(h)).length, total: sgHabits.length },
+  };
+
   const momentum = (completion + health) / 2;
-  return { time: elapsed, completion, health, completionRate, recencyScore, momentum };
+  return { time: elapsed, completion, health, completionRate, recencyScore, momentum, breakdown };
 }
+
+type Breakdown = {
+  stGoals?: { done: number; total: number };
+  tasks:    { done: number; total: number };
+  habits:   { done: number; total: number };
+};
 
 const DOMAIN_COLORS: Record<string, string> = {
   career: '#e8883c',      // orange
@@ -1912,7 +1924,7 @@ const DOMAIN_COLORS: Record<string, string> = {
   community: '#72ce6a',   // green
 };
 
-function stGoalMetrics(sg: Goal, habits: Habit[]): { time: number; completion: number; health: number; completionRate: number; recencyScore: number; momentum: number } {
+function stGoalMetrics(sg: Goal, habits: Habit[]): { time: number; completion: number; health: number; completionRate: number; recencyScore: number; momentum: number; breakdown: Breakdown } {
   const totalMs = (sg.timeframe || 1) * 30.44 * 86_400_000;
   const elapsed = Math.min(1, Math.max(0, (Date.now() - sg.createdAt) / totalMs));
   const sgHabits = habits.filter((h) => h.goalId === sg.id);
@@ -1926,28 +1938,35 @@ function stGoalMetrics(sg: Goal, habits: Habit[]): { time: number; completion: n
     return ts ? Math.max(0, 1 - (now - ts) / window) : 0;
   };
 
-  // Done bar includes the ST goal itself
-  const sgDone = !!sg.completedAt;
-  const sgR    = sg.completedAt ? Math.max(0, 1 - (Date.now() - sg.completedAt) / (28 * 86_400_000)) : 0;
+  const habitWeight = (h: Habit) => Math.min(1 + (h.streak || 0) * 0.2, 4.0);
 
-  type SimpleItem = { done: boolean; r: number };
-  const taskItems: SimpleItem[]  = sgHabits.filter((h) => h.kind === 'task').map((h) => ({ done: !!h.completed, r: recency(h.completedAt) }));
-  const habitItems: SimpleItem[] = sgHabits.filter((h) => h.kind === 'habit').map((h) => ({ done: isHabitDoneThisPeriod(h), r: habitRecency(h, h.completedAt) }));
+  type Item = { w: number; done: boolean; r: number };
+  const taskItems:  Item[] = sgHabits.filter((h) => h.kind === 'task').map((h) => ({ w: 2, done: !!h.completed, r: recency(h.completedAt) }));
+  const habitItems: Item[] = sgHabits.filter((h) => h.kind === 'habit').map((h) => ({ w: habitWeight(h), done: isHabitDoneThisPeriod(h), r: habitRecency(h, h.completedAt) }));
 
-  // Done bar: goal itself + tasks + habits (simple count)
-  const allForDone    = [{ done: sgDone, r: sgR }, ...taskItems, ...habitItems];
-  const doneTotalAll  = allForDone.filter((x) => x.done).length;
-  const completion    = allForDone.length > 0 ? doneTotalAll / allForDone.length : 0;
+  // Done bar: ST goal itself (10×) + tasks + habits
+  const allItems: Item[] = [{ w: 10, done: !!sg.completedAt, r: recency(sg.completedAt) }, ...taskItems, ...habitItems];
+  const totalW     = allItems.reduce((s, x) => s + x.w, 0);
+  const doneW      = allItems.filter((x) => x.done).reduce((s, x) => s + x.w, 0);
+  const completion = totalW > 0 ? doneW / totalW : 0;
 
-  // Health: count-based completion × average recency of done tasks/habits only
-  const activeItems  = [...taskItems, ...habitItems];
-  const doneItems    = activeItems.filter((x) => x.done);
-  const completionRate = activeItems.length > 0 ? doneItems.length / activeItems.length : 0;
-  const recencyScore   = doneItems.length > 0 ? doneItems.reduce((s, x) => s + x.r, 0) / doneItems.length : 0;
+  // Health: weighted completion × weighted recency over tasks + habits only
+  const activeItems     = [...taskItems, ...habitItems];
+  const activeTotalW    = activeItems.reduce((s, x) => s + x.w, 0);
+  const activeDoneItems = activeItems.filter((x) => x.done);
+  const activeDoneW     = activeDoneItems.reduce((s, x) => s + x.w, 0);
+  const completionRate  = activeTotalW > 0 ? activeDoneW / activeTotalW : 0;
+  const recencyScore    = activeDoneW > 0
+    ? activeDoneItems.reduce((s, x) => s + x.r * x.w, 0) / activeDoneW : 0;
   const health = completionRate * recencyScore;
-  const momentum = (completion + health) / 2;
 
-  return { time: elapsed, completion, health, completionRate, recencyScore, momentum };
+  const breakdown = {
+    tasks:  { done: taskItems.filter((x) => x.done).length,  total: taskItems.length },
+    habits: { done: habitItems.filter((x) => x.done).length, total: habitItems.length },
+  };
+
+  const momentum = (completion + health) / 2;
+  return { time: elapsed, completion, health, completionRate, recencyScore, momentum, breakdown };
 }
 
 function GoalHealthMini({ goals, values }: { goals: Goal[]; values: number[] }) {
@@ -2053,7 +2072,7 @@ function GoalStrip({
   isShort = false,
 }: {
   goal: Goal;
-  metrics: { time: number; completion: number; health: number; completionRate: number; recencyScore: number };
+  metrics: { time: number; completion: number; health: number; completionRate: number; recencyScore: number; breakdown?: Breakdown };
   domainColor?: string;
   isShort?: boolean;
 }) {
@@ -2063,6 +2082,7 @@ function GoalStrip({
   const healthPct    = Math.round(metrics.health * 100);
   const donePct      = Math.round(metrics.completionRate * 100);
   const freshPct     = Math.round(metrics.recencyScore * 100);
+  const bd           = metrics.breakdown;
   return (
     <div className={`goal-strip${isShort ? ' goal-strip--short' : ''}`}>
       <div className="strip-title">{goal.title}</div>
@@ -2098,15 +2118,36 @@ function GoalStrip({
       {showInfo && (
         <div className="health-popup">
           <div className="health-popup-row">
-            <span className="health-popup-formula">
-              {donePct}% done × {freshPct}% fresh
-            </span>
+            <span className="health-popup-formula">{donePct}% done × {freshPct}% fresh</span>
             <span className="health-popup-result" style={{ color: domainColor }}>= {healthPct}%</span>
           </div>
+          {bd && (
+            <div className="health-popup-breakdown">
+              {bd.stGoals && bd.stGoals.total > 0 && (
+                <div className="hpb-row">
+                  <span className="hpb-label">Sub-goals</span>
+                  <span className="hpb-count">{bd.stGoals.done}/{bd.stGoals.total}</span>
+                  <span className="hpb-weight">10× each</span>
+                </div>
+              )}
+              {bd.tasks.total > 0 && (
+                <div className="hpb-row">
+                  <span className="hpb-label">Tasks</span>
+                  <span className="hpb-count">{bd.tasks.done}/{bd.tasks.total}</span>
+                  <span className="hpb-weight">2× each</span>
+                </div>
+              )}
+              {bd.habits.total > 0 && (
+                <div className="hpb-row">
+                  <span className="hpb-label">Habits</span>
+                  <span className="hpb-count">{bd.habits.done}/{bd.habits.total}</span>
+                  <span className="hpb-weight">1–4× (streak)</span>
+                </div>
+              )}
+            </div>
+          )}
           <div className="health-popup-note">
-            {isShort
-              ? '% of tasks & habits done × how recently — both must be high. This goal\'s own completion is shown in the Done bar.'
-              : '% of sub-goals, tasks & habits done × how recently — both must be high. The long-term goal\'s own completion is shown in the Done bar.'}
+            Weighted completion × recency. {isShort ? 'This goal\'s own completion is in the Done bar.' : 'The long-term goal\'s completion is in the Done bar.'}
           </div>
         </div>
       )}
@@ -2215,12 +2256,13 @@ function GoalsDashboard({
 
       <div className="dash-health-note">
         <div className="dash-health-note-title">How Health is calculated</div>
-        <p>
-          Health = <b>% of items done</b> × <b>how recently</b> — both must be high for a strong score.
-        </p>
-        <p style={{ marginTop: 6 }}>
-          <b>Long-term:</b> counts sub-goals, tasks, and habits. <b>Short-term:</b> counts tasks and habits. The goal's own completion is tracked separately in the Done bar.
-        </p>
+        <p>Health = <b>weighted % done</b> × <b>how recently</b> — both must be high.</p>
+        <div className="dash-health-weights">
+          <span><b>10×</b> Short-term sub-goal</span>
+          <span><b>2×</b> Task</span>
+          <span><b>1–4×</b> Habit (streak grows weight)</span>
+        </div>
+        <p style={{ marginTop: 8 }}>LT goal counts sub-goals + tasks + habits. ST goal counts tasks + habits. The goal's own completion shows in the Done bar.</p>
       </div>
     </div>
   );

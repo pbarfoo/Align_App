@@ -1604,10 +1604,28 @@ h1 {
 .health-popup-weights b {
   color: var(--text);
 }
+.health-popup-breakdown {
+  margin-bottom: 8px;
+}
+.hpb-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 6px 10px;
+  align-items: baseline;
+  font-size: 11px;
+  color: var(--muted);
+  padding: 2px 0;
+  border-top: 1px solid var(--line);
+}
+.hpb-row:last-child { border-bottom: 1px solid var(--line); }
+.hpb-label { color: var(--text); font-weight: 500; }
+.hpb-count { font-weight: 600; color: var(--text); text-align: right; }
+.hpb-weight { font-size: 10px; color: var(--muted); text-align: right; white-space: nowrap; }
 .health-popup-note {
   font-size: 10px;
   color: var(--muted);
   opacity: 0.7;
+  margin-top: 6px;
 }
 .strip-track {
   height: 6px;
