@@ -1889,16 +1889,17 @@ function vitalityFor(
   const doneW     = allItems.filter((x) => x.done).reduce((s, x) => s + x.w, 0);
   const completion = totalW > 0 ? doneW / totalW : 0;
 
-  // Health bar: completionRate × recencyScore over active sub-items only
+  // Health: simple count-based completion × average recency of done sub-items
   // (ST goals, tasks, habits). LT goal completion lives in the Done bar.
-  const activeItems     = allItems.slice(1);
-  const activeTotalW    = activeItems.reduce((s, x) => s + x.w, 0);
-  const activeDoneItems = activeItems.filter((x) => x.done);
-  const activeDoneW     = activeDoneItems.reduce((s, x) => s + x.w, 0);
-  const completionRate  = activeTotalW > 0 ? activeDoneW / activeTotalW : 0;
-  const recencyScore    = activeDoneW > 0
-    ? activeDoneItems.reduce((s, x) => s + x.r * x.w, 0) / activeDoneW
-    : 0;
+  type SimpleItem = { done: boolean; r: number };
+  const activeItems: SimpleItem[] = [
+    ...shortGoals.map((g): SimpleItem => ({ done: !!g.completedAt, r: recency(g.completedAt) })),
+    ...subtreeHabits.filter((h) => h.kind === 'task').map((h): SimpleItem => ({ done: !!h.completed, r: recency(h.completedAt) })),
+    ...subtreeHabits.filter((h) => h.kind === 'habit').map((h): SimpleItem => ({ done: isHabitDoneThisPeriod(h), r: habitRecency(h, h.completedAt) })),
+  ];
+  const doneItems      = activeItems.filter((x) => x.done);
+  const completionRate = activeItems.length > 0 ? doneItems.length / activeItems.length : 0;
+  const recencyScore   = doneItems.length > 0 ? doneItems.reduce((s, x) => s + x.r, 0) / doneItems.length : 0;
   const health = completionRate * recencyScore;
 
   const momentum = (completion + health) / 2;
@@ -1916,7 +1917,6 @@ function stGoalMetrics(sg: Goal, habits: Habit[]): { time: number; completion: n
   const elapsed = Math.min(1, Math.max(0, (Date.now() - sg.createdAt) / totalMs));
   const sgHabits = habits.filter((h) => h.goalId === sg.id);
 
-  const habitWeight = (h: Habit) => Math.min(1 + (h.streak || 0) * 0.2, 4.0);
   const FOUR_WEEKS = 28 * 86_400_000;
   const now = Date.now();
   const recency = (ts?: number) => ts ? Math.max(0, 1 - (now - ts) / FOUR_WEEKS) : 0;
@@ -1926,25 +1926,48 @@ function stGoalMetrics(sg: Goal, habits: Habit[]): { time: number; completion: n
     return ts ? Math.max(0, 1 - (now - ts) / window) : 0;
   };
 
-  type Item = { w: number; done: boolean; r: number };
-  const taskItems: Item[]  = sgHabits.filter((h) => h.kind === 'task').map((h) => ({ w: 2, done: !!h.completed, r: recency(h.completedAt) }));
-  const habitItems: Item[] = sgHabits.filter((h) => h.kind === 'habit').map((h) => ({ w: habitWeight(h), done: isHabitDoneThisPeriod(h), r: habitRecency(h, h.completedAt) }));
-  const allItems: Item[]   = [{ w: 10, done: !!sg.completedAt, r: recency(sg.completedAt) }, ...taskItems, ...habitItems];
+  // Done bar includes the ST goal itself
+  const sgDone = !!sg.completedAt;
+  const sgR    = sg.completedAt ? Math.max(0, 1 - (Date.now() - sg.completedAt) / (28 * 86_400_000)) : 0;
 
-  const totalW    = allItems.reduce((s, x) => s + x.w, 0);
-  const doneW     = allItems.filter((x) => x.done).reduce((s, x) => s + x.w, 0);
-  const completion = totalW > 0 ? doneW / totalW : 0;
+  type SimpleItem = { done: boolean; r: number };
+  const taskItems: SimpleItem[]  = sgHabits.filter((h) => h.kind === 'task').map((h) => ({ done: !!h.completed, r: recency(h.completedAt) }));
+  const habitItems: SimpleItem[] = sgHabits.filter((h) => h.kind === 'habit').map((h) => ({ done: isHabitDoneThisPeriod(h), r: habitRecency(h, h.completedAt) }));
 
-  const activeItems     = [...taskItems, ...habitItems];
-  const activeTotalW    = activeItems.reduce((s, x) => s + x.w, 0);
-  const activeDoneItems = activeItems.filter((x) => x.done);
-  const activeDoneW     = activeDoneItems.reduce((s, x) => s + x.w, 0);
-  const completionRate  = activeTotalW > 0 ? activeDoneW / activeTotalW : 0;
-  const recencyScore    = activeDoneW > 0 ? activeDoneItems.reduce((s, x) => s + x.r * x.w, 0) / activeDoneW : 0;
+  // Done bar: goal itself + tasks + habits (simple count)
+  const allForDone    = [{ done: sgDone, r: sgR }, ...taskItems, ...habitItems];
+  const doneTotalAll  = allForDone.filter((x) => x.done).length;
+  const completion    = allForDone.length > 0 ? doneTotalAll / allForDone.length : 0;
+
+  // Health: count-based completion × average recency of done tasks/habits only
+  const activeItems  = [...taskItems, ...habitItems];
+  const doneItems    = activeItems.filter((x) => x.done);
+  const completionRate = activeItems.length > 0 ? doneItems.length / activeItems.length : 0;
+  const recencyScore   = doneItems.length > 0 ? doneItems.reduce((s, x) => s + x.r, 0) / doneItems.length : 0;
   const health = completionRate * recencyScore;
   const momentum = (completion + health) / 2;
 
   return { time: elapsed, completion, health, completionRate, recencyScore, momentum };
+}
+
+function GoalHealthMini({ goals, values }: { goals: Goal[]; values: number[] }) {
+  return (
+    <div className="spider-mini">
+      {goals.map((g, i) => {
+        const color = DOMAIN_COLORS[g.domainId] ?? 'var(--accent)';
+        const pct = Math.round(values[i] * 100);
+        return (
+          <div key={g.id} className="spider-mini-row">
+            <div className="spider-mini-label" style={{ color }}>{g.title}</div>
+            <div className="spider-mini-track">
+              <div className="spider-mini-fill" style={{ width: `${pct}%`, background: color }} />
+            </div>
+            <span className="spider-mini-pct">{pct}%</span>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 function DashSpider({
@@ -2081,15 +2104,10 @@ function GoalStrip({
             <span className="health-popup-result" style={{ color: domainColor }}>= {healthPct}%</span>
           </div>
           <div className="health-popup-divider" />
-          <div className="health-popup-weights">
-            {!isShort && <span><b>10×</b> Short-term goal</span>}
-            <span><b>2×</b> Task</span>
-            <span><b>1–4×</b> Habit (streak scales weight)</span>
-          </div>
           <div className="health-popup-note">
             {isShort
-              ? 'Completion × recency of tasks and habits — both must be high. This goal\'s own completion is shown in the Done bar above.'
-              : 'Completion × recency — both must be high. Driven by short-term sub-goals (10×), tasks (2×), and habits (1–4× by streak). Long-term goal completion is shown in the Done bar above.'}
+              ? '% of tasks & habits done × how recently — both must be high. This goal\'s own completion is shown in the Done bar.'
+              : '% of sub-goals, tasks & habits done × how recently — both must be high. The long-term goal\'s own completion is shown in the Done bar.'}
           </div>
         </div>
       )}
@@ -2158,14 +2176,18 @@ function GoalsDashboard({
         </div>
         <div className="spider-track" ref={trackRef} role="region" aria-label="Goal charts">
           <div className="spider-slide">
-            {longGoals.length >= 3
-              ? <DashSpider goals={longGoals} values={ltSpiderValues} />
-              : <p className="spider-empty">Add at least 3 long-term goals to see this chart.</p>}
+            {longGoals.length === 0
+              ? <p className="spider-empty">No long-term goals yet.</p>
+              : longGoals.length >= 3
+                ? <DashSpider goals={longGoals} values={ltSpiderValues} />
+                : <GoalHealthMini goals={longGoals} values={ltSpiderValues} />}
           </div>
           <div className="spider-slide">
-            {looseShort.length >= 3
-              ? <DashSpider goals={looseShort} values={stSpiderValues} />
-              : <p className="spider-empty">Add at least 3 standalone short-term goals to see this chart.</p>}
+            {looseShort.length === 0
+              ? <p className="spider-empty">No standalone short-term goals yet.</p>
+              : looseShort.length >= 3
+                ? <DashSpider goals={looseShort} values={stSpiderValues} />
+                : <GoalHealthMini goals={looseShort} values={stSpiderValues} />}
           </div>
         </div>
         <div className="spider-dots">
@@ -2195,13 +2217,10 @@ function GoalsDashboard({
       <div className="dash-health-note">
         <div className="dash-health-note-title">How Health is calculated</div>
         <p>
-          Health = <b>% done</b> × <b>how recently</b> — both must be high for a strong score.
+          Health = <b>% of items done</b> × <b>how recently</b> — both must be high for a strong score.
         </p>
         <p style={{ marginTop: 6 }}>
-          <b>Long-term goals</b> — driven by short-term sub-goals <b>(10×)</b>, tasks <b>(2×)</b>, and habits <b>(1–4×)</b>. The LT goal's own completion appears in the Done bar.
-        </p>
-        <p style={{ marginTop: 6 }}>
-          <b>Short-term goals</b> — driven by tasks <b>(2×)</b> and habits <b>(1–4×)</b>. The goal's own completion appears in the Done bar.
+          <b>Long-term:</b> counts sub-goals, tasks, and habits. <b>Short-term:</b> counts tasks and habits. The goal's own completion is tracked separately in the Done bar.
         </p>
       </div>
     </div>
