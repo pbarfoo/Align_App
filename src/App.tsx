@@ -2103,7 +2103,6 @@ function GoalStrip({
             </span>
             <span className="health-popup-result" style={{ color: domainColor }}>= {healthPct}%</span>
           </div>
-          <div className="health-popup-divider" />
           <div className="health-popup-note">
             {isShort
               ? '% of tasks & habits done × how recently — both must be high. This goal\'s own completion is shown in the Done bar.'
