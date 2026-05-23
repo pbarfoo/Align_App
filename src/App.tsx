@@ -1674,12 +1674,12 @@ function Today({
   const quarterTasks = habits.filter((h) => h.kind === 'task' && !!h.dueDate && h.dueDate > monthEnd  && h.dueDate <= quarterEnd);
   const undatedTasks = habits.filter((h) => h.kind === 'task' && !h.dueDate && !h.completed);
 
-  // Bucket goals by timeframe
-  const activeShort = goals.filter((g) => g.horizon === 'short' && !g.completedAt);
-  const weekGoals    = activeShort.filter((g) => g.timeframe <= 1);
-  const monthGoals   = activeShort.filter((g) => g.timeframe > 1 && g.timeframe <= 3);
-  const quarterGoals = activeShort.filter((g) => g.timeframe > 3);
+  // Bucket goals by their actual end date (createdAt + timeframe)
   const goalEndDate  = (g: Goal) => { const d = new Date(g.createdAt); g.horizon === 'long' ? d.setFullYear(d.getFullYear() + g.timeframe) : d.setMonth(d.getMonth() + g.timeframe); return d.toISOString().slice(0, 10); };
+  const activeShort  = goals.filter((g) => g.horizon === 'short' && !g.completedAt);
+  const weekGoals    = activeShort.filter((g) => goalEndDate(g) <= weekEnd);
+  const monthGoals   = activeShort.filter((g) => goalEndDate(g) > weekEnd  && goalEndDate(g) <= monthEnd);
+  const quarterGoals = activeShort.filter((g) => goalEndDate(g) > monthEnd && goalEndDate(g) <= quarterEnd);
   const longGoals    = goals.filter((g) => g.horizon === 'long' && !g.completedAt && goalEndDate(g) >= todayStr && goalEndDate(g) <= quarterEnd);
 
   const HabitRow = ({ h }: { h: Habit }) => {
