@@ -16,7 +16,7 @@ import {
   type CustomUnit,
   type ReflectionEntry,
 } from './data';
-import { supabase } from './supabase';
+import { supabase, localMode } from './supabase';
 import type { Session } from '@supabase/supabase-js';
 
 type Tab = 'foundation' | 'align' | 'today';
@@ -31,6 +31,10 @@ interface ActionInput {
 }
 
 const TAB_KEY = 'align-tab-v1';
+const LS_DOMAINS = 'align-domains-v1';
+const LS_GOALS = 'align-goals-v1';
+const LS_HABITS = 'align-habits-v1';
+const LS_REFLECTIONS = 'align-reflections-v1';
 
 function loadOr<T>(key: string, fallback: T): T {
   try {
@@ -197,6 +201,7 @@ export default function App() {
   const [dataLoaded, setDataLoaded] = useState(false);
 
   useEffect(() => {
+    if (localMode) { setAuthLoading(false); return; }
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
       setAuthLoading(false);
@@ -226,6 +231,15 @@ export default function App() {
   // tab-focus auth event, which would otherwise re-read stale data and clobber
   // in-progress local edits.
   useEffect(() => {
+    if (localMode) {
+      hydrating.current = true;
+      setDomains(loadOr<Domain[]>(LS_DOMAINS, seedDomains));
+      setGoals(loadOr<Goal[]>(LS_GOALS, initialGoals));
+      setHabits(loadOr<Habit[]>(LS_HABITS, initialHabits));
+      setReflections(loadOr<ReflectionEntry[]>(LS_REFLECTIONS, []));
+      setDataLoaded(true);
+      return;
+    }
     if (!session) return;
     const userId = session.user.id;
     Promise.all([
@@ -275,30 +289,38 @@ export default function App() {
     });
   }, [session?.user?.id]);
 
-  // Sync domains to Supabase
+  // Sync domains
   useEffect(() => {
-    if (!session || !dataLoaded || hydrating.current) return;
+    if (!dataLoaded || hydrating.current) return;
+    if (localMode) { localStorage.setItem(LS_DOMAINS, JSON.stringify(domains)); return; }
+    if (!session) return;
     supabase.from('domains').upsert(domains.map((x) => domainToRow(x, session.user.id)), { onConflict: 'id,user_id' })
       .then(({ error }) => { if (error) { console.error('sync domains:', error); setToast(`⚠ Save failed: ${error.message}`); } });
   }, [domains]);
 
-  // Sync goals to Supabase
+  // Sync goals
   useEffect(() => {
-    if (!session || !dataLoaded || hydrating.current || !goals.length) return;
+    if (!dataLoaded || hydrating.current) return;
+    if (localMode) { localStorage.setItem(LS_GOALS, JSON.stringify(goals)); return; }
+    if (!session || !goals.length) return;
     supabase.from('goals').upsert(goals.map((x) => goalToRow(x, session.user.id)))
       .then(({ error }) => { if (error) { console.error('sync goals:', error); setToast(`⚠ Save failed: ${error.message}`); } });
   }, [goals]);
 
-  // Sync habits to Supabase
+  // Sync habits
   useEffect(() => {
-    if (!session || !dataLoaded || hydrating.current || !habits.length) return;
+    if (!dataLoaded || hydrating.current) return;
+    if (localMode) { localStorage.setItem(LS_HABITS, JSON.stringify(habits)); return; }
+    if (!session || !habits.length) return;
     supabase.from('habits').upsert(habits.map((x) => habitToRow(x, session.user.id)))
       .then(({ error }) => { if (error) { console.error('sync habits:', error); setToast(`⚠ Save failed: ${error.message}`); } });
   }, [habits]);
 
-  // Sync reflections to Supabase
+  // Sync reflections
   useEffect(() => {
-    if (!session || !dataLoaded || hydrating.current || !reflections.length) return;
+    if (!dataLoaded || hydrating.current) return;
+    if (localMode) { localStorage.setItem(LS_REFLECTIONS, JSON.stringify(reflections)); return; }
+    if (!session || !reflections.length) return;
     supabase.from('reflections').upsert(reflections.map((x) => reflToRow(x, session.user.id)))
       .then(({ error }) => { if (error) { console.error('sync reflections:', error); setToast(`⚠ Save failed: ${error.message}`); } });
   }, [reflections]);
@@ -314,16 +336,16 @@ export default function App() {
     localStorage.setItem(TAB_KEY, JSON.stringify(tab));
   }, [tab]);
 
-  // Explicit delete helpers (upsert doesn't remove rows)
+  // Explicit delete helpers (upsert doesn't remove rows; no-op in localMode since state sync handles it)
   const deleteGoalFromDb = (ids: string[]) => {
-    if (!session) return;
+    if (localMode || !session) return;
     supabase.from('habits').delete().in('goal_id', ids)
       .then(({ error }) => { if (error) console.error('delete habits for goal:', error); });
     supabase.from('goals').delete().in('id', ids)
       .then(({ error }) => { if (error) { console.error('delete goals:', error); flash('Delete failed: ' + error.message, true); } });
   };
   const deleteHabitFromDb = (id: string) => {
-    if (!session) return;
+    if (localMode || !session) return;
     supabase.from('habits').delete().eq('id', id)
       .then(({ error }) => { if (error) { console.error('delete habit:', error); flash('Delete failed: ' + error.message, true); } });
   };
@@ -337,14 +359,14 @@ export default function App() {
     setTimeout(() => setToast(null), 2500);
   };
 
-  if (authLoading || (session && !dataLoaded)) {
+  if (authLoading || !dataLoaded) {
     return (
       <div className="app-loading">
         <div className="app-loading-text">Loading…</div>
       </div>
     );
   }
-  if (!session) return <LoginScreen />;
+  if (!localMode && !session) return <LoginScreen />;
 
   return (
     <div className="app">
@@ -373,12 +395,14 @@ export default function App() {
             onReflect={() => setReflectOpen(true)}
           />
         )}
-        <div className="signout-row">
-          <span className="signout-email">{session.user.email}</span>
-          <button className="signout-btn" onClick={() => supabase.auth.signOut()}>
-            Sign out
-          </button>
-        </div>
+        {!localMode && session && (
+          <div className="signout-row">
+            <span className="signout-email">{session.user.email}</span>
+            <button className="signout-btn" onClick={() => supabase.auth.signOut()}>
+              Sign out
+            </button>
+          </div>
+        )}
       </main>
 
       {reflectOpen && (() => {
