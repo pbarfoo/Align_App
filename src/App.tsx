@@ -2089,12 +2089,14 @@ function GoalStrip({
           </div>
           <div className="health-popup-divider" />
           <div className="health-popup-weights">
-            <span><b>10×</b> Short-term goal</span>
+            {!isShort && <span><b>10×</b> Short-term goal</span>}
             <span><b>2×</b> Task</span>
             <span><b>1–4×</b> Habit (streak scales weight)</span>
           </div>
           <div className="health-popup-note">
-            Completion × recency — both must be high. ST goals (10×), tasks (2×), habits (1–4× by streak). Long-term goal completion is shown in the Done bar above.
+            {isShort
+              ? 'Completion × recency of tasks and habits — both must be high. This goal\'s own completion is shown in the Done bar above.'
+              : 'Completion × recency — both must be high. Driven by short-term sub-goals (10×), tasks (2×), and habits (1–4× by streak). Long-term goal completion is shown in the Done bar above.'}
           </div>
         </div>
       )}
@@ -2155,13 +2157,14 @@ function GoalsDashboard({
       <div className="dash-health-note">
         <div className="dash-health-note-title">How Health is calculated</div>
         <p>
-          Health = <b>% of active items done</b> × <b>how recently</b> you did them. Both must be high for a strong score. Weights: short-term goals <b>10×</b>, tasks <b>2×</b>, habits <b>1–4×</b> (streak scales weight).
+          Health = <b>% done</b> × <b>how recently</b> — both must be high for a strong score.
         </p>
-        <div className="dash-health-weights">
-          <span><b>10×</b> Short-term goal</span>
-          <span><b>2×</b> Task</span>
-          <span><b>1–4×</b> Habit (streak grows weight &amp; extends freshness window)</span>
-        </div>
+        <p style={{ marginTop: 6 }}>
+          <b>Long-term goals</b> — driven by short-term sub-goals <b>(10×)</b>, tasks <b>(2×)</b>, and habits <b>(1–4×)</b>. The LT goal's own completion appears in the Done bar.
+        </p>
+        <p style={{ marginTop: 6 }}>
+          <b>Short-term goals</b> — driven by tasks <b>(2×)</b> and habits <b>(1–4×)</b>. The goal's own completion appears in the Done bar.
+        </p>
       </div>
     </div>
   );
