@@ -1992,25 +1992,18 @@ function DashSpider({
         const d = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ') + 'Z';
         return <path key={t} d={d} fill="none" stroke="var(--line)" strokeWidth="1" />;
       })}
-      {/* Domain-coloured spokes — dashed for short-term goals */}
+      {/* Domain-coloured spokes */}
       {topGoals.map((g, i) => {
         const end   = pt(i, 1);
         const color = DOMAIN_COLORS[g.domainId] ?? 'var(--line)';
-        const isShort = g.horizon === 'short';
         return <line key={i} x1={cx} y1={cy} x2={end.x} y2={end.y}
-          stroke={color} strokeWidth="1.5" opacity="0.5"
-          strokeDasharray={isShort ? '4 3' : undefined} />;
+          stroke={color} strokeWidth="1.5" opacity="0.5" />;
       })}
       {/* Data polygon */}
       <polygon points={poly} fill="var(--accent)" fillOpacity="0.2" stroke="var(--accent)" strokeWidth="2" />
       {dataPoints.map((p, i) => {
         const color = DOMAIN_COLORS[topGoals[i].domainId] ?? 'var(--accent)';
-        const isShort = topGoals[i].horizon === 'short';
-        return isShort ? (
-          <circle key={i} cx={p.x} cy={p.y} r="5" fill="var(--bg)" stroke={color} strokeWidth="2" />
-        ) : (
-          <circle key={i} cx={p.x} cy={p.y} r="4" fill={color} />
-        );
+        return <circle key={i} cx={p.x} cy={p.y} r="4" fill={color} />;
       })}
       {/* Labels: goal title only, coloured by domain */}
       {topGoals.map((g, i) => {
@@ -2121,11 +2114,35 @@ function GoalsDashboard({
   const ltMetrics  = new Map(longGoals.map((g) => [g.id, vitalityFor(g, goals, habits)] as const));
   const stMetrics  = new Map(looseShort.map((g) => [g.id, stGoalMetrics(g, habits)] as const));
 
-  const allTopGoals   = [...longGoals, ...looseShort];
-  const spiderValues  = [
-    ...longGoals.map((g) => ltMetrics.get(g.id)!.health),
-    ...looseShort.map((g) => stMetrics.get(g.id)!.health),
-  ];
+  const ltSpiderValues = longGoals.map((g) => ltMetrics.get(g.id)!.health);
+  const stSpiderValues = looseShort.map((g) => stMetrics.get(g.id)!.health);
+
+  const [activeSlide, setActiveSlide] = useState<0 | 1>(0);
+  const trackRef = useRef<HTMLDivElement>(null);
+
+  const scrollToSlide = (index: 0 | 1) => {
+    trackRef.current?.scrollTo({ left: index * (trackRef.current.clientWidth || 0), behavior: 'smooth' });
+    setActiveSlide(index);
+  };
+
+  useEffect(() => {
+    const track = trackRef.current;
+    if (!track) return;
+    const slides = track.querySelectorAll<HTMLElement>('.spider-slide');
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
+            const idx = Array.from(slides).indexOf(entry.target as HTMLElement);
+            if (idx !== -1) setActiveSlide(idx as 0 | 1);
+          }
+        });
+      },
+      { root: track, threshold: 0.5 }
+    );
+    slides.forEach((s) => observer.observe(s));
+    return () => observer.disconnect();
+  }, []);
 
   return (
     <div className="review-panel">
@@ -2134,7 +2151,28 @@ function GoalsDashboard({
         <button className="icon-btn" onClick={onClose}>✕</button>
       </div>
 
-      <DashSpider goals={allTopGoals} values={spiderValues} />
+      <div className="spider-carousel-wrapper">
+        <div className="spider-pills">
+          <button className={`spider-pill${activeSlide === 0 ? ' active' : ''}`} onClick={() => scrollToSlide(0)}>Long-term</button>
+          <button className={`spider-pill${activeSlide === 1 ? ' active' : ''}`} onClick={() => scrollToSlide(1)}>Short-term</button>
+        </div>
+        <div className="spider-track" ref={trackRef} role="region" aria-label="Goal charts">
+          <div className="spider-slide">
+            {longGoals.length >= 3
+              ? <DashSpider goals={longGoals} values={ltSpiderValues} />
+              : <p className="spider-empty">Add at least 3 long-term goals to see this chart.</p>}
+          </div>
+          <div className="spider-slide">
+            {looseShort.length >= 3
+              ? <DashSpider goals={looseShort} values={stSpiderValues} />
+              : <p className="spider-empty">Add at least 3 standalone short-term goals to see this chart.</p>}
+          </div>
+        </div>
+        <div className="spider-dots">
+          <button className={`spider-dot${activeSlide === 0 ? ' active' : ''}`} onClick={() => scrollToSlide(0)} aria-label="Long-term goals chart" />
+          <button className={`spider-dot${activeSlide === 1 ? ' active' : ''}`} onClick={() => scrollToSlide(1)} aria-label="Short-term goals chart" />
+        </div>
+      </div>
 
       {domains.map((d) => {
         const dLong  = longGoals.filter((g) => g.domainId === d.id);

@@ -1366,6 +1366,71 @@ h1 {
 .dashboard-btn svg { width: 18px; height: 18px; }
 
 /* ---------- Goals Dashboard ---------- */
+
+/* Spider carousel */
+.spider-carousel-wrapper { margin-bottom: 24px; }
+
+.spider-pills { display: flex; gap: 8px; justify-content: center; margin-bottom: 14px; }
+.spider-pill {
+  padding: 7px 20px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  cursor: pointer;
+  transition: background 0.18s, color 0.18s, border-color 0.18s;
+}
+.spider-pill.active {
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.spider-track {
+  display: flex;
+  overflow-x: scroll;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  min-height: 360px;
+}
+.spider-track::-webkit-scrollbar { display: none; }
+
+.spider-slide {
+  flex: 0 0 100%;
+  scroll-snap-align: start;
+  overflow: visible;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+  min-height: 120px;
+}
+
+.spider-empty {
+  font-size: 13px;
+  color: var(--muted);
+  font-style: italic;
+  text-align: center;
+  padding: 24px 16px;
+}
+
+.spider-dots { display: flex; gap: 8px; justify-content: center; margin-top: 6px; }
+.spider-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--line);
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.2s;
+}
+.spider-dot.active { background: var(--accent); transform: scale(1.3); }
+
 .dash-domain-section { margin-bottom: 28px; }
 .dash-domain-label {
   font-size: 10px;
