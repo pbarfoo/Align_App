@@ -242,6 +242,31 @@ h1 {
   outline: 1px solid var(--accent);
 }
 
+/* ---------- AI Refine ---------- */
+.ai-field { position: relative; display: flex; align-items: stretch; }
+.ai-field input, .ai-field textarea { flex: 1; }
+
+.ai-btn {
+  position: absolute; right: 8px; bottom: 8px;
+  width: 26px; height: 26px; border-radius: 50%;
+  background: var(--accent); color: var(--bg);
+  border: none; cursor: pointer; font-size: 13px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0.85; transition: opacity 0.15s, transform 0.15s;
+  line-height: 1;
+}
+.ai-btn:hover { opacity: 1; transform: scale(1.1); }
+.ai-btn:disabled { opacity: 0.5; cursor: default; transform: none; }
+
+.ai-btn--loading { background: var(--muted); }
+
+@keyframes ai-spin { to { transform: rotate(360deg); } }
+.ai-spinner {
+  display: block; width: 12px; height: 12px; border-radius: 50%;
+  border: 2px solid transparent; border-top-color: var(--bg);
+  animation: ai-spin 0.7s linear infinite;
+}
+
 /* ---------- Align ---------- */
 .hide-tasks-toggle {
   display: block;

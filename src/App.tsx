@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { callGemini, geminiAvailable, PROMPTS } from './gemini';
 import {
   domains as seedDomains,
   initialGoals,
@@ -522,6 +523,34 @@ export default function App() {
   );
 }
 
+/* ---------------- AI Refine Button ---------------- */
+function AiRefineBtn({ value, onResult, buildPrompt }: {
+  value: string;
+  onResult: (text: string) => void;
+  buildPrompt: (text: string) => string;
+}) {
+  const [loading, setLoading] = useState(false);
+  if (!geminiAvailable || !value.trim()) return null;
+
+  const run = async () => {
+    setLoading(true);
+    try {
+      const result = await callGemini(buildPrompt(value));
+      if (result) onResult(result);
+    } catch {
+      // silently ignore — no key or network issue
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <button type="button" className={`ai-btn${loading ? ' ai-btn--loading' : ''}`} onClick={run} title="Improve with AI" disabled={loading}>
+      {loading ? <span className="ai-spinner" /> : '✦'}
+    </button>
+  );
+}
+
 /* ---------------- Foundation ---------------- */
 function Foundation({
   domains,
@@ -570,12 +599,15 @@ function Foundation({
                   onChange={(next) => updateValues(d.id, next)}
                 />
                 <div className="label">Vision</div>
-                <textarea
-                  className="vision"
-                  rows={3}
-                  value={d.vision}
-                  onChange={(e) => updateVision(d.id, e.target.value)}
-                />
+                <div className="ai-field">
+                  <textarea
+                    className="vision"
+                    rows={3}
+                    value={d.vision}
+                    onChange={(e) => updateVision(d.id, e.target.value)}
+                  />
+                  <AiRefineBtn value={d.vision} onResult={(v) => updateVision(d.id, v)} buildPrompt={PROMPTS.vision} />
+                </div>
               </div>
             )}
           </div>
@@ -1203,13 +1235,16 @@ function AddActionForm({
         </button>
       </div>
 
-      <input
-        autoFocus
-        placeholder={kind === 'habit' ? 'e.g. Run' : 'e.g. Write the launch post'}
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        onKeyDown={(e) => e.key === 'Enter' && submit()}
-      />
+      <div className="ai-field">
+        <input
+          autoFocus
+          placeholder={kind === 'habit' ? 'e.g. Run' : 'e.g. Write the launch post'}
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && submit()}
+        />
+        <AiRefineBtn value={title} onResult={setTitle} buildPrompt={kind === 'habit' ? PROMPTS.habit : PROMPTS.task} />
+      </div>
 
       {kind === 'habit' ? (
         <>
@@ -1298,13 +1333,16 @@ function AddShortGoalForm({
 
   return (
     <div className={`${cls} add-form`}>
-      <input
-        autoFocus
-        placeholder="e.g. Run a 5K"
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        onKeyDown={(e) => e.key === 'Enter' && submit()}
-      />
+      <div className="ai-field">
+        <input
+          autoFocus
+          placeholder="e.g. Run a 5K"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && submit()}
+        />
+        <AiRefineBtn value={title} onResult={setTitle} buildPrompt={PROMPTS.stGoal} />
+      </div>
       {domainValues.length > 0 && (
         <>
           <div className="field-label">Values (optional)</div>
@@ -1371,13 +1409,16 @@ function AddGoalForm({
 
   return (
     <div className="inline-add add-form">
-      <input
-        autoFocus
-        placeholder="e.g. Ship a product I fully own"
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        onKeyDown={(e) => e.key === 'Enter' && submit()}
-      />
+      <div className="ai-field">
+        <input
+          autoFocus
+          placeholder="e.g. Ship a product I fully own"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && submit()}
+        />
+        <AiRefineBtn value={title} onResult={setTitle} buildPrompt={PROMPTS.ltGoal} />
+      </div>
       {domainValues.length > 0 && (
         <>
           <div className="field-label">Values (optional)</div>
@@ -1515,19 +1556,22 @@ function GoalNode({
           )}
         </div>
         {editingTitle ? (
-          <input
-            className="node-title-input"
-            value={draft}
-            autoFocus
-            onChange={(e) => setDraft(e.target.value)}
-            onBlur={commitRename}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') commitRename();
-              if (e.key === 'Escape') { setDraft(goal.title); setEditingTitle(false); }
-              e.stopPropagation();
-            }}
-            onClick={(e) => e.stopPropagation()}
-          />
+          <div className="ai-field" onClick={(e) => e.stopPropagation()}>
+            <input
+              className="node-title-input"
+              value={draft}
+              autoFocus
+              onChange={(e) => setDraft(e.target.value)}
+              onBlur={commitRename}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitRename();
+                if (e.key === 'Escape') { setDraft(goal.title); setEditingTitle(false); }
+                e.stopPropagation();
+              }}
+              onClick={(e) => e.stopPropagation()}
+            />
+            <AiRefineBtn value={draft} onResult={setDraft} buildPrompt={goal.horizon === 'long' ? PROMPTS.ltGoal : PROMPTS.stGoal} />
+          </div>
         ) : (
           <div
             className="node-title"
