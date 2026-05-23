@@ -2047,15 +2047,9 @@ function GoalStrip({
   const healthPct    = Math.round(metrics.health * 100);
   const donePct      = Math.round(metrics.completionRate * 100);
   const freshPct     = Math.round(metrics.recencyScore * 100);
-  const horizonLabel = isShort
-    ? `Short-term · ${goal.timeframe ?? 1}mo`
-    : `Long-term · ${goal.timeframe ?? 1}yr`;
   return (
     <div className={`goal-strip${isShort ? ' goal-strip--short' : ''}`}>
-      <div className="strip-header">
-        <div className="strip-title">{goal.title}</div>
-        <span className={`strip-horizon-badge${isShort ? ' strip-horizon-badge--short' : ''}`}>{horizonLabel}</span>
-      </div>
+      <div className="strip-title">{goal.title}</div>
       <div className="strip-row">
         <span className="strip-label">Time</span>
         <div className="strip-track">
