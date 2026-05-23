@@ -2143,7 +2143,18 @@ function GoalsDashboard({
     return () => observer.disconnect();
   }, []);
 
-  const healthNote = (
+  const stHealthNote = (
+    <div className="dash-health-note">
+      <div className="dash-health-note-title">How Health is calculated</div>
+      <p>Health = <b>weighted % done</b> × <b>how recently</b> — both must be high.</p>
+      <div className="dash-health-weights">
+        <span><b>2×</b> Task</span>
+        <span><b>1–4×</b> Habit (streak grows weight)</span>
+      </div>
+    </div>
+  );
+
+  const ltHealthNote = (
     <div className="dash-health-note">
       <div className="dash-health-note-title">How Health is calculated</div>
       <p>Health = <b>weighted % done</b> × <b>how recently</b> — both must be high.</p>
@@ -2186,7 +2197,7 @@ function GoalsDashboard({
               </div>
             );
           })}
-          {healthNote}
+          {stHealthNote}
         </div>
 
         {/* Slide 1: Long-term */}
@@ -2207,7 +2218,7 @@ function GoalsDashboard({
               </div>
             );
           })}
-          {healthNote}
+          {ltHealthNote}
         </div>
       </div>
 
