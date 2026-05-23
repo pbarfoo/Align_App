@@ -1611,7 +1611,7 @@ h1 {
 .hpb-row {
   display: grid;
   grid-template-columns: 1fr auto auto auto auto;
-  gap: 4px 8px;
+  gap: 4px 6px;
   align-items: baseline;
   font-size: 11px;
 }
@@ -1637,6 +1637,16 @@ h1 {
 .hpb-pct    { text-align: right; }
 .hpb-fresh  { text-align: right; }
 .hpb-weight { font-size: 10px; font-weight: 600; color: var(--text); text-align: right; white-space: nowrap; }
+
+/* × separators between value columns */
+.hpb-row .hpb-pct::before,
+.hpb-row .hpb-count::before,
+.hpb-row .hpb-weight::before {
+  content: '×';
+  margin-right: 4px;
+  color: var(--muted);
+  font-weight: 400;
+}
 .health-popup-note {
   font-size: 10px;
   color: var(--muted);

@@ -2133,35 +2133,35 @@ function GoalStrip({
             <div className="health-popup-breakdown">
               <div className="hpb-header">
                 <span />
+                <span>fresh</span>
                 <span>%</span>
                 <span>done</span>
-                <span>fresh</span>
                 <span>wt</span>
               </div>
               {bd.stGoals && bd.stGoals.total > 0 && (
                 <div className="hpb-row">
                   <span className="hpb-label">Sub-goals</span>
+                  <span className="hpb-fresh">{bd.stGoals.fresh}%</span>
                   <span className="hpb-pct">{Math.round(bd.stGoals.done / bd.stGoals.total * 100)}%</span>
                   <span className="hpb-count">{bd.stGoals.done}/{bd.stGoals.total}</span>
-                  <span className="hpb-fresh">{bd.stGoals.fresh}%</span>
                   <span className="hpb-weight">10×</span>
                 </div>
               )}
               {bd.tasks.total > 0 && (
                 <div className="hpb-row">
                   <span className="hpb-label">Tasks</span>
+                  <span className="hpb-fresh">{bd.tasks.fresh}%</span>
                   <span className="hpb-pct">{Math.round(bd.tasks.done / bd.tasks.total * 100)}%</span>
                   <span className="hpb-count">{bd.tasks.done}/{bd.tasks.total}</span>
-                  <span className="hpb-fresh">{bd.tasks.fresh}%</span>
                   <span className="hpb-weight">2×</span>
                 </div>
               )}
               {bd.habits.total > 0 && (
                 <div className="hpb-row">
                   <span className="hpb-label">Habits</span>
+                  <span className="hpb-fresh">{bd.habits.fresh}%</span>
                   <span className="hpb-pct">{Math.round(bd.habits.done / bd.habits.total * 100)}%</span>
                   <span className="hpb-count">{bd.habits.done}/{bd.habits.total}</span>
-                  <span className="hpb-fresh">{bd.habits.fresh}%</span>
                   <span className="hpb-weight">1–4×</span>
                 </div>
               )}
