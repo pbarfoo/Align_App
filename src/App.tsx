@@ -599,7 +599,7 @@ function Foundation({
                   onChange={(next) => updateValues(d.id, next)}
                 />
                 <div className="label">Vision</div>
-                <div className="ai-field">
+                <div className="ai-field ai-field--block">
                   <textarea
                     className="vision"
                     rows={3}
