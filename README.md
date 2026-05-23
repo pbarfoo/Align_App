@@ -14,37 +14,61 @@ Align helps you stay on track with what matters most. You define goals across **
 - **Reflection log** — Full history of weekly reflections with domain-grouped value scores
 - **Auth + cloud sync** — Magic-link email login; all data persisted to Supabase per account
 
-### Health formula
-`health = completionRate × recencyScore`
+---
 
-Only active items (ST goals, tasks, habits) are scored — the LT goal is excluded so the bar is fully achievable through daily work. Habits with long streaks get a higher weight *and* an extended freshness window (4–8 weeks), doubly rewarding consistency.
+## Option 1: Use the hosted app
 
-## Tech stack
+No setup required. Just visit:
 
-| Layer | Choice |
-|-------|--------|
-| UI framework | React 18 |
-| Build tool | Vite |
-| Language | TypeScript |
-| Auth & persistence | Supabase (magic-link email + Postgres) |
-| Hosting | Vercel |
-| Styling | Plain CSS (dark gold aesthetic) |
+**[align-app-nine.vercel.app](https://align-app-nine.vercel.app)**
 
-## Getting started
+Enter your email, click the magic link, and you're in. Your data is private to your account.
+
+---
+
+## Option 2: Self-host your own instance
+
+Run your own copy with your own database. You'll need a free [Supabase](https://supabase.com) account and a free [Vercel](https://vercel.com) account.
+
+### 1. Clone the repo
 
 ```bash
+git clone https://github.com/pbarfoo/Align_App.git
+cd Align_App
 npm install
+```
+
+### 2. Create a Supabase project
+
+1. Go to [supabase.com](https://supabase.com) and create a new project
+2. In the Supabase dashboard, open the **SQL editor** and run the contents of [`supabase/schema.sql`](supabase/schema.sql)
+3. Copy your project URL and anon key from **Project Settings → API**
+
+### 3. Configure environment variables
+
+Create a `.env` file in the project root:
+
+```
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key
+```
+
+### 4. Run locally
+
+```bash
 npm run dev
 ```
 
-Open [http://localhost:5173](http://localhost:5173).
+Open [http://localhost:5173](http://localhost:5173). Log in with your email — the magic link will redirect back to localhost.
 
-You'll need a `.env` file with your Supabase project credentials:
+### 5. Deploy to Vercel
 
-```
-VITE_SUPABASE_URL=your-project-url
-VITE_SUPABASE_ANON_KEY=your-anon-key
-```
+1. Push the repo to GitHub
+2. Import the project on [vercel.com](https://vercel.com)
+3. Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` as environment variables in the Vercel project settings
+4. Deploy — Vercel will build and host it automatically
+
+---
 
 ## Project structure
 
@@ -57,6 +81,12 @@ src/
 supabase/
   schema.sql    # Postgres schema with RLS policies
 ```
+
+### Health formula
+
+`health = completionRate × recencyScore`
+
+Only active items (ST goals, tasks, habits) are scored. Habits with long streaks get a higher weight and an extended freshness window (4–8 weeks), doubly rewarding consistency.
 
 ## License
 
