@@ -1033,7 +1033,7 @@ h1 {
 .profile-btn {
   position: fixed;
   top: 14px;
-  right: 16px;
+  right: 60px;
   width: 36px;
   height: 36px;
   border-radius: 50%;
@@ -1050,13 +1050,73 @@ h1 {
 .profile-btn:hover { border-color: var(--accent); color: var(--accent); }
 .profile-btn svg { width: 18px; height: 18px; }
 
-.signout-row {
+.user-menu {
+  position: fixed;
+  top: 14px;
+  right: 16px;
+  z-index: 20;
+}
+
+.user-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 0.18s, color 0.18s;
+}
+.user-btn:hover { border-color: var(--accent); color: var(--accent); }
+.user-btn svg { width: 18px; height: 18px; }
+
+.user-dropdown-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 19;
+}
+
+.user-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 180px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
   display: flex;
   flex-direction: column;
-  align-items: center;
   gap: 8px;
-  margin: 36px 0 calc(96px + env(safe-area-inset-bottom));
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  z-index: 21;
 }
+
+.user-dropdown-email {
+  font-size: 11px;
+  color: var(--muted);
+  padding: 2px 4px;
+  word-break: break-all;
+}
+
+.user-dropdown-signout {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 7px 12px;
+  color: var(--fg);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.18s, color 0.18s;
+  text-align: left;
+}
+.user-dropdown-signout:hover { border-color: #e5544b; color: #e5544b; }
+
+/* legacy — kept in case still referenced elsewhere */
 .signout-email {
   font-size: 12px;
   color: var(--muted);
