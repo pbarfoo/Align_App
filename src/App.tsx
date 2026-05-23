@@ -392,7 +392,6 @@ export default function App() {
             habits={habits}
             setHabits={setHabits}
             goals={goals}
-            domains={domains}
             onReflect={() => setReflectOpen(true)}
           />
         )}
@@ -1629,17 +1628,19 @@ function Today({
   habits,
   setHabits,
   goals,
-  domains,
   onReflect,
 }: {
   habits: Habit[];
   setHabits: React.Dispatch<React.SetStateAction<Habit[]>>;
   goals: Goal[];
-  domains: Domain[];
   onReflect: () => void;
 }) {
-  const done = habits.filter((h) => h.kind === 'task' ? !!h.completed : isHabitDoneThisPeriod(h)).length;
-  const pct = habits.length ? Math.round((done / habits.length) * 100) : 0;
+  const now = new Date();
+  const todayStr = now.toISOString().slice(0, 10);
+  const in7  = new Date(now.getTime() + 7  * 86400000).toISOString().slice(0, 10);
+  const in30 = new Date(now.getTime() + 30 * 86400000).toISOString().slice(0, 10);
+  const in90 = new Date(now.getTime() + 90 * 86400000).toISOString().slice(0, 10);
+  const isWeekday = now.getDay() !== 0 && now.getDay() !== 6;
 
   const toggle = (id: string) => {
     setHabits((prev) => prev.map((h) => {
@@ -1650,72 +1651,128 @@ function Today({
         ...h,
         doneToday: h.kind === 'habit' ? turningOn : h.doneToday,
         ...(h.kind === 'task' ? { completed: turningOn } : {}),
-        ...(h.kind === 'habit'
-          ? { streak: turningOn ? (h.streak || 0) + 1 : 0 }
-          : {}),
+        ...(h.kind === 'habit' ? { streak: turningOn ? (h.streak || 0) + 1 : 0 } : {}),
         completedAt: turningOn ? Date.now() : undefined,
       };
     }));
   };
 
-  const lineage = (goalId: string) => {
-    const g = goals.find((x) => x.id === goalId);
-    if (!g) return '';
-    return g.title;
+  const goalTitle = (goalId: string) => goals.find((g) => g.id === goalId)?.title ?? '';
+  const domainColor = (domainId: string) => DOMAIN_COLORS[domainId] ?? 'var(--accent)';
+
+  // Bucket habits by recurrence
+  const dayHabits   = habits.filter((h) => h.kind === 'habit' && (h.recurrence === 'daily' || (h.recurrence === 'weekdays' && isWeekday)));
+  const weekHabits  = habits.filter((h) => h.kind === 'habit' && h.recurrence === 'weekly');
+  const monthHabits = habits.filter((h) => h.kind === 'habit' && h.recurrence === 'monthly');
+  const otherHabits = habits.filter((h) => h.kind === 'habit' && !['daily','weekdays','weekly','monthly'].includes(h.recurrence ?? ''));
+
+  // Bucket tasks by due date
+  const dayTasks     = habits.filter((h) => h.kind === 'task' && !!h.dueDate && h.dueDate <= todayStr);
+  const weekTasks    = habits.filter((h) => h.kind === 'task' && !!h.dueDate && h.dueDate > todayStr && h.dueDate <= in7);
+  const monthTasks   = habits.filter((h) => h.kind === 'task' && !!h.dueDate && h.dueDate > in7   && h.dueDate <= in30);
+  const quarterTasks = habits.filter((h) => h.kind === 'task' && !!h.dueDate && h.dueDate > in30  && h.dueDate <= in90);
+  const undatedTasks = habits.filter((h) => h.kind === 'task' && !h.dueDate && !h.completed);
+
+  // Bucket goals by timeframe
+  const activeShort = goals.filter((g) => g.horizon === 'short' && !g.completedAt);
+  const weekGoals    = activeShort.filter((g) => g.timeframe <= 1);
+  const monthGoals   = activeShort.filter((g) => g.timeframe > 1 && g.timeframe <= 3);
+  const quarterGoals = activeShort.filter((g) => g.timeframe > 3);
+  const longGoals    = goals.filter((g) => g.horizon === 'long' && !g.completedAt);
+
+  const HabitRow = ({ h }: { h: Habit }) => {
+    const isDone = h.kind === 'task' ? !!h.completed : isHabitDoneThisPeriod(h);
+    return (
+      <div className={`habit-row${isDone ? ' done' : ''}`} key={h.id}>
+        <button className={`check${isDone ? ' on' : ''}`} onClick={() => toggle(h.id)} aria-label="toggle">
+          <Tick />
+        </button>
+        <div>
+          <div className={`habit-title${isDone ? ' done' : ''}`}>{h.title}</div>
+          <div className="habit-meta">
+            {h.kind === 'task' ? getTaskCountdown(h) : getRecurrenceString(h)}
+            {' · '}<span style={{ color: domainColor(goals.find(g => g.id === h.goalId)?.domainId ?? '') }}>{goalTitle(h.goalId)}</span>
+          </div>
+        </div>
+      </div>
+    );
   };
 
-  const allValues = domains.flatMap((d) => d.values);
-  const weekValue = allValues.length
-    ? allValues[getISOWeek(new Date()) % allValues.length]
-    : null;
+  const GoalPill = ({ g }: { g: Goal }) => {
+    const color = domainColor(g.domainId);
+    return (
+      <div className="focus-goal-pill" style={{ borderColor: color }}>
+        <span className="focus-goal-dot" style={{ background: color }} />
+        <span className="focus-goal-title">{g.title}</span>
+        <span className="focus-goal-tf" style={{ color }}>{g.horizon === 'long' ? `${g.timeframe}yr` : `${g.timeframe}mo`}</span>
+      </div>
+    );
+  };
+
+  const Section = ({ label, period, children }: { label: string; period: string; children: React.ReactNode }) => (
+    <div className="focus-section">
+      <div className="focus-section-header">
+        <span className="focus-section-label">{label}</span>
+        <span className="focus-section-period">{period}</span>
+      </div>
+      {children}
+    </div>
+  );
+
+  const allDone = habits.filter((h) => h.kind === 'task' ? !!h.completed : isHabitDoneThisPeriod(h)).length;
+  const pct = habits.length ? Math.round((allDone / habits.length) * 100) : 0;
 
   return (
     <div className="screen">
       <div className="eyebrow">Today</div>
-      <h1>Small, aligned acts</h1>
-      <p className="lede">
-        Not a to-do list. Just the habits and tasks that move your values
-        forward.
-      </p>
-
-      {weekValue && (
-        <div className="week-value">
-          This week: leaning into <b>{weekValue}</b>
-        </div>
-      )}
+      <h1>Your focus</h1>
+      <p className="lede">What matters today, this week, this month, and this quarter.</p>
 
       <div className="progress-wrap">
-        <div className="progress-num">
-          {done}
-          <span> / {habits.length} done</span>
-        </div>
-        <div className="bar">
-          <i style={{ width: `${pct}%` }} />
-        </div>
+        <div className="progress-num">{allDone}<span> / {habits.length} done</span></div>
+        <div className="bar"><i style={{ width: `${pct}%` }} /></div>
       </div>
 
-      {habits.map((h) => (
-        <div className="habit-row" key={h.id}>
-          <button
-            className={`check${(h.kind === 'task' ? !!h.completed : isHabitDoneThisPeriod(h)) ? ' on' : ''}`}
-            onClick={() => toggle(h.id)}
-            aria-label="toggle"
-          >
-            <Tick />
-          </button>
-          <div>
-            <div className={`habit-title${(h.kind === 'task' ? !!h.completed : isHabitDoneThisPeriod(h)) ? ' done' : ''}`}>
-              {h.title}
-            </div>
-            <div className="habit-meta">
-              {h.kind === 'task'
-                ? `Task · ${getTaskCountdown(h)}`
-                : getRecurrenceString(h)}
-              &nbsp;·&nbsp; serves <b>{lineage(h.goalId)}</b>
-            </div>
-          </div>
-        </div>
-      ))}
+      {/* ── Day ── */}
+      <Section label="Today" period={now.toLocaleDateString('en', { weekday: 'long', month: 'short', day: 'numeric' })}>
+        {dayHabits.map((h) => <HabitRow key={h.id} h={h} />)}
+        {dayTasks.map((h) => <HabitRow key={h.id} h={h} />)}
+        {undatedTasks.map((h) => <HabitRow key={h.id} h={h} />)}
+        {dayHabits.length + dayTasks.length + undatedTasks.length === 0 && (
+          <div className="focus-empty">Nothing scheduled for today</div>
+        )}
+      </Section>
+
+      {/* ── Week ── */}
+      <Section label="This week" period={`Week ${getISOWeek(now)}`}>
+        {weekHabits.map((h) => <HabitRow key={h.id} h={h} />)}
+        {weekTasks.map((h) => <HabitRow key={h.id} h={h} />)}
+        {weekGoals.map((g) => <GoalPill key={g.id} g={g} />)}
+        {weekHabits.length + weekTasks.length + weekGoals.length === 0 && (
+          <div className="focus-empty">No weekly focus set</div>
+        )}
+      </Section>
+
+      {/* ── Month ── */}
+      <Section label="This month" period={now.toLocaleDateString('en', { month: 'long', year: 'numeric' })}>
+        {monthHabits.map((h) => <HabitRow key={h.id} h={h} />)}
+        {monthTasks.map((h) => <HabitRow key={h.id} h={h} />)}
+        {monthGoals.map((g) => <GoalPill key={g.id} g={g} />)}
+        {otherHabits.map((h) => <HabitRow key={h.id} h={h} />)}
+        {monthHabits.length + monthTasks.length + monthGoals.length + otherHabits.length === 0 && (
+          <div className="focus-empty">No monthly focus set</div>
+        )}
+      </Section>
+
+      {/* ── Quarter ── */}
+      <Section label="This quarter" period={`Q${Math.floor(now.getMonth() / 3) + 1} ${now.getFullYear()}`}>
+        {quarterTasks.map((h) => <HabitRow key={h.id} h={h} />)}
+        {quarterGoals.map((g) => <GoalPill key={g.id} g={g} />)}
+        {longGoals.map((g) => <GoalPill key={g.id} g={g} />)}
+        {quarterTasks.length + quarterGoals.length + longGoals.length === 0 && (
+          <div className="focus-empty">No quarterly goals set</div>
+        )}
+      </Section>
 
       {new Date().getDay() === 0 && (
         <button className="reflect-prompt" onClick={onReflect}>
