@@ -1639,7 +1639,7 @@ function Today({
   const todayStr = now.toISOString().slice(0, 10);
   const in7  = new Date(now.getTime() + 7  * 86400000).toISOString().slice(0, 10);
   const in30 = new Date(now.getTime() + 30 * 86400000).toISOString().slice(0, 10);
-  const in90 = new Date(now.getTime() + 90 * 86400000).toISOString().slice(0, 10);
+  const quarterEnd = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3 + 3, 0).toISOString().slice(0, 10);
   const isWeekday = now.getDay() !== 0 && now.getDay() !== 6;
 
   const toggle = (id: string) => {
@@ -1670,7 +1670,7 @@ function Today({
   const dayTasks     = habits.filter((h) => h.kind === 'task' && !!h.dueDate && h.dueDate <= todayStr);
   const weekTasks    = habits.filter((h) => h.kind === 'task' && !!h.dueDate && h.dueDate > todayStr && h.dueDate <= in7);
   const monthTasks   = habits.filter((h) => h.kind === 'task' && !!h.dueDate && h.dueDate > in7   && h.dueDate <= in30);
-  const quarterTasks = habits.filter((h) => h.kind === 'task' && !!h.dueDate && h.dueDate > in30  && h.dueDate <= in90);
+  const quarterTasks = habits.filter((h) => h.kind === 'task' && !!h.dueDate && h.dueDate > in30  && h.dueDate <= quarterEnd);
   const undatedTasks = habits.filter((h) => h.kind === 'task' && !h.dueDate && !h.completed);
 
   // Bucket goals by timeframe
