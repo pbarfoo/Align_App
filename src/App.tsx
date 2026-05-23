@@ -1906,9 +1906,9 @@ function vitalityFor(
 }
 
 const DOMAIN_COLORS: Record<string, string> = {
-  career: '#d4836a',      // coral
-  self: '#6ab8c8',        // teal
-  community: '#a96ac8',   // violet
+  career: '#e8883c',      // orange
+  self: '#4eb8e8',        // sky blue
+  community: '#72ce6a',   // green
 };
 
 function DashSpider({
