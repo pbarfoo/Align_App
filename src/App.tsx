@@ -1873,15 +1873,17 @@ function vitalityFor(
 
   type Item = { w: number; done: boolean; r: number };
 
+  const stGoalItems: Item[] = shortGoals.map((g): Item =>
+    ({ w: 10, done: !!g.completedAt, r: recency(g.completedAt) }));
+  const taskItems: Item[] = subtreeHabits.filter((h) => h.kind === 'task').map((h): Item =>
+    ({ w: 2, done: !!h.completed, r: recency(h.completedAt) }));
+  const habitItems: Item[] = subtreeHabits.filter((h) => h.kind === 'habit').map((h): Item =>
+    ({ w: habitWeight(h), done: isHabitDoneThisPeriod(h), r: habitRecency(h, h.completedAt) }));
+
   // ALL items — includes LT goal (weight 50) for the Done bar
   const allItems: Item[] = [
-    { w: 50, done: !!lg.completedAt,             r: recency(lg.completedAt) },
-    ...shortGoals.map((g): Item =>
-      ({ w: 10, done: !!g.completedAt,           r: recency(g.completedAt) })),
-    ...subtreeHabits.filter((h) => h.kind === 'task').map((h): Item =>
-      ({ w: 2,  done: !!h.completed,             r: recency(h.completedAt) })),
-    ...subtreeHabits.filter((h) => h.kind === 'habit').map((h): Item =>
-      ({ w: habitWeight(h), done: isHabitDoneThisPeriod(h), r: habitRecency(h, h.completedAt) })),
+    { w: 50, done: !!lg.completedAt, r: recency(lg.completedAt) },
+    ...stGoalItems, ...taskItems, ...habitItems,
   ];
 
   // Done bar: weighted fraction of the entire tree (including LT goal)
@@ -1891,7 +1893,7 @@ function vitalityFor(
 
   // Health: weighted completion × weighted recency over active sub-items only
   // (ST goals 10×, tasks 2×, habits 1–4×). LT goal completion lives in Done bar.
-  const activeItems     = allItems.slice(1);
+  const activeItems     = [...stGoalItems, ...taskItems, ...habitItems];
   const activeTotalW    = activeItems.reduce((s, x) => s + x.w, 0);
   const activeDoneItems = activeItems.filter((x) => x.done);
   const activeDoneW     = activeDoneItems.reduce((s, x) => s + x.w, 0);
@@ -1900,12 +1902,14 @@ function vitalityFor(
     ? activeDoneItems.reduce((s, x) => s + x.r * x.w, 0) / activeDoneW : 0;
   const health = completionRate * recencyScore;
 
-  const sgTasks  = subtreeHabits.filter((h) => h.kind === 'task');
-  const sgHabits = subtreeHabits.filter((h) => h.kind === 'habit');
+  const bdFresh = (items: Item[]) => {
+    const d = items.filter((x) => x.done);
+    return d.length > 0 ? Math.round(d.reduce((s, x) => s + x.r, 0) / d.length * 100) : 0;
+  };
   const breakdown = {
-    stGoals: { done: shortGoals.filter((g) => !!g.completedAt).length,   total: shortGoals.length },
-    tasks:   { done: sgTasks.filter((h) => !!h.completed).length,         total: sgTasks.length },
-    habits:  { done: sgHabits.filter((h) => isHabitDoneThisPeriod(h)).length, total: sgHabits.length },
+    stGoals: { done: stGoalItems.filter((x) => x.done).length, total: stGoalItems.length, fresh: bdFresh(stGoalItems) },
+    tasks:   { done: taskItems.filter((x) => x.done).length,   total: taskItems.length,   fresh: bdFresh(taskItems) },
+    habits:  { done: habitItems.filter((x) => x.done).length,  total: habitItems.length,  fresh: bdFresh(habitItems) },
   };
 
   const momentum = (completion + health) / 2;
@@ -1913,9 +1917,9 @@ function vitalityFor(
 }
 
 type Breakdown = {
-  stGoals?: { done: number; total: number };
-  tasks:    { done: number; total: number };
-  habits:   { done: number; total: number };
+  stGoals?: { done: number; total: number; fresh: number };
+  tasks:    { done: number; total: number; fresh: number };
+  habits:   { done: number; total: number; fresh: number };
 };
 
 const DOMAIN_COLORS: Record<string, string> = {
@@ -1960,9 +1964,13 @@ function stGoalMetrics(sg: Goal, habits: Habit[]): { time: number; completion: n
     ? activeDoneItems.reduce((s, x) => s + x.r * x.w, 0) / activeDoneW : 0;
   const health = completionRate * recencyScore;
 
+  const bdFresh = (items: Item[]) => {
+    const d = items.filter((x) => x.done);
+    return d.length > 0 ? Math.round(d.reduce((s, x) => s + x.r, 0) / d.length * 100) : 0;
+  };
   const breakdown = {
-    tasks:  { done: taskItems.filter((x) => x.done).length,  total: taskItems.length },
-    habits: { done: habitItems.filter((x) => x.done).length, total: habitItems.length },
+    tasks:  { done: taskItems.filter((x) => x.done).length,  total: taskItems.length,  fresh: bdFresh(taskItems) },
+    habits: { done: habitItems.filter((x) => x.done).length, total: habitItems.length, fresh: bdFresh(habitItems) },
   };
 
   const momentum = (completion + health) / 2;
@@ -2123,25 +2131,38 @@ function GoalStrip({
           </div>
           {bd && (
             <div className="health-popup-breakdown">
+              <div className="hpb-header">
+                <span />
+                <span>done</span>
+                <span>%</span>
+                <span>fresh</span>
+                <span>wt</span>
+              </div>
               {bd.stGoals && bd.stGoals.total > 0 && (
                 <div className="hpb-row">
                   <span className="hpb-label">Sub-goals</span>
                   <span className="hpb-count">{bd.stGoals.done}/{bd.stGoals.total}</span>
-                  <span className="hpb-weight">10× each</span>
+                  <span className="hpb-pct">{bd.stGoals.total > 0 ? Math.round(bd.stGoals.done / bd.stGoals.total * 100) : 0}%</span>
+                  <span className="hpb-fresh">{bd.stGoals.fresh}%</span>
+                  <span className="hpb-weight">10×</span>
                 </div>
               )}
               {bd.tasks.total > 0 && (
                 <div className="hpb-row">
                   <span className="hpb-label">Tasks</span>
                   <span className="hpb-count">{bd.tasks.done}/{bd.tasks.total}</span>
-                  <span className="hpb-weight">2× each</span>
+                  <span className="hpb-pct">{bd.tasks.total > 0 ? Math.round(bd.tasks.done / bd.tasks.total * 100) : 0}%</span>
+                  <span className="hpb-fresh">{bd.tasks.fresh}%</span>
+                  <span className="hpb-weight">2×</span>
                 </div>
               )}
               {bd.habits.total > 0 && (
                 <div className="hpb-row">
                   <span className="hpb-label">Habits</span>
                   <span className="hpb-count">{bd.habits.done}/{bd.habits.total}</span>
-                  <span className="hpb-weight">1–4× (streak)</span>
+                  <span className="hpb-pct">{bd.habits.total > 0 ? Math.round(bd.habits.done / bd.habits.total * 100) : 0}%</span>
+                  <span className="hpb-fresh">{bd.habits.fresh}%</span>
+                  <span className="hpb-weight">1–4×</span>
                 </div>
               )}
             </div>
