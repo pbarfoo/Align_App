@@ -2134,7 +2134,7 @@ function GoalStrip({
               <div className="hpb-header">
                 <span />
                 <span>%</span>
-                <span>done</span>
+                <span>count</span>
                 <span>fresh</span>
                 <span>wt</span>
               </div>
@@ -2142,7 +2142,7 @@ function GoalStrip({
                 <div className="hpb-row">
                   <span className="hpb-label">Sub-goals</span>
                   <span className="hpb-pct">{Math.round(bd.stGoals.done / bd.stGoals.total * 100)}%</span>
-                  <span className="hpb-count">{bd.stGoals.done}/{bd.stGoals.total}</span>
+                  <span className="hpb-count">{bd.stGoals.done}</span>
                   <span className="hpb-fresh">{bd.stGoals.fresh}%</span>
                   <span className="hpb-weight">10×</span>
                 </div>
@@ -2151,7 +2151,7 @@ function GoalStrip({
                 <div className="hpb-row">
                   <span className="hpb-label">Tasks</span>
                   <span className="hpb-pct">{Math.round(bd.tasks.done / bd.tasks.total * 100)}%</span>
-                  <span className="hpb-count">{bd.tasks.done}/{bd.tasks.total}</span>
+                  <span className="hpb-count">{bd.tasks.done}</span>
                   <span className="hpb-fresh">{bd.tasks.fresh}%</span>
                   <span className="hpb-weight">2×</span>
                 </div>
@@ -2160,7 +2160,7 @@ function GoalStrip({
                 <div className="hpb-row">
                   <span className="hpb-label">Habits</span>
                   <span className="hpb-pct">{Math.round(bd.habits.done / bd.habits.total * 100)}%</span>
-                  <span className="hpb-count">{bd.habits.done}/{bd.habits.total}</span>
+                  <span className="hpb-count">{bd.habits.done}</span>
                   <span className="hpb-fresh">{bd.habits.fresh}%</span>
                   <span className="hpb-weight">1–4×</span>
                 </div>
