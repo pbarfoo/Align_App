@@ -1140,8 +1140,9 @@ h1 {
   position: fixed;
   inset: 0;
   background: var(--bg);
-  overflow-y: auto;
-  padding: 24px 20px 80px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   z-index: 200;
   animation: slideUp 0.22s ease;
 }
@@ -1149,7 +1150,8 @@ h1 {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 24px;
+  flex-shrink: 0;
+  padding: 20px 20px 0;
 }
 .icon-btn {
   background: none;
@@ -1368,9 +1370,13 @@ h1 {
 /* ---------- Goals Dashboard ---------- */
 
 /* Spider carousel */
-.spider-carousel-wrapper { margin-bottom: 24px; }
-
-.spider-pills { display: flex; gap: 8px; justify-content: center; margin-bottom: 14px; }
+.spider-pills {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 14px 20px 0;
+}
 .spider-pill {
   padding: 7px 20px;
   border-radius: 999px;
@@ -1389,25 +1395,22 @@ h1 {
 }
 
 .spider-track {
+  flex: 1;
   display: flex;
   overflow-x: scroll;
   scroll-snap-type: x mandatory;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
   -ms-overflow-style: none;
-  min-height: 360px;
 }
 .spider-track::-webkit-scrollbar { display: none; }
 
 .spider-slide {
   flex: 0 0 100%;
   scroll-snap-align: start;
-  overflow: visible;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 8px;
-  min-height: 120px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 16px 20px 80px;
 }
 
 .spider-empty {
@@ -1454,7 +1457,7 @@ h1 {
   text-align: right;
 }
 
-.spider-dots { display: flex; gap: 8px; justify-content: center; margin-top: 6px; }
+.spider-dots { display: flex; gap: 8px; justify-content: center; flex-shrink: 0; padding: 8px 0 12px; }
 .spider-dot {
   width: 7px;
   height: 7px;

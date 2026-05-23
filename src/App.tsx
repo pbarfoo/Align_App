@@ -1946,25 +1946,6 @@ function stGoalMetrics(sg: Goal, habits: Habit[]): { time: number; completion: n
   return { time: elapsed, completion, health, completionRate, recencyScore, momentum };
 }
 
-function GoalHealthMini({ goals, values }: { goals: Goal[]; values: number[] }) {
-  return (
-    <div className="spider-mini">
-      {goals.map((g, i) => {
-        const color = DOMAIN_COLORS[g.domainId] ?? 'var(--accent)';
-        const pct = Math.round(values[i] * 100);
-        return (
-          <div key={g.id} className="spider-mini-row">
-            <div className="spider-mini-label" style={{ color }}>{g.title}</div>
-            <div className="spider-mini-track">
-              <div className="spider-mini-fill" style={{ width: `${pct}%`, background: color }} />
-            </div>
-            <span className="spider-mini-pct">{pct}%</span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
 
 function DashSpider({
   goals: topGoals,
@@ -1983,7 +1964,7 @@ function DashSpider({
     return [text.slice(0, split), text.slice(split + 1)];
   };
   const N = topGoals.length;
-  if (N < 3) return null;
+  if (N < 1) return null;
   const cx = 160, cy = 165, r = 115;
 
   const pt = (i: number, t: number) => {
@@ -2005,12 +1986,10 @@ function DashSpider({
 
   return (
     <svg viewBox="-80 0 480 350" className="radar-chart">
-      {/* Grid rings */}
-      {rings.map((t) => {
-        const pts = topGoals.map((_, i) => pt(i, t));
-        const d = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ') + 'Z';
-        return <path key={t} d={d} fill="none" stroke="var(--line)" strokeWidth="1" />;
-      })}
+      {/* Grid rings — always circles so they work for any N */}
+      {rings.map((t) => (
+        <circle key={t} cx={cx} cy={cy} r={r * t} fill="none" stroke="var(--line)" strokeWidth="1" />
+      ))}
       {/* Domain-coloured spokes */}
       {topGoals.map((g, i) => {
         const end   = pt(i, 1);
@@ -2018,11 +1997,12 @@ function DashSpider({
         return <line key={i} x1={cx} y1={cy} x2={end.x} y2={end.y}
           stroke={color} strokeWidth="1.5" opacity="0.5" />;
       })}
-      {/* Data polygon */}
-      <polygon points={poly} fill="var(--accent)" fillOpacity="0.2" stroke="var(--accent)" strokeWidth="2" />
+      {/* Data shape: polygon for N≥3, line for N=2, just dots for N=1 */}
+      {N >= 3 && <polygon points={poly} fill="var(--accent)" fillOpacity="0.2" stroke="var(--accent)" strokeWidth="2" />}
+      {N === 2 && <line x1={dataPoints[0].x} y1={dataPoints[0].y} x2={dataPoints[1].x} y2={dataPoints[1].y} stroke="var(--accent)" strokeWidth="2" strokeOpacity="0.5" />}
       {dataPoints.map((p, i) => {
         const color = DOMAIN_COLORS[topGoals[i].domainId] ?? 'var(--accent)';
-        return <circle key={i} cx={p.x} cy={p.y} r="4" fill={color} />;
+        return <circle key={i} cx={p.x} cy={p.y} r="5" fill={color} />;
       })}
       {/* Labels: goal title only, coloured by domain */}
       {topGoals.map((g, i) => {
@@ -2163,6 +2143,18 @@ function GoalsDashboard({
     return () => observer.disconnect();
   }, []);
 
+  const healthNote = (
+    <div className="dash-health-note">
+      <div className="dash-health-note-title">How Health is calculated</div>
+      <p>Health = <b>weighted % done</b> × <b>how recently</b> — both must be high.</p>
+      <div className="dash-health-weights">
+        <span><b>10×</b> Short-term sub-goal</span>
+        <span><b>2×</b> Task</span>
+        <span><b>1–4×</b> Habit (streak grows weight)</span>
+      </div>
+    </div>
+  );
+
   return (
     <div className="review-panel">
       <div className="review-header">
@@ -2170,60 +2162,58 @@ function GoalsDashboard({
         <button className="icon-btn" onClick={onClose}>✕</button>
       </div>
 
-      <div className="spider-carousel-wrapper">
-        <div className="spider-pills">
-          <button className={`spider-pill${activeSlide === 0 ? ' active' : ''}`} onClick={() => scrollToSlide(0)}>Long-term</button>
-          <button className={`spider-pill${activeSlide === 1 ? ' active' : ''}`} onClick={() => scrollToSlide(1)}>Short-term</button>
+      <div className="spider-pills">
+        <button className={`spider-pill${activeSlide === 0 ? ' active' : ''}`} onClick={() => scrollToSlide(0)}>Long-term</button>
+        <button className={`spider-pill${activeSlide === 1 ? ' active' : ''}`} onClick={() => scrollToSlide(1)}>Short-term</button>
+      </div>
+
+      <div className="spider-track" ref={trackRef} role="region" aria-label="Goal charts">
+        {/* Slide 0: Long-term */}
+        <div className="spider-slide">
+          {longGoals.length > 0
+            ? <DashSpider goals={longGoals} values={ltSpiderValues} />
+            : <p className="spider-empty">No long-term goals yet.</p>}
+          {domains.map((d) => {
+            const dLong = longGoals.filter((g) => g.domainId === d.id);
+            if (!dLong.length) return null;
+            const domainColor = DOMAIN_COLORS[d.id] ?? 'var(--accent)';
+            return (
+              <div key={d.id} className="dash-domain-section">
+                <div className="dash-domain-label" style={{ color: domainColor }}>{d.name}</div>
+                {dLong.map((lg) => (
+                  <GoalStrip key={lg.id} goal={lg} metrics={ltMetrics.get(lg.id)!} domainColor={domainColor} />
+                ))}
+              </div>
+            );
+          })}
+          {healthNote}
         </div>
-        <div className="spider-track" ref={trackRef} role="region" aria-label="Goal charts">
-          <div className="spider-slide">
-            {longGoals.length === 0
-              ? <p className="spider-empty">No long-term goals yet.</p>
-              : longGoals.length >= 3
-                ? <DashSpider goals={longGoals} values={ltSpiderValues} />
-                : <GoalHealthMini goals={longGoals} values={ltSpiderValues} />}
-          </div>
-          <div className="spider-slide">
-            {looseShort.length === 0
-              ? <p className="spider-empty">No standalone short-term goals yet.</p>
-              : looseShort.length >= 3
-                ? <DashSpider goals={looseShort} values={stSpiderValues} />
-                : <GoalHealthMini goals={looseShort} values={stSpiderValues} />}
-          </div>
-        </div>
-        <div className="spider-dots">
-          <button className={`spider-dot${activeSlide === 0 ? ' active' : ''}`} onClick={() => scrollToSlide(0)} aria-label="Long-term goals chart" />
-          <button className={`spider-dot${activeSlide === 1 ? ' active' : ''}`} onClick={() => scrollToSlide(1)} aria-label="Short-term goals chart" />
+
+        {/* Slide 1: Short-term */}
+        <div className="spider-slide">
+          {looseShort.length > 0
+            ? <DashSpider goals={looseShort} values={stSpiderValues} />
+            : <p className="spider-empty">No standalone short-term goals yet.</p>}
+          {domains.map((d) => {
+            const dShort = looseShort.filter((g) => g.domainId === d.id);
+            if (!dShort.length) return null;
+            const domainColor = DOMAIN_COLORS[d.id] ?? 'var(--accent)';
+            return (
+              <div key={d.id} className="dash-domain-section">
+                <div className="dash-domain-label" style={{ color: domainColor }}>{d.name}</div>
+                {dShort.map((sg) => (
+                  <GoalStrip key={sg.id} goal={sg} metrics={stMetrics.get(sg.id)!} domainColor={domainColor} isShort />
+                ))}
+              </div>
+            );
+          })}
+          {healthNote}
         </div>
       </div>
 
-      {domains.map((d) => {
-        const dLong  = longGoals.filter((g) => g.domainId === d.id);
-        const dShort = looseShort.filter((g) => g.domainId === d.id);
-        if (!dLong.length && !dShort.length) return null;
-        const domainColor = DOMAIN_COLORS[d.id] ?? 'var(--accent)';
-        return (
-          <div key={d.id} className="dash-domain-section">
-            <div className="dash-domain-label" style={{ color: domainColor }}>{d.name}</div>
-            {dLong.map((lg) => (
-              <GoalStrip key={lg.id} goal={lg} metrics={ltMetrics.get(lg.id)!} domainColor={domainColor} />
-            ))}
-            {dShort.map((sg) => (
-              <GoalStrip key={sg.id} goal={sg} metrics={stMetrics.get(sg.id)!} domainColor={domainColor} isShort />
-            ))}
-          </div>
-        );
-      })}
-
-      <div className="dash-health-note">
-        <div className="dash-health-note-title">How Health is calculated</div>
-        <p>Health = <b>weighted % done</b> × <b>how recently</b> — both must be high.</p>
-        <div className="dash-health-weights">
-          <span><b>10×</b> Short-term sub-goal</span>
-          <span><b>2×</b> Task</span>
-          <span><b>1–4×</b> Habit (streak grows weight)</span>
-        </div>
-        <p style={{ marginTop: 8 }}>LT goal counts sub-goals + tasks + habits. ST goal counts tasks + habits. The goal's own completion shows in the Done bar.</p>
+      <div className="spider-dots">
+        <button className={`spider-dot${activeSlide === 0 ? ' active' : ''}`} onClick={() => scrollToSlide(0)} aria-label="Long-term goals chart" />
+        <button className={`spider-dot${activeSlide === 1 ? ' active' : ''}`} onClick={() => scrollToSlide(1)} aria-label="Short-term goals chart" />
       </div>
     </div>
   );
