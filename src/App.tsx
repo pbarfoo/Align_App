@@ -1679,6 +1679,8 @@ function Today({
   const weekGoals    = activeShort.filter((g) => g.timeframe <= 1);
   const monthGoals   = activeShort.filter((g) => g.timeframe > 1 && g.timeframe <= 3);
   const quarterGoals = activeShort.filter((g) => g.timeframe > 3);
+  const goalEndDate  = (g: Goal) => { const d = new Date(g.createdAt); g.horizon === 'long' ? d.setFullYear(d.getFullYear() + g.timeframe) : d.setMonth(d.getMonth() + g.timeframe); return d.toISOString().slice(0, 10); };
+  const longGoals    = goals.filter((g) => g.horizon === 'long' && !g.completedAt && goalEndDate(g) >= todayStr && goalEndDate(g) <= quarterEnd);
 
   const HabitRow = ({ h }: { h: Habit }) => {
     const isDone = h.kind === 'task' ? !!h.completed : isHabitDoneThisPeriod(h);
@@ -1768,7 +1770,8 @@ function Today({
       <Section label="This quarter" period={`Q${Math.floor(now.getMonth() / 3) + 1} ${now.getFullYear()}`}>
         {quarterTasks.map((h) => <HabitRow key={h.id} h={h} />)}
         {quarterGoals.map((g) => <GoalPill key={g.id} g={g} />)}
-        {quarterTasks.length + quarterGoals.length === 0 && (
+        {longGoals.map((g) => <GoalPill key={g.id} g={g} />)}
+        {quarterTasks.length + quarterGoals.length + longGoals.length === 0 && (
           <div className="focus-empty">No quarterly focus set</div>
         )}
       </Section>
