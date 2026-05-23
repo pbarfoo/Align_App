@@ -1889,13 +1889,9 @@ function vitalityFor(
   const doneW     = allItems.filter((x) => x.done).reduce((s, x) => s + x.w, 0);
   const completion = totalW > 0 ? doneW / totalW : 0;
 
-  // Health bar: include LT goal with weight proportional to elapsed time so
-  // it exerts more pressure as its deadline approaches, but negligible impact
-  // when the goal was just created.
-  const activeItems     = [
-    { w: 50 * elapsed, done: !!lg.completedAt, r: recency(lg.completedAt) },
-    ...allItems.slice(1),
-  ];
+  // Health bar: completionRate × recencyScore over active sub-items only
+  // (ST goals, tasks, habits). LT goal completion lives in the Done bar.
+  const activeItems     = allItems.slice(1);
   const activeTotalW    = activeItems.reduce((s, x) => s + x.w, 0);
   const activeDoneItems = activeItems.filter((x) => x.done);
   const activeDoneW     = activeDoneItems.reduce((s, x) => s + x.w, 0);
@@ -1915,11 +1911,47 @@ const DOMAIN_COLORS: Record<string, string> = {
   community: '#72ce6a',   // green
 };
 
+function stGoalMetrics(sg: Goal, habits: Habit[]): { time: number; completion: number; health: number; completionRate: number; recencyScore: number; momentum: number } {
+  const totalMs = (sg.timeframe || 1) * 30.44 * 86_400_000;
+  const elapsed = Math.min(1, Math.max(0, (Date.now() - sg.createdAt) / totalMs));
+  const sgHabits = habits.filter((h) => h.goalId === sg.id);
+
+  const habitWeight = (h: Habit) => Math.min(1 + (h.streak || 0) * 0.2, 4.0);
+  const FOUR_WEEKS = 28 * 86_400_000;
+  const now = Date.now();
+  const recency = (ts?: number) => ts ? Math.max(0, 1 - (now - ts) / FOUR_WEEKS) : 0;
+  const habitRecency = (h: Habit, ts?: number): number => {
+    const ext    = Math.min((h.streak || 0) / 14, 1);
+    const window = FOUR_WEEKS * (1 + ext);
+    return ts ? Math.max(0, 1 - (now - ts) / window) : 0;
+  };
+
+  type Item = { w: number; done: boolean; r: number };
+  const taskItems: Item[]  = sgHabits.filter((h) => h.kind === 'task').map((h) => ({ w: 2, done: !!h.completed, r: recency(h.completedAt) }));
+  const habitItems: Item[] = sgHabits.filter((h) => h.kind === 'habit').map((h) => ({ w: habitWeight(h), done: isHabitDoneThisPeriod(h), r: habitRecency(h, h.completedAt) }));
+  const allItems: Item[]   = [{ w: 10, done: !!sg.completedAt, r: recency(sg.completedAt) }, ...taskItems, ...habitItems];
+
+  const totalW    = allItems.reduce((s, x) => s + x.w, 0);
+  const doneW     = allItems.filter((x) => x.done).reduce((s, x) => s + x.w, 0);
+  const completion = totalW > 0 ? doneW / totalW : 0;
+
+  const activeItems     = [...taskItems, ...habitItems];
+  const activeTotalW    = activeItems.reduce((s, x) => s + x.w, 0);
+  const activeDoneItems = activeItems.filter((x) => x.done);
+  const activeDoneW     = activeDoneItems.reduce((s, x) => s + x.w, 0);
+  const completionRate  = activeTotalW > 0 ? activeDoneW / activeTotalW : 0;
+  const recencyScore    = activeDoneW > 0 ? activeDoneItems.reduce((s, x) => s + x.r * x.w, 0) / activeDoneW : 0;
+  const health = completionRate * recencyScore;
+  const momentum = (completion + health) / 2;
+
+  return { time: elapsed, completion, health, completionRate, recencyScore, momentum };
+}
+
 function DashSpider({
-  longGoals,
+  goals: topGoals,
   values,
 }: {
-  longGoals: Goal[];
+  goals: Goal[];
   values: number[];
 }) {
   const wrapLabel = (text: string): string[] => {
@@ -1931,7 +1963,7 @@ function DashSpider({
     if (split < 0) return [text];
     return [text.slice(0, split), text.slice(split + 1)];
   };
-  const N = longGoals.length;
+  const N = topGoals.length;
   if (N < 3) return null;
   const cx = 160, cy = 165, r = 115;
 
@@ -1956,12 +1988,12 @@ function DashSpider({
     <svg viewBox="-80 0 480 350" className="radar-chart">
       {/* Grid rings */}
       {rings.map((t) => {
-        const pts = longGoals.map((_, i) => pt(i, t));
+        const pts = topGoals.map((_, i) => pt(i, t));
         const d = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ') + 'Z';
         return <path key={t} d={d} fill="none" stroke="var(--line)" strokeWidth="1" />;
       })}
       {/* Domain-coloured spokes */}
-      {longGoals.map((g, i) => {
+      {topGoals.map((g, i) => {
         const end   = pt(i, 1);
         const color = DOMAIN_COLORS[g.domainId] ?? 'var(--line)';
         return <line key={i} x1={cx} y1={cy} x2={end.x} y2={end.y}
@@ -1970,10 +2002,10 @@ function DashSpider({
       {/* Data polygon */}
       <polygon points={poly} fill="var(--accent)" fillOpacity="0.2" stroke="var(--accent)" strokeWidth="2" />
       {dataPoints.map((p, i) => (
-        <circle key={i} cx={p.x} cy={p.y} r="4" fill={DOMAIN_COLORS[longGoals[i].domainId] ?? 'var(--accent)'} />
+        <circle key={i} cx={p.x} cy={p.y} r="4" fill={DOMAIN_COLORS[topGoals[i].domainId] ?? 'var(--accent)'} />
       ))}
       {/* Labels: goal title only, coloured by domain */}
-      {longGoals.map((g, i) => {
+      {topGoals.map((g, i) => {
         const color = DOMAIN_COLORS[g.domainId] ?? 'var(--muted)';
         const lp    = pt(i, 1.34);
         const anchor = labelAnchor(i);
@@ -2052,7 +2084,7 @@ function GoalStrip({
             <span><b>1–4×</b> Habit (streak scales weight)</span>
           </div>
           <div className="health-popup-note">
-            ST goals, tasks &amp; habits only. Completion × recency — both must be high. Habits with longer streaks stay fresh longer.
+            Completion × recency — both must be high. ST goals (10×), tasks (2×), habits (1–4× by streak). Long-term goal completion is shown in the Done bar above.
           </div>
         </div>
       )}
@@ -2072,11 +2104,16 @@ function GoalsDashboard({
   habits: Habit[];
   onClose: () => void;
 }) {
-  const longGoals = goals.filter((g) => g.horizon === 'long');
-  const metricsByGoal = new Map(
-    longGoals.map((g) => [g.id, vitalityFor(g, goals, habits)] as const),
-  );
-  const spiderValues = longGoals.map((g) => metricsByGoal.get(g.id)!.health);
+  const longGoals  = goals.filter((g) => g.horizon === 'long');
+  const looseShort = goals.filter((g) => g.horizon === 'short' && !g.parentGoalId);
+  const ltMetrics  = new Map(longGoals.map((g) => [g.id, vitalityFor(g, goals, habits)] as const));
+  const stMetrics  = new Map(looseShort.map((g) => [g.id, stGoalMetrics(g, habits)] as const));
+
+  const allTopGoals   = [...longGoals, ...looseShort];
+  const spiderValues  = [
+    ...longGoals.map((g) => ltMetrics.get(g.id)!.health),
+    ...looseShort.map((g) => stMetrics.get(g.id)!.health),
+  ];
 
   return (
     <div className="review-panel">
@@ -2085,22 +2122,21 @@ function GoalsDashboard({
         <button className="icon-btn" onClick={onClose}>✕</button>
       </div>
 
-      <DashSpider longGoals={longGoals} values={spiderValues} />
+      <DashSpider goals={allTopGoals} values={spiderValues} />
 
       {domains.map((d) => {
-        const dLong = longGoals.filter((g) => g.domainId === d.id);
-        if (!dLong.length) return null;
+        const dLong  = longGoals.filter((g) => g.domainId === d.id);
+        const dShort = looseShort.filter((g) => g.domainId === d.id);
+        if (!dLong.length && !dShort.length) return null;
         const domainColor = DOMAIN_COLORS[d.id] ?? 'var(--accent)';
         return (
           <div key={d.id} className="dash-domain-section">
             <div className="dash-domain-label" style={{ color: domainColor }}>{d.name}</div>
             {dLong.map((lg) => (
-              <GoalStrip
-                key={lg.id}
-                goal={lg}
-                metrics={metricsByGoal.get(lg.id)!}
-                domainColor={domainColor}
-              />
+              <GoalStrip key={lg.id} goal={lg} metrics={ltMetrics.get(lg.id)!} domainColor={domainColor} />
+            ))}
+            {dShort.map((sg) => (
+              <GoalStrip key={sg.id} goal={sg} metrics={stMetrics.get(sg.id)!} domainColor={domainColor} />
             ))}
           </div>
         );
@@ -2109,7 +2145,7 @@ function GoalsDashboard({
       <div className="dash-health-note">
         <div className="dash-health-note-title">How Health is calculated</div>
         <p>
-          Health = <b>% of active items done</b> × <b>how recently</b> you did them. Both must be high for a strong score. The long-term goal is excluded — use the Done bar for that.
+          Health = <b>% of active items done</b> × <b>how recently</b> you did them. Both must be high for a strong score. Weights: short-term goals <b>10×</b>, tasks <b>2×</b>, habits <b>1–4×</b> (streak scales weight).
         </p>
         <div className="dash-health-weights">
           <span><b>10×</b> Short-term goal</span>
