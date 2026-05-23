@@ -768,6 +768,9 @@ function Align({
   const updateGoalTitle = (id: string, title: string) =>
     setGoals((prev) => prev.map((g) => (g.id === id ? { ...g, title } : g)));
 
+  const updateGoalTimeframe = (id: string, timeframe: number) =>
+    setGoals((prev) => prev.map((g) => (g.id === id ? { ...g, timeframe } : g)));
+
   const updateHabit = (id: string, updates: Partial<Habit>) =>
     setHabits((prev) => prev.map((h) => (h.id === id ? { ...h, ...updates } : h)));
 
@@ -886,6 +889,7 @@ function Align({
               }
               onDelete={() => deleteGoal(lg.id)}
               onRename={(title) => updateGoalTitle(lg.id, title)}
+              onChangeTimeframe={(t) => updateGoalTimeframe(lg.id, t)}
               isComplete={!!lg.completedAt}
               onToggleComplete={() => toggleGoalComplete(lg.id)}
             />
@@ -905,6 +909,7 @@ function Align({
                   onAddAction={addAction}
                   onDeleteGoal={deleteGoal}
                   onRenameGoal={updateGoalTitle}
+                  onChangeGoalTimeframe={updateGoalTimeframe}
                   onDeleteHabit={deleteHabit}
                   onEditHabit={updateHabit}
                   onToggleGoalComplete={toggleGoalComplete}
@@ -957,6 +962,7 @@ function Align({
             onAddAction={addAction}
             onDeleteGoal={deleteGoal}
             onRenameGoal={updateGoalTitle}
+            onChangeGoalTimeframe={updateGoalTimeframe}
             onDeleteHabit={deleteHabit}
             onEditHabit={updateHabit}
             onToggleGoalComplete={toggleGoalComplete}
@@ -986,6 +992,7 @@ function ShortWithActions({
   onAddAction,
   onDeleteGoal,
   onRenameGoal,
+  onChangeGoalTimeframe,
   onDeleteHabit,
   onEditHabit,
   onToggleGoalComplete,
@@ -1008,6 +1015,7 @@ function ShortWithActions({
   ) => void;
   onDeleteGoal: (id: string) => void;
   onRenameGoal: (id: string, title: string) => void;
+  onChangeGoalTimeframe: (id: string, t: number) => void;
   onDeleteHabit: (id: string) => void;
   onEditHabit: (id: string, updates: Partial<Habit>) => void;
   onToggleGoalComplete: (id: string) => void;
@@ -1032,6 +1040,7 @@ function ShortWithActions({
         }
         onDelete={() => onDeleteGoal(goal.id)}
         onRename={(title) => onRenameGoal(goal.id, title)}
+        onChangeTimeframe={(t) => onChangeGoalTimeframe(goal.id, t)}
         isComplete={!!goal.completedAt}
         onToggleComplete={() => onToggleGoalComplete(goal.id)}
       />
@@ -1318,6 +1327,7 @@ function GoalNode({
   onAddChild,
   onDelete,
   onRename,
+  onChangeTimeframe,
   editValuesActive,
   onEditValues,
   onChangeValues,
@@ -1336,6 +1346,7 @@ function GoalNode({
   onAddChild?: () => void;
   onDelete?: () => void;
   onRename?: (title: string) => void;
+  onChangeTimeframe?: (t: number) => void;
   editValuesActive?: boolean;
   onEditValues?: () => void;
   onChangeValues?: (idxs: number[]) => void;
@@ -1345,6 +1356,7 @@ function GoalNode({
   const canEditValues = !short && !!onEditValues;
   const idxs = valueIndexes ?? [];
   const [editingTitle, setEditingTitle] = useState(false);
+  const [editingTimeframe, setEditingTimeframe] = useState(false);
   const [draft, setDraft] = useState(goal.title);
 
   const commitRename = () => {
@@ -1371,9 +1383,30 @@ function GoalNode({
       )}
       <div className="node-main">
         <div className="node-tag">
-          {goal.horizon === 'long'
-            ? `Long-term · ${goal.timeframe} yr`
-            : `Short-term · ${goal.timeframe} mo`}
+          {goal.horizon === 'long' ? 'Long-term · ' : 'Short-term · '}
+          {editingTimeframe && onChangeTimeframe ? (
+            <select
+              className="timeframe-select"
+              value={goal.timeframe}
+              autoFocus
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) => { onChangeTimeframe(Number(e.target.value)); setEditingTimeframe(false); }}
+              onBlur={() => setEditingTimeframe(false)}
+            >
+              {goal.horizon === 'long'
+                ? [1,2,3,4,5].map((y) => <option key={y} value={y}>{y} yr</option>)
+                : [1,3,6].map((m) => <option key={m} value={m}>{m} mo</option>)
+              }
+            </select>
+          ) : (
+            <span
+              onClick={onChangeTimeframe ? (e) => { e.stopPropagation(); setEditingTimeframe(true); } : undefined}
+              title={onChangeTimeframe ? 'Click to edit' : undefined}
+              style={onChangeTimeframe ? { cursor: 'pointer', textDecoration: 'underline dotted' } : undefined}
+            >
+              {goal.horizon === 'long' ? `${goal.timeframe} yr` : `${goal.timeframe} mo`}
+            </span>
+          )}
         </div>
         {editingTitle ? (
           <input
