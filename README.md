@@ -1,17 +1,18 @@
 # Align
 
-A personal goal-alignment app that connects daily habits and tasks to long-term goals across three life domains.
+A personal goal-alignment app that connects daily habits and tasks to long-term goals across life domains.
 
 ## What is Align?
 
-Align helps you stay on track with what matters most. You define goals across **Career**, **Self**, and **Community**, then break them down into short-term goals, tasks, and daily habits. A live **Health** score reflects how consistently you're executing — it rewards completing items and decays when you go stale.
+Align helps you stay on track with what matters most. You define goals across **Career**, **Self**, and **Family/Others**, then break them down into short-term goals, tasks, and daily habits. A live **Health** score reflects how consistently you're executing — it rewards completing items and decays when you go stale.
 
 ## Features
 
-- **Foundation** — Define life domains, long-term goals, short-term goals, tasks, and habits
+- **Foundation** — Define life domains, core values, long-term vision, short-term goals, tasks, and habits
 - **Align** — Goals dashboard with Health / Done / Time bars per goal and a domain spider chart
 - **Today** — Quick-complete today's habits and tasks; weekly Sunday reflection on your values
 - **Reflection log** — Full history of weekly reflections with domain-grouped value scores
+- **Auth + cloud sync** — Magic-link email login; all data persisted to Supabase per account
 
 ### Health formula
 `health = completionRate × recencyScore`
@@ -22,10 +23,11 @@ Only active items (ST goals, tasks, habits) are scored — the LT goal is exclud
 
 | Layer | Choice |
 |-------|--------|
-| UI framework | React 19 |
+| UI framework | React 18 |
 | Build tool | Vite |
 | Language | TypeScript |
-| Persistence | localStorage |
+| Auth & persistence | Supabase (magic-link email + Postgres) |
+| Hosting | Vercel |
 | Styling | Plain CSS (dark gold aesthetic) |
 
 ## Getting started
@@ -37,12 +39,23 @@ npm run dev
 
 Open [http://localhost:5173](http://localhost:5173).
 
+You'll need a `.env` file with your Supabase project credentials:
+
+```
+VITE_SUPABASE_URL=your-project-url
+VITE_SUPABASE_ANON_KEY=your-anon-key
+```
+
 ## Project structure
 
 ```
 src/
-  App.tsx      # Entire app — components, state, logic
-  styles.css   # All styles
+  App.tsx       # Entire app — components, state, logic
+  data.ts       # Types, seed data, and utility functions
+  supabase.ts   # Supabase client
+  styles.css    # All styles
+supabase/
+  schema.sql    # Postgres schema with RLS policies
 ```
 
 ## License
