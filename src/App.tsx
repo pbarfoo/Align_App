@@ -752,6 +752,19 @@ function Align({
     flash('Short-term goal added');
   };
 
+  const addLooseShortGoal = (title: string, months: number) => {
+    setGoals((prev) => [...prev, {
+      id: uid('g'),
+      domainId,
+      valueIndexes: [],
+      horizon: 'short' as const,
+      title,
+      createdAt: Date.now(),
+      timeframe: months,
+    }]);
+    flash('Short-term goal added');
+  };
+
   const addAction = (
     goalId: string,
     title: string,
@@ -989,6 +1002,7 @@ function Align({
           />
         ))}
 
+        <AddShortGoalStandalone onAdd={addLooseShortGoal} />
         <AddGoalForm
           domainValues={domain.values}
           onAdd={(idxs, title, years) => addLongGoal(idxs, title, years)}
@@ -1240,6 +1254,47 @@ function AddActionForm({
         <button className="mini-ghost" onClick={onClose}>
           Cancel
         </button>
+      </div>
+    </div>
+  );
+}
+
+function AddShortGoalStandalone({ onAdd }: { onAdd: (title: string, months: number) => void }) {
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState('');
+  const [months, setMonths] = useState('1');
+
+  const submit = () => {
+    if (!title.trim()) return;
+    onAdd(title.trim(), Number(months));
+    setTitle('');
+    setMonths('1');
+    setOpen(false);
+  };
+
+  if (!open) return (
+    <button className="inline-add add-btn" onClick={() => setOpen(true)}>
+      + Short-term goal
+    </button>
+  );
+
+  return (
+    <div className="inline-add add-form">
+      <input
+        autoFocus
+        placeholder="e.g. Run a 5K"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && submit()}
+      />
+      <select value={months} onChange={(e) => setMonths(e.target.value)}>
+        {[1, 3, 6].map((m) => (
+          <option key={m} value={m}>{m} Month{m > 1 ? 's' : ''}</option>
+        ))}
+      </select>
+      <div className="add-actions">
+        <button className="mini-primary" onClick={submit}>Add</button>
+        <button className="mini-ghost" onClick={() => { setTitle(''); setOpen(false); }}>Cancel</button>
       </div>
     </div>
   );
