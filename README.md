@@ -1,6 +1,6 @@
 # Align
 
-A personal goal-alignment app that connects daily habits and tasks to long-term goals across life domains.
+A personal goal-alignment app that connects daily habits and tasks to long-term goals and values across life domains.
 
 ## What is Align?
 
