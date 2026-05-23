@@ -1637,9 +1637,10 @@ function Today({
 }) {
   const now = new Date();
   const todayStr = now.toISOString().slice(0, 10);
-  const in7  = new Date(now.getTime() + 7  * 86400000).toISOString().slice(0, 10);
-  const in30 = new Date(now.getTime() + 30 * 86400000).toISOString().slice(0, 10);
-  const quarterEnd = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3 + 3, 0).toISOString().slice(0, 10);
+  const daysToSunday = now.getDay() === 0 ? 0 : 7 - now.getDay();
+  const weekEnd     = new Date(now.getFullYear(), now.getMonth(), now.getDate() + daysToSunday).toISOString().slice(0, 10);
+  const monthEnd    = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10);
+  const quarterEnd  = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3 + 3, 0).toISOString().slice(0, 10);
   const isWeekday = now.getDay() !== 0 && now.getDay() !== 6;
 
   const toggle = (id: string) => {
@@ -1666,11 +1667,11 @@ function Today({
   const monthHabits = habits.filter((h) => h.kind === 'habit' && h.recurrence === 'monthly');
   const otherHabits = habits.filter((h) => h.kind === 'habit' && !['daily','weekdays','weekly','monthly'].includes(h.recurrence ?? ''));
 
-  // Bucket tasks by due date
+  // Bucket tasks by calendar period
   const dayTasks     = habits.filter((h) => h.kind === 'task' && !!h.dueDate && h.dueDate <= todayStr);
-  const weekTasks    = habits.filter((h) => h.kind === 'task' && !!h.dueDate && h.dueDate > todayStr && h.dueDate <= in7);
-  const monthTasks   = habits.filter((h) => h.kind === 'task' && !!h.dueDate && h.dueDate > in7   && h.dueDate <= in30);
-  const quarterTasks = habits.filter((h) => h.kind === 'task' && !!h.dueDate && h.dueDate > in30  && h.dueDate <= quarterEnd);
+  const weekTasks    = habits.filter((h) => h.kind === 'task' && !!h.dueDate && h.dueDate > todayStr  && h.dueDate <= weekEnd);
+  const monthTasks   = habits.filter((h) => h.kind === 'task' && !!h.dueDate && h.dueDate > weekEnd   && h.dueDate <= monthEnd);
+  const quarterTasks = habits.filter((h) => h.kind === 'task' && !!h.dueDate && h.dueDate > monthEnd  && h.dueDate <= quarterEnd);
   const undatedTasks = habits.filter((h) => h.kind === 'task' && !h.dueDate && !h.completed);
 
   // Bucket goals by timeframe
@@ -1678,7 +1679,6 @@ function Today({
   const weekGoals    = activeShort.filter((g) => g.timeframe <= 1);
   const monthGoals   = activeShort.filter((g) => g.timeframe > 1 && g.timeframe <= 3);
   const quarterGoals = activeShort.filter((g) => g.timeframe > 3);
-  const longGoals    = goals.filter((g) => g.horizon === 'long' && !g.completedAt);
 
   const HabitRow = ({ h }: { h: Habit }) => {
     const isDone = h.kind === 'task' ? !!h.completed : isHabitDoneThisPeriod(h);
@@ -1768,9 +1768,8 @@ function Today({
       <Section label="This quarter" period={`Q${Math.floor(now.getMonth() / 3) + 1} ${now.getFullYear()}`}>
         {quarterTasks.map((h) => <HabitRow key={h.id} h={h} />)}
         {quarterGoals.map((g) => <GoalPill key={g.id} g={g} />)}
-        {longGoals.map((g) => <GoalPill key={g.id} g={g} />)}
-        {quarterTasks.length + quarterGoals.length + longGoals.length === 0 && (
-          <div className="focus-empty">No quarterly goals set</div>
+        {quarterTasks.length + quarterGoals.length === 0 && (
+          <div className="focus-empty">No quarterly focus set</div>
         )}
       </Section>
 
