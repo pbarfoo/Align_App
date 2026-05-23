@@ -765,6 +765,12 @@ function Align({
   const updateGoalValues = (id: string, valueIndexes: number[]) =>
     setGoals((prev) => prev.map((g) => (g.id === id ? { ...g, valueIndexes } : g)));
 
+  const updateGoalTitle = (id: string, title: string) =>
+    setGoals((prev) => prev.map((g) => (g.id === id ? { ...g, title } : g)));
+
+  const updateHabit = (id: string, updates: Partial<Habit>) =>
+    setHabits((prev) => prev.map((h) => (h.id === id ? { ...h, ...updates } : h)));
+
   const deleteGoal = (id: string) => {
     const remove = new Set<string>([id]);
     goals.forEach((g) => {
@@ -879,6 +885,7 @@ function Align({
                 setAddingFor(addingFor === lg.id ? null : lg.id)
               }
               onDelete={() => deleteGoal(lg.id)}
+              onRename={(title) => updateGoalTitle(lg.id, title)}
               isComplete={!!lg.completedAt}
               onToggleComplete={() => toggleGoalComplete(lg.id)}
             />
@@ -897,7 +904,9 @@ function Align({
                   setAddingFor={setAddingFor}
                   onAddAction={addAction}
                   onDeleteGoal={deleteGoal}
+                  onRenameGoal={updateGoalTitle}
                   onDeleteHabit={deleteHabit}
+                  onEditHabit={updateHabit}
                   onToggleGoalComplete={toggleGoalComplete}
                   onToggleHabit={toggleHabit}
                   hideCompleted={hideCompleted}
@@ -947,7 +956,9 @@ function Align({
             setAddingFor={setAddingFor}
             onAddAction={addAction}
             onDeleteGoal={deleteGoal}
+            onRenameGoal={updateGoalTitle}
             onDeleteHabit={deleteHabit}
+            onEditHabit={updateHabit}
             onToggleGoalComplete={toggleGoalComplete}
             onToggleHabit={toggleHabit}
             hideCompleted={hideCompleted}
@@ -974,7 +985,9 @@ function ShortWithActions({
   setAddingFor,
   onAddAction,
   onDeleteGoal,
+  onRenameGoal,
   onDeleteHabit,
+  onEditHabit,
   onToggleGoalComplete,
   onToggleHabit,
   hideCompleted,
@@ -994,11 +1007,14 @@ function ShortWithActions({
     input: ActionInput,
   ) => void;
   onDeleteGoal: (id: string) => void;
+  onRenameGoal: (id: string, title: string) => void;
   onDeleteHabit: (id: string) => void;
+  onEditHabit: (id: string, updates: Partial<Habit>) => void;
   onToggleGoalComplete: (id: string) => void;
   onToggleHabit: (id: string) => void;
   hideCompleted: boolean;
 }) {
+  const [editingHabitId, setEditingHabitId] = useState<string | null>(null);
   if (hideCompleted && !!goal.completedAt) return null;
 
   return (
@@ -1015,6 +1031,7 @@ function ShortWithActions({
           setAddingFor(addingFor === goal.id ? null : goal.id)
         }
         onDelete={() => onDeleteGoal(goal.id)}
+        onRename={(title) => onRenameGoal(goal.id, title)}
         isComplete={!!goal.completedAt}
         onToggleComplete={() => onToggleGoalComplete(goal.id)}
       />
@@ -1028,8 +1045,8 @@ function ShortWithActions({
         .map((h) => {
           const done = h.kind === 'task' ? !!h.completed : isHabitDoneThisPeriod(h);
           return (
+          <React.Fragment key={h.id}>
           <div
-            key={h.id}
             className={`${cls(`h:${h.id}`)} habit${done ? ' completed' : ''}`}
             onClick={() => setLit(lit === `h:${h.id}` ? null : `h:${h.id}`)}
           >
@@ -1042,7 +1059,14 @@ function ShortWithActions({
               <div className="node-tag">
                 {h.kind === 'task' ? 'Task' : 'Habit'}
               </div>
-              <div className="node-title">{h.title}</div>
+              <div
+                className="node-title"
+                onClick={(e) => { e.stopPropagation(); setEditingHabitId(editingHabitId === h.id ? null : h.id); }}
+                title="Click to edit"
+                style={{ cursor: 'text' }}
+              >
+                {h.title}
+              </div>
               <div className="node-foot">
                 <span className="goal-date">
                   {h.kind === 'task'
@@ -1064,6 +1088,15 @@ function ShortWithActions({
               </button>
             </div>
           </div>
+          {editingHabitId === h.id && (
+            <AddActionForm
+              goalId={h.goalId}
+              initial={h}
+              onSave={(updates) => { onEditHabit(h.id, updates); setEditingHabitId(null); }}
+              onClose={() => setEditingHabitId(null)}
+            />
+          )}
+          </React.Fragment>
           );
         })}
       {addingFor === goal.id && (
@@ -1080,55 +1113,53 @@ function ShortWithActions({
 function AddActionForm({
   goalId,
   onAdd,
+  onSave,
   onClose,
+  initial,
 }: {
   goalId: string;
-  onAdd: (
-    goalId: string,
-    title: string,
-    kind: ActionKind,
-    input: ActionInput,
-  ) => void;
+  onAdd?: (goalId: string, title: string, kind: ActionKind, input: ActionInput) => void;
+  onSave?: (updates: Partial<Habit>) => void;
   onClose: () => void;
+  initial?: Habit;
 }) {
-  const [kind, setKind] = useState<ActionKind>('habit');
-  const [title, setTitle] = useState('');
-  const [recurrence, setRecurrence] = useState<Recurrence>('daily');
-  const [startDate, setStartDate] = useState('');
-  const [customInterval, setCustomInterval] = useState('1');
-  const [customUnit, setCustomUnit] = useState<CustomUnit>('weeks');
-  const [dueDate, setDueDate] = useState('');
-  const [dueTime, setDueTime] = useState('');
+  const [kind, setKind] = useState<ActionKind>(initial?.kind ?? 'habit');
+  const [title, setTitle] = useState(initial?.title ?? '');
+  const [recurrence, setRecurrence] = useState<Recurrence>(initial?.recurrence ?? 'daily');
+  const [startDate, setStartDate] = useState(initial?.startDate ?? '');
+  const [customInterval, setCustomInterval] = useState(String(initial?.customInterval ?? 1));
+  const [customUnit, setCustomUnit] = useState<CustomUnit>(initial?.customUnit ?? 'weeks');
+  const [dueDate, setDueDate] = useState(initial?.dueDate ?? '');
+  const [dueTime, setDueTime] = useState(initial?.dueTime ?? '');
 
   const submit = () => {
     if (!title.trim()) return;
-    if (kind === 'habit') {
-      onAdd(goalId, title, 'habit', {
-        startDate,
-        recurrence,
-        customInterval: Number(customInterval) || 1,
-        customUnit,
-      });
-    } else {
-      onAdd(goalId, title, 'task', { dueDate, dueTime });
+    if (onSave) {
+      if (kind === 'habit') {
+        onSave({ title: title.trim(), kind, recurrence, startDate: startDate || undefined,
+          customInterval: Number(customInterval) || 1, customUnit,
+          dueDate: undefined, dueTime: undefined });
+      } else {
+        onSave({ title: title.trim(), kind, dueDate: dueDate || undefined,
+          dueTime: dueTime || undefined, recurrence: undefined, startDate: undefined });
+      }
+    } else if (onAdd) {
+      if (kind === 'habit') {
+        onAdd(goalId, title, 'habit', { startDate, recurrence,
+          customInterval: Number(customInterval) || 1, customUnit });
+      } else {
+        onAdd(goalId, title, 'task', { dueDate, dueTime });
+      }
     }
   };
 
   return (
     <div className="inline-add habit add-form">
       <div className="seg">
-        <button
-          type="button"
-          className={kind === 'habit' ? 'on' : ''}
-          onClick={() => setKind('habit')}
-        >
+        <button type="button" className={kind === 'habit' ? 'on' : ''} onClick={() => setKind('habit')}>
           Habit
         </button>
-        <button
-          type="button"
-          className={kind === 'task' ? 'on' : ''}
-          onClick={() => setKind('task')}
-        >
+        <button type="button" className={kind === 'task' ? 'on' : ''} onClick={() => setKind('task')}>
           Task
         </button>
       </div>
@@ -1144,10 +1175,7 @@ function AddActionForm({
       {kind === 'habit' ? (
         <>
           <div className="field-row">
-            <select
-              value={recurrence}
-              onChange={(e) => setRecurrence(e.target.value as Recurrence)}
-            >
+            <select value={recurrence} onChange={(e) => setRecurrence(e.target.value as Recurrence)}>
               <option value="daily">Daily</option>
               <option value="weekdays">Every weekday</option>
               <option value="weekly">Weekly</option>
@@ -1155,28 +1183,14 @@ function AddActionForm({
               <option value="yearly">Yearly</option>
               <option value="custom">Custom…</option>
             </select>
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              title="Start date"
-            />
+            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} title="Start date" />
           </div>
           {recurrence === 'custom' && (
             <div className="field-row">
               <span className="field-label">Every</span>
-              <input
-                type="number"
-                min="1"
-                max="99"
-                value={customInterval}
-                onChange={(e) => setCustomInterval(e.target.value)}
-                style={{ width: '64px' }}
-              />
-              <select
-                value={customUnit}
-                onChange={(e) => setCustomUnit(e.target.value as CustomUnit)}
-              >
+              <input type="number" min="1" max="99" value={customInterval}
+                onChange={(e) => setCustomInterval(e.target.value)} style={{ width: '64px' }} />
+              <select value={customUnit} onChange={(e) => setCustomUnit(e.target.value as CustomUnit)}>
                 <option value="days">days</option>
                 <option value="weeks">weeks</option>
                 <option value="months">months</option>
@@ -1187,24 +1201,14 @@ function AddActionForm({
         </>
       ) : (
         <div className="field-row">
-          <input
-            type="date"
-            value={dueDate}
-            onChange={(e) => setDueDate(e.target.value)}
-            title="Due date"
-          />
-          <input
-            type="time"
-            value={dueTime}
-            onChange={(e) => setDueTime(e.target.value)}
-            title="Due time"
-          />
+          <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} title="Due date" />
+          <input type="time" value={dueTime} onChange={(e) => setDueTime(e.target.value)} title="Due time" />
         </div>
       )}
 
       <div className="add-actions">
         <button className="mini-primary" onClick={submit}>
-          Add
+          {onSave ? 'Save' : 'Add'}
         </button>
         <button className="mini-ghost" onClick={onClose}>
           Cancel
@@ -1313,6 +1317,7 @@ function GoalNode({
   addActive,
   onAddChild,
   onDelete,
+  onRename,
   editValuesActive,
   onEditValues,
   onChangeValues,
@@ -1330,6 +1335,7 @@ function GoalNode({
   addActive?: boolean;
   onAddChild?: () => void;
   onDelete?: () => void;
+  onRename?: (title: string) => void;
   editValuesActive?: boolean;
   onEditValues?: () => void;
   onChangeValues?: (idxs: number[]) => void;
@@ -1338,6 +1344,21 @@ function GoalNode({
 }) {
   const canEditValues = !short && !!onEditValues;
   const idxs = valueIndexes ?? [];
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [draft, setDraft] = useState(goal.title);
+
+  const commitRename = () => {
+    if (draft.trim() && draft.trim() !== goal.title) onRename?.(draft.trim());
+    else setDraft(goal.title);
+    setEditingTitle(false);
+  };
+
+  const startEdit = (e: React.MouseEvent) => {
+    if (!onRename) return;
+    e.stopPropagation();
+    setDraft(goal.title);
+    setEditingTitle(true);
+  };
 
   return (
     <div className={`${className}${short ? ' short' : ''}${isComplete ? ' completed' : ''}`} onClick={onClick}>
@@ -1354,7 +1375,30 @@ function GoalNode({
             ? `Long-term · ${goal.timeframe} yr`
             : `Short-term · ${goal.timeframe} mo`}
         </div>
-        <div className="node-title">{goal.title}</div>
+        {editingTitle ? (
+          <input
+            className="node-title-input"
+            value={draft}
+            autoFocus
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commitRename}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commitRename();
+              if (e.key === 'Escape') { setDraft(goal.title); setEditingTitle(false); }
+              e.stopPropagation();
+            }}
+            onClick={(e) => e.stopPropagation()}
+          />
+        ) : (
+          <div
+            className="node-title"
+            onClick={onRename ? startEdit : undefined}
+            title={onRename ? 'Click to edit' : undefined}
+            style={onRename ? { cursor: 'text' } : undefined}
+          >
+            {goal.title}
+          </div>
+        )}
         <div className="node-foot">
           {values.map((v) => (
             <span key={v} className="goal-value">

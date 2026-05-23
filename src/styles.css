@@ -646,6 +646,38 @@ h1 {
   background: rgba(229, 84, 75, 0.12);
 }
 
+.node-edit {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--line);
+  transition: color 0.18s, border-color 0.18s, background 0.18s;
+}
+
+.node-edit:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.node-title-input {
+  font-size: 14px;
+  margin-top: 3px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--accent);
+  color: var(--fg);
+  outline: none;
+  width: 100%;
+  padding: 0;
+}
+
 .node:hover {
   border-color: var(--muted);
 }
