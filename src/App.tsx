@@ -1992,18 +1992,26 @@ function DashSpider({
         const d = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ') + 'Z';
         return <path key={t} d={d} fill="none" stroke="var(--line)" strokeWidth="1" />;
       })}
-      {/* Domain-coloured spokes */}
+      {/* Domain-coloured spokes — dashed for short-term goals */}
       {topGoals.map((g, i) => {
         const end   = pt(i, 1);
         const color = DOMAIN_COLORS[g.domainId] ?? 'var(--line)';
+        const isShort = g.horizon === 'short';
         return <line key={i} x1={cx} y1={cy} x2={end.x} y2={end.y}
-          stroke={color} strokeWidth="1.5" opacity="0.5" />;
+          stroke={color} strokeWidth="1.5" opacity="0.5"
+          strokeDasharray={isShort ? '4 3' : undefined} />;
       })}
       {/* Data polygon */}
       <polygon points={poly} fill="var(--accent)" fillOpacity="0.2" stroke="var(--accent)" strokeWidth="2" />
-      {dataPoints.map((p, i) => (
-        <circle key={i} cx={p.x} cy={p.y} r="4" fill={DOMAIN_COLORS[topGoals[i].domainId] ?? 'var(--accent)'} />
-      ))}
+      {dataPoints.map((p, i) => {
+        const color = DOMAIN_COLORS[topGoals[i].domainId] ?? 'var(--accent)';
+        const isShort = topGoals[i].horizon === 'short';
+        return isShort ? (
+          <circle key={i} cx={p.x} cy={p.y} r="5" fill="var(--bg)" stroke={color} strokeWidth="2" />
+        ) : (
+          <circle key={i} cx={p.x} cy={p.y} r="4" fill={color} />
+        );
+      })}
       {/* Labels: goal title only, coloured by domain */}
       {topGoals.map((g, i) => {
         const color = DOMAIN_COLORS[g.domainId] ?? 'var(--muted)';
@@ -2026,10 +2034,12 @@ function GoalStrip({
   goal,
   metrics,
   domainColor = 'var(--accent)',
+  isShort = false,
 }: {
   goal: Goal;
   metrics: { time: number; completion: number; health: number; completionRate: number; recencyScore: number };
   domainColor?: string;
+  isShort?: boolean;
 }) {
   const [showInfo, setShowInfo] = useState(false);
   const countdown    = getGoalCountdown(goal);
@@ -2037,9 +2047,15 @@ function GoalStrip({
   const healthPct    = Math.round(metrics.health * 100);
   const donePct      = Math.round(metrics.completionRate * 100);
   const freshPct     = Math.round(metrics.recencyScore * 100);
+  const horizonLabel = isShort
+    ? `Short-term · ${goal.timeframe ?? 1}mo`
+    : `Long-term · ${goal.timeframe ?? 1}yr`;
   return (
-    <div className="goal-strip">
-      <div className="strip-title">{goal.title}</div>
+    <div className={`goal-strip${isShort ? ' goal-strip--short' : ''}`}>
+      <div className="strip-header">
+        <div className="strip-title">{goal.title}</div>
+        <span className={`strip-horizon-badge${isShort ? ' strip-horizon-badge--short' : ''}`}>{horizonLabel}</span>
+      </div>
       <div className="strip-row">
         <span className="strip-label">Time</span>
         <div className="strip-track">
@@ -2136,7 +2152,7 @@ function GoalsDashboard({
               <GoalStrip key={lg.id} goal={lg} metrics={ltMetrics.get(lg.id)!} domainColor={domainColor} />
             ))}
             {dShort.map((sg) => (
-              <GoalStrip key={sg.id} goal={sg} metrics={stMetrics.get(sg.id)!} domainColor={domainColor} />
+              <GoalStrip key={sg.id} goal={sg} metrics={stMetrics.get(sg.id)!} domainColor={domainColor} isShort />
             ))}
           </div>
         );

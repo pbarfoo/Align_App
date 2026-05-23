@@ -1410,11 +1410,35 @@ h1 {
   padding: 14px 16px;
   margin-bottom: 10px;
 }
+.goal-strip--short {
+  border-style: dashed;
+}
+.strip-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
 .strip-title {
   font-size: 14px;
   font-weight: 600;
   color: var(--text);
-  margin-bottom: 10px;
+}
+.strip-horizon-badge {
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+  background: var(--line);
+  border-radius: 4px;
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+.strip-horizon-badge--short {
+  opacity: 0.75;
+  font-style: italic;
 }
 .strip-row {
   display: grid;
