@@ -2163,33 +2163,12 @@ function GoalsDashboard({
       </div>
 
       <div className="spider-pills">
-        <button className={`spider-pill${activeSlide === 0 ? ' active' : ''}`} onClick={() => scrollToSlide(0)}>Long-term</button>
-        <button className={`spider-pill${activeSlide === 1 ? ' active' : ''}`} onClick={() => scrollToSlide(1)}>Short-term</button>
+        <button className={`spider-pill${activeSlide === 0 ? ' active' : ''}`} onClick={() => scrollToSlide(0)}>Short-term</button>
+        <button className={`spider-pill${activeSlide === 1 ? ' active' : ''}`} onClick={() => scrollToSlide(1)}>Long-term</button>
       </div>
 
       <div className="spider-track" ref={trackRef} role="region" aria-label="Goal charts">
-        {/* Slide 0: Long-term */}
-        <div className="spider-slide">
-          {longGoals.length > 0
-            ? <DashSpider goals={longGoals} values={ltSpiderValues} />
-            : <p className="spider-empty">No long-term goals yet.</p>}
-          {domains.map((d) => {
-            const dLong = longGoals.filter((g) => g.domainId === d.id);
-            if (!dLong.length) return null;
-            const domainColor = DOMAIN_COLORS[d.id] ?? 'var(--accent)';
-            return (
-              <div key={d.id} className="dash-domain-section">
-                <div className="dash-domain-label" style={{ color: domainColor }}>{d.name}</div>
-                {dLong.map((lg) => (
-                  <GoalStrip key={lg.id} goal={lg} metrics={ltMetrics.get(lg.id)!} domainColor={domainColor} />
-                ))}
-              </div>
-            );
-          })}
-          {healthNote}
-        </div>
-
-        {/* Slide 1: Short-term */}
+        {/* Slide 0: Short-term */}
         <div className="spider-slide">
           {looseShort.length > 0
             ? <DashSpider goals={looseShort} values={stSpiderValues} />
@@ -2209,11 +2188,32 @@ function GoalsDashboard({
           })}
           {healthNote}
         </div>
+
+        {/* Slide 1: Long-term */}
+        <div className="spider-slide">
+          {longGoals.length > 0
+            ? <DashSpider goals={longGoals} values={ltSpiderValues} />
+            : <p className="spider-empty">No long-term goals yet.</p>}
+          {domains.map((d) => {
+            const dLong = longGoals.filter((g) => g.domainId === d.id);
+            if (!dLong.length) return null;
+            const domainColor = DOMAIN_COLORS[d.id] ?? 'var(--accent)';
+            return (
+              <div key={d.id} className="dash-domain-section">
+                <div className="dash-domain-label" style={{ color: domainColor }}>{d.name}</div>
+                {dLong.map((lg) => (
+                  <GoalStrip key={lg.id} goal={lg} metrics={ltMetrics.get(lg.id)!} domainColor={domainColor} />
+                ))}
+              </div>
+            );
+          })}
+          {healthNote}
+        </div>
       </div>
 
       <div className="spider-dots">
-        <button className={`spider-dot${activeSlide === 0 ? ' active' : ''}`} onClick={() => scrollToSlide(0)} aria-label="Long-term goals chart" />
-        <button className={`spider-dot${activeSlide === 1 ? ' active' : ''}`} onClick={() => scrollToSlide(1)} aria-label="Short-term goals chart" />
+        <button className={`spider-dot${activeSlide === 0 ? ' active' : ''}`} onClick={() => scrollToSlide(0)} aria-label="Short-term goals chart" />
+        <button className={`spider-dot${activeSlide === 1 ? ' active' : ''}`} onClick={() => scrollToSlide(1)} aria-label="Long-term goals chart" />
       </div>
     </div>
   );
