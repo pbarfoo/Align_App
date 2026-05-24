@@ -39,20 +39,20 @@ function ctx(c: PromptContext): string {
 
 export const PROMPTS = {
   ltGoal: (text: string, c: PromptContext = {}) => text.trim()
-    ? `You are a personal growth coach. Rewrite this long-term goal as a short, punchy title (2–5 words). No filler words, no explanation, no quotes.${ctx(c)}\n\nGoal to improve: "${text}"`
-    : `You are a personal growth coach. Suggest a long-term goal as a short, punchy title (2–5 words) that fits the timeframe and context. No filler words, no explanation, no quotes.${ctx(c)}`,
+    ? `You are a personal growth coach. Rewrite this long-term goal as a short, concrete title (2–5 words). Use a specific outcome, number, or milestone — never vague words like "become", "improve", "be better". No explanation, no quotes.${ctx(c)}\n\nGoal to improve: "${text}"`
+    : `You are a personal growth coach. Suggest a long-term goal as a short, concrete title (2–5 words) with a specific outcome or milestone that fits the timeframe. Never vague words like "become better" or "grow". No explanation, no quotes.${ctx(c)}`,
 
   stGoal: (text: string, c: PromptContext = {}) => text.trim()
-    ? `You are a personal growth coach. Rewrite this short-term goal as a short, punchy title (2–5 words). No filler words, no explanation, no quotes.${ctx(c)}\n\nGoal to improve: "${text}"`
-    : `You are a personal growth coach. Suggest a short-term goal as a short, punchy title (2–5 words) that fits the timeframe and context. No filler words, no explanation, no quotes.${ctx(c)}`,
+    ? `You are a personal growth coach. Rewrite this short-term goal as a short, concrete title (2–5 words). Use a specific deliverable, number, or milestone — never vague words like "improve" or "work on". No explanation, no quotes.${ctx(c)}\n\nGoal to improve: "${text}"`
+    : `You are a personal growth coach. Suggest a short-term goal as a short, concrete title (2–5 words) with a specific deliverable or milestone that fits the timeframe. Never vague. No explanation, no quotes.${ctx(c)}`,
 
   habit: (text: string, c: PromptContext = {}) => text.trim()
-    ? `You are a personal growth coach. Rewrite this habit as a clear, brief 1–3 word action. No explanation, no quotes.${ctx(c)}\n\nHabit to improve: "${text}"`
-    : `You are a personal growth coach. Suggest a daily habit as a clear 1–3 word action that supports the user's goal. No explanation, no quotes.${ctx(c)}`,
+    ? `You are a personal growth coach. Rewrite this habit as a concrete 1–3 word action — a specific behaviour, not a vague intention. No explanation, no quotes.${ctx(c)}\n\nHabit to improve: "${text}"`
+    : `You are a personal growth coach. Suggest a concrete daily habit (1–3 words) — a specific behaviour that directly supports the user's goal, not a vague intention. No explanation, no quotes.${ctx(c)}`,
 
   task: (text: string, c: PromptContext = {}) => text.trim()
-    ? `You are a personal growth coach. Rewrite this task as a short, actionable phrase (3–6 words). No explanation, no quotes.${ctx(c)}\n\nTask to improve: "${text}"`
-    : `You are a personal growth coach. Suggest one task as a short, actionable phrase (3–6 words) that moves the user's goal forward. No explanation, no quotes.${ctx(c)}`,
+    ? `You are a personal growth coach. Rewrite this task as a short, concrete action phrase (3–6 words) with a clear verb and specific output — never vague like "work on" or "think about". No explanation, no quotes.${ctx(c)}\n\nTask to improve: "${text}"`
+    : `You are a personal growth coach. Suggest one concrete task (3–6 words) with a clear verb and specific output that moves the user's goal forward. Never vague. No explanation, no quotes.${ctx(c)}`,
 
   vision: (text: string, c: PromptContext = {}) => text.trim()
     ? `You are a personal growth coach. Improve this life domain vision statement to be inspiring, personal, and concrete. 2–3 sentences max. Return only the improved vision, no explanation.${ctx(c)}\n\nVision to improve: "${text}"`
