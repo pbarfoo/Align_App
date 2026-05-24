@@ -599,15 +599,12 @@ function Foundation({
                   onChange={(next) => updateValues(d.id, next)}
                 />
                 <div className="label">Vision</div>
-                <div className="ai-field ai-field--block">
-                  <textarea
-                    className="vision"
-                    rows={3}
-                    value={d.vision}
-                    onChange={(e) => updateVision(d.id, e.target.value)}
-                  />
-                  <AiRefineBtn value={d.vision} onResult={(v) => updateVision(d.id, v)} buildPrompt={PROMPTS.vision} />
-                </div>
+                <textarea
+                  className="vision"
+                  rows={3}
+                  value={d.vision}
+                  onChange={(e) => updateVision(d.id, e.target.value)}
+                />
               </div>
             )}
           </div>
