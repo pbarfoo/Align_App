@@ -217,7 +217,6 @@ export default function App() {
   // App state
   const [tab, setTab] = useState<Tab>(() => loadOr<Tab>(TAB_KEY, 'align'));
   const TABS: Tab[] = ['foundation', 'align', 'today'];
-  const swipeStart = useRef<{ x: number; y: number } | null>(null);
   const [domains, setDomains] = useState<Domain[]>(seedDomains);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [habits, setHabits] = useState<Habit[]>([]);
@@ -374,19 +373,7 @@ export default function App() {
 
   return (
     <div className="app">
-      <main
-        onTouchStart={(e) => { swipeStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY }; }}
-        onTouchEnd={(e) => {
-          if (!swipeStart.current) return;
-          const dx = e.changedTouches[0].clientX - swipeStart.current.x;
-          const dy = e.changedTouches[0].clientY - swipeStart.current.y;
-          swipeStart.current = null;
-          if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
-          const idx = TABS.indexOf(tab);
-          if (dx < 0 && idx < TABS.length - 1) setTab(TABS[idx + 1]);
-          if (dx > 0 && idx > 0) setTab(TABS[idx - 1]);
-        }}
-      >
+      <main>
         {tab === 'foundation' && (
           <Foundation domains={domains} setDomains={setDomains} />
         )}
