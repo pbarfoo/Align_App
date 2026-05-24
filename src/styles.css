@@ -257,7 +257,8 @@ h1 {
   line-height: 1;
 }
 .ai-btn:hover { opacity: 1; transform: scale(1.1); }
-.ai-btn:disabled { opacity: 0.5; cursor: default; transform: none; }
+.ai-btn:disabled { cursor: default; transform: none; }
+.ai-btn--empty { opacity: 0.3; }
 
 .ai-btn--loading { background: var(--muted); }
 
