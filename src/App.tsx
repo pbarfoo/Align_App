@@ -216,7 +216,6 @@ export default function App() {
 
   // App state
   const [tab, setTab] = useState<Tab>(() => loadOr<Tab>(TAB_KEY, 'align'));
-  const TABS: Tab[] = ['foundation', 'align', 'today'];
   const [domains, setDomains] = useState<Domain[]>(seedDomains);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [habits, setHabits] = useState<Habit[]>([]);
