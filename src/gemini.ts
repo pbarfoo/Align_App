@@ -15,20 +15,42 @@ export async function callGemini(prompt: string): Promise<string> {
   return (json.candidates?.[0]?.content?.parts?.[0]?.text ?? '').trim();
 }
 
+export interface PromptContext {
+  values?: string[];
+  vision?: string;
+  existingGoals?: string[];
+  parentGoal?: string;
+  goalTitle?: string;
+}
+
+function ctx(c: PromptContext): string {
+  const lines: string[] = [];
+  if (c.vision) lines.push(`Domain vision: ${c.vision}`);
+  if (c.values?.length) lines.push(`Core values: ${c.values.join(', ')}`);
+  if (c.parentGoal) lines.push(`Parent long-term goal: ${c.parentGoal}`);
+  if (c.goalTitle) lines.push(`Goal this belongs to: ${c.goalTitle}`);
+  if (c.existingGoals?.length) lines.push(`Already committed to: ${c.existingGoals.join('; ')}`);
+  return lines.length ? '\n\n' + lines.join('\n') : '';
+}
+
 export const PROMPTS = {
-  ltGoal: (text: string) => text.trim()
-    ? `You are a personal growth coach. Improve this long-term goal title (1–5 years) to be specific, inspiring, and outcome-focused. Return only the improved title, no quotes, no explanation.\n\nUser input: "${text}"`
-    : `You are a personal growth coach. Suggest one specific, inspiring long-term goal (1–5 years). Return only the goal title, no quotes, no explanation.`,
-  stGoal: (text: string) => text.trim()
-    ? `You are a personal growth coach. Improve this short-term goal title (1–12 months) to be concrete, achievable, and motivating. Return only the improved title, no quotes, no explanation.\n\nUser input: "${text}"`
-    : `You are a personal growth coach. Suggest one specific, achievable short-term goal (1–12 months). Return only the goal title, no quotes, no explanation.`,
-  habit: (text: string) => text.trim()
-    ? `You are a personal growth coach. Improve this habit name to be a clear, brief daily action. Return only the improved habit name, no quotes, no explanation.\n\nUser input: "${text}"`
-    : `You are a personal growth coach. Suggest one clear, beneficial daily habit. Return only the habit name, no quotes, no explanation.`,
-  task: (text: string) => text.trim()
-    ? `You are a personal growth coach. Improve this task to be a specific, actionable to-do item. Return only the improved task, no quotes, no explanation.\n\nUser input: "${text}"`
-    : `You are a personal growth coach. Suggest one specific, actionable task. Return only the task, no quotes, no explanation.`,
-  vision: (text: string) => text.trim()
-    ? `You are a personal growth coach. Improve this life domain vision statement to be inspiring, personal, and concrete. 2–3 sentences max. Return only the improved vision, no explanation.\n\nUser input: "${text}"`
-    : `You are a personal growth coach. Write an inspiring, personal life domain vision statement. 2–3 sentences max. Return only the vision, no explanation.`,
+  ltGoal: (text: string, c: PromptContext = {}) => text.trim()
+    ? `You are a personal growth coach. Improve this long-term goal (1–5 years) to be specific, inspiring, and outcome-focused. Return only the improved title, no quotes, no explanation.${ctx(c)}\n\nGoal to improve: "${text}"`
+    : `You are a personal growth coach. Suggest one specific, inspiring long-term goal (1–5 years) aligned with the user's context. Return only the goal title, no quotes, no explanation.${ctx(c)}`,
+
+  stGoal: (text: string, c: PromptContext = {}) => text.trim()
+    ? `You are a personal growth coach. Improve this short-term goal (1–12 months) to be concrete, achievable, and motivating. Return only the improved title, no quotes, no explanation.${ctx(c)}\n\nGoal to improve: "${text}"`
+    : `You are a personal growth coach. Suggest one specific, achievable short-term goal (1–12 months) aligned with the user's context. Return only the goal title, no quotes, no explanation.${ctx(c)}`,
+
+  habit: (text: string, c: PromptContext = {}) => text.trim()
+    ? `You are a personal growth coach. Improve this habit to be a clear, brief daily action aligned with the user's goal. Return only the improved habit name, no quotes, no explanation.${ctx(c)}\n\nHabit to improve: "${text}"`
+    : `You are a personal growth coach. Suggest one clear daily habit that directly supports the user's goal. Return only the habit name, no quotes, no explanation.${ctx(c)}`,
+
+  task: (text: string, c: PromptContext = {}) => text.trim()
+    ? `You are a personal growth coach. Improve this task to be a specific, actionable to-do item aligned with the user's goal. Return only the improved task, no quotes, no explanation.${ctx(c)}\n\nTask to improve: "${text}"`
+    : `You are a personal growth coach. Suggest one specific actionable task that directly moves the user's goal forward. Return only the task, no quotes, no explanation.${ctx(c)}`,
+
+  vision: (text: string, c: PromptContext = {}) => text.trim()
+    ? `You are a personal growth coach. Improve this life domain vision statement to be inspiring, personal, and concrete. 2–3 sentences max. Return only the improved vision, no explanation.${ctx(c)}\n\nVision to improve: "${text}"`
+    : `You are a personal growth coach. Write an inspiring, personal life domain vision statement. 2–3 sentences max. Return only the vision, no explanation.${ctx(c)}`,
 };

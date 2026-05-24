@@ -989,11 +989,16 @@ function Align({
                   onToggleGoalComplete={toggleGoalComplete}
                   onToggleHabit={toggleHabit}
                   hideCompleted={hideCompleted}
+                  domainValues={domain.values}
+                  domainVision={domain.vision}
                 />
               ))}
             {addingFor === lg.id && (
               <AddShortGoalForm
                 domainValues={domain.values}
+                vision={domain.vision}
+                parentGoal={lg.title}
+                existingGoals={domainGoals.filter(g => g.parentGoalId === lg.id).map(g => g.title)}
                 forceOpen
                 onClose={() => setAddingFor(null)}
                 indent="short"
@@ -1026,12 +1031,21 @@ function Align({
             onToggleGoalComplete={toggleGoalComplete}
             onToggleHabit={toggleHabit}
             hideCompleted={hideCompleted}
+            domainValues={domain.values}
+            domainVision={domain.vision}
           />
         ))}
 
-        <AddShortGoalForm domainValues={domain.values} onAdd={addLooseShortGoal} />
+        <AddShortGoalForm
+          domainValues={domain.values}
+          vision={domain.vision}
+          existingGoals={looseShort.map(g => g.title)}
+          onAdd={addLooseShortGoal}
+        />
         <AddGoalForm
           domainValues={domain.values}
+          vision={domain.vision}
+          existingGoals={longGoals.map(g => g.title)}
           onAdd={(idxs, title, years) => addLongGoal(idxs, title, years)}
         />
       </div>
@@ -1057,10 +1071,14 @@ function ShortWithActions({
   onToggleGoalComplete,
   onToggleHabit,
   hideCompleted,
+  domainValues,
+  domainVision,
 }: {
   goal: Goal;
   displayValues: string[];
   habits: Habit[];
+  domainValues?: string[];
+  domainVision?: string;
   cls: (id: string, base?: string) => string;
   lit: string | null;
   setLit: (s: string | null) => void;
@@ -1160,6 +1178,9 @@ function ShortWithActions({
             <AddActionForm
               goalId={h.goalId}
               initial={h}
+              goalTitle={goal.title}
+              domainValues={domainValues}
+              vision={domainVision}
               onSave={(updates) => { onEditHabit(h.id, updates); setEditingHabitId(null); }}
               onClose={() => setEditingHabitId(null)}
             />
@@ -1170,6 +1191,9 @@ function ShortWithActions({
       {addingFor === goal.id && (
         <AddActionForm
           goalId={goal.id}
+          goalTitle={goal.title}
+          domainValues={domainValues}
+          vision={domainVision}
           onAdd={onAddAction}
           onClose={() => setAddingFor(null)}
         />
@@ -1184,12 +1208,18 @@ function AddActionForm({
   onSave,
   onClose,
   initial,
+  goalTitle,
+  domainValues,
+  vision,
 }: {
   goalId: string;
   onAdd?: (goalId: string, title: string, kind: ActionKind, input: ActionInput) => void;
   onSave?: (updates: Partial<Habit>) => void;
   onClose: () => void;
   initial?: Habit;
+  goalTitle?: string;
+  domainValues?: string[];
+  vision?: string;
 }) {
   const [kind, setKind] = useState<ActionKind>(initial?.kind ?? 'habit');
   const [title, setTitle] = useState(initial?.title ?? '');
@@ -1240,7 +1270,7 @@ function AddActionForm({
           onChange={(e) => setTitle(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && submit()}
         />
-        <AiRefineBtn value={title} onResult={setTitle} buildPrompt={kind === 'habit' ? PROMPTS.habit : PROMPTS.task} />
+        <AiRefineBtn value={title} onResult={setTitle} buildPrompt={(t) => (kind === 'habit' ? PROMPTS.habit : PROMPTS.task)(t, { goalTitle, values: domainValues, vision })} />
       </div>
 
       {kind === 'habit' ? (
@@ -1291,12 +1321,18 @@ function AddActionForm({
 
 function AddShortGoalForm({
   domainValues,
+  vision,
+  parentGoal,
+  existingGoals,
   onAdd,
   forceOpen,
   onClose,
   indent,
 }: {
   domainValues: string[];
+  vision?: string;
+  parentGoal?: string;
+  existingGoals?: string[];
   onAdd: (title: string, months: number, valueIndexes: number[]) => void;
   forceOpen?: boolean;
   onClose?: () => void;
@@ -1338,7 +1374,7 @@ function AddShortGoalForm({
           onChange={(e) => setTitle(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && submit()}
         />
-        <AiRefineBtn value={title} onResult={setTitle} buildPrompt={PROMPTS.stGoal} />
+        <AiRefineBtn value={title} onResult={setTitle} buildPrompt={(t) => PROMPTS.stGoal(t, { values: domainValues, vision, parentGoal, existingGoals })} />
       </div>
       {domainValues.length > 0 && (
         <>
@@ -1370,9 +1406,13 @@ function AddShortGoalForm({
 
 function AddGoalForm({
   domainValues,
+  vision,
+  existingGoals,
   onAdd,
 }: {
   domainValues: string[];
+  vision?: string;
+  existingGoals?: string[];
   onAdd: (valueIndexes: number[], title: string, years: number) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -1414,7 +1454,7 @@ function AddGoalForm({
           onChange={(e) => setTitle(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && submit()}
         />
-        <AiRefineBtn value={title} onResult={setTitle} buildPrompt={PROMPTS.ltGoal} />
+        <AiRefineBtn value={title} onResult={setTitle} buildPrompt={(t) => PROMPTS.ltGoal(t, { values: domainValues, vision, existingGoals })} />
       </div>
       {domainValues.length > 0 && (
         <>
