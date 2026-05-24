@@ -16,14 +16,19 @@ export async function callGemini(prompt: string): Promise<string> {
 }
 
 export const PROMPTS = {
-  ltGoal: (text: string) =>
-    `You are a personal growth coach. The user is setting a long-term goal (1–5 years). Improve their goal title to be specific, inspiring, and outcome-focused. Return only the improved title, no quotes, no explanation.\n\nUser input: "${text}"`,
-  stGoal: (text: string) =>
-    `You are a personal growth coach. The user is setting a short-term goal (1–12 months). Improve their goal title to be concrete, achievable, and motivating. Return only the improved title, no quotes, no explanation.\n\nUser input: "${text}"`,
-  habit: (text: string) =>
-    `You are a personal growth coach. Improve this habit name to be a clear, brief daily action. Return only the improved habit name, no quotes, no explanation.\n\nUser input: "${text}"`,
-  task: (text: string) =>
-    `You are a personal growth coach. Improve this task to be a specific, actionable to-do item. Return only the improved task, no quotes, no explanation.\n\nUser input: "${text}"`,
-  vision: (text: string) =>
-    `You are a personal growth coach. Improve this life domain vision statement to be inspiring, personal, and concrete. 2–3 sentences max. Return only the improved vision, no explanation.\n\nUser input: "${text}"`,
+  ltGoal: (text: string) => text.trim()
+    ? `You are a personal growth coach. Improve this long-term goal title (1–5 years) to be specific, inspiring, and outcome-focused. Return only the improved title, no quotes, no explanation.\n\nUser input: "${text}"`
+    : `You are a personal growth coach. Suggest one specific, inspiring long-term goal (1–5 years). Return only the goal title, no quotes, no explanation.`,
+  stGoal: (text: string) => text.trim()
+    ? `You are a personal growth coach. Improve this short-term goal title (1–12 months) to be concrete, achievable, and motivating. Return only the improved title, no quotes, no explanation.\n\nUser input: "${text}"`
+    : `You are a personal growth coach. Suggest one specific, achievable short-term goal (1–12 months). Return only the goal title, no quotes, no explanation.`,
+  habit: (text: string) => text.trim()
+    ? `You are a personal growth coach. Improve this habit name to be a clear, brief daily action. Return only the improved habit name, no quotes, no explanation.\n\nUser input: "${text}"`
+    : `You are a personal growth coach. Suggest one clear, beneficial daily habit. Return only the habit name, no quotes, no explanation.`,
+  task: (text: string) => text.trim()
+    ? `You are a personal growth coach. Improve this task to be a specific, actionable to-do item. Return only the improved task, no quotes, no explanation.\n\nUser input: "${text}"`
+    : `You are a personal growth coach. Suggest one specific, actionable task. Return only the task, no quotes, no explanation.`,
+  vision: (text: string) => text.trim()
+    ? `You are a personal growth coach. Improve this life domain vision statement to be inspiring, personal, and concrete. 2–3 sentences max. Return only the improved vision, no explanation.\n\nUser input: "${text}"`
+    : `You are a personal growth coach. Write an inspiring, personal life domain vision statement. 2–3 sentences max. Return only the vision, no explanation.`,
 };

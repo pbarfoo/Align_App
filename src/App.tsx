@@ -531,7 +531,6 @@ function AiRefineBtn({ value, onResult, buildPrompt }: {
 }) {
   const [loading, setLoading] = useState(false);
   if (!geminiAvailable) return null;
-  const hasText = !!value.trim();
 
   const run = async () => {
     setLoading(true);
@@ -546,7 +545,7 @@ function AiRefineBtn({ value, onResult, buildPrompt }: {
   };
 
   return (
-    <button type="button" className={`ai-btn${loading ? ' ai-btn--loading' : ''}${!hasText ? ' ai-btn--empty' : ''}`} onClick={run} title="Improve with AI" disabled={loading || !hasText}>
+    <button type="button" className={`ai-btn${loading ? ' ai-btn--loading' : ''}`} onClick={run} title={value.trim() ? 'Improve with AI' : 'Suggest with AI'} disabled={loading}>
       {loading ? <span className="ai-spinner" /> : '✦'}
     </button>
   );
