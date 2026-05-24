@@ -17,6 +17,8 @@ export async function callGemini(prompt: string): Promise<string> {
 
 export interface PromptContext {
   values?: string[];
+  selectedValues?: string[];
+  timeframe?: string;
   vision?: string;
   existingGoals?: string[];
   parentGoal?: string;
@@ -26,7 +28,9 @@ export interface PromptContext {
 function ctx(c: PromptContext): string {
   const lines: string[] = [];
   if (c.vision) lines.push(`Domain vision: ${c.vision}`);
-  if (c.values?.length) lines.push(`Core values: ${c.values.join(', ')}`);
+  if (c.selectedValues?.length) lines.push(`Values this goal serves: ${c.selectedValues.join(', ')}`);
+  else if (c.values?.length) lines.push(`Core values: ${c.values.join(', ')}`);
+  if (c.timeframe) lines.push(`Timeframe: ${c.timeframe}`);
   if (c.parentGoal) lines.push(`Parent long-term goal: ${c.parentGoal}`);
   if (c.goalTitle) lines.push(`Goal this belongs to: ${c.goalTitle}`);
   if (c.existingGoals?.length) lines.push(`Already committed to: ${c.existingGoals.join('; ')}`);
@@ -35,16 +39,16 @@ function ctx(c: PromptContext): string {
 
 export const PROMPTS = {
   ltGoal: (text: string, c: PromptContext = {}) => text.trim()
-    ? `You are a personal growth coach. Improve this long-term goal (1–5 years) to be specific, inspiring, and outcome-focused. Return only the improved title, no quotes, no explanation.${ctx(c)}\n\nGoal to improve: "${text}"`
-    : `You are a personal growth coach. Suggest one specific, inspiring long-term goal (1–5 years) aligned with the user's context. Return only the goal title, no quotes, no explanation.${ctx(c)}`,
+    ? `You are a personal growth coach. Improve this long-term goal to be specific, inspiring, and achievable within the timeframe. Return only the improved title, no quotes, no explanation.${ctx(c)}\n\nGoal to improve: "${text}"`
+    : `You are a personal growth coach. Suggest one specific, inspiring long-term goal that fits the timeframe and aligns with the user's context. Return only the goal title, no quotes, no explanation.${ctx(c)}`,
 
   stGoal: (text: string, c: PromptContext = {}) => text.trim()
-    ? `You are a personal growth coach. Improve this short-term goal (1–12 months) to be concrete, achievable, and motivating. Return only the improved title, no quotes, no explanation.${ctx(c)}\n\nGoal to improve: "${text}"`
-    : `You are a personal growth coach. Suggest one specific, achievable short-term goal (1–12 months) aligned with the user's context. Return only the goal title, no quotes, no explanation.${ctx(c)}`,
+    ? `You are a personal growth coach. Improve this short-term goal to be concrete, achievable within the timeframe, and directly supportive of the user's context. Return only the improved title, no quotes, no explanation.${ctx(c)}\n\nGoal to improve: "${text}"`
+    : `You are a personal growth coach. Suggest one specific, achievable short-term goal that fits the timeframe and aligns with the user's context. Return only the goal title, no quotes, no explanation.${ctx(c)}`,
 
   habit: (text: string, c: PromptContext = {}) => text.trim()
-    ? `You are a personal growth coach. Improve this habit to be a clear, brief daily action aligned with the user's goal. Return only the improved habit name, no quotes, no explanation.${ctx(c)}\n\nHabit to improve: "${text}"`
-    : `You are a personal growth coach. Suggest one clear daily habit that directly supports the user's goal. Return only the habit name, no quotes, no explanation.${ctx(c)}`,
+    ? `You are a personal growth coach. Improve this habit to be a clear, brief recurring action aligned with the user's goal. Return only the improved habit name, no quotes, no explanation.${ctx(c)}\n\nHabit to improve: "${text}"`
+    : `You are a personal growth coach. Suggest one clear recurring habit that directly supports the user's goal. Return only the habit name, no quotes, no explanation.${ctx(c)}`,
 
   task: (text: string, c: PromptContext = {}) => text.trim()
     ? `You are a personal growth coach. Improve this task to be a specific, actionable to-do item aligned with the user's goal. Return only the improved task, no quotes, no explanation.${ctx(c)}\n\nTask to improve: "${text}"`

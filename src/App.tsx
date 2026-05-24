@@ -1360,7 +1360,7 @@ function AddShortGoalForm({
           onChange={(e) => setTitle(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && submit()}
         />
-        <AiRefineBtn value={title} onResult={setTitle} buildPrompt={(t) => PROMPTS.stGoal(t, { values: domainValues, vision, parentGoal, existingGoals })} />
+        <AiRefineBtn value={title} onResult={setTitle} buildPrompt={(t) => PROMPTS.stGoal(t, { values: domainValues, selectedValues: picked.map(i => domainValues[i]).filter(Boolean), timeframe: `${months} month${Number(months) !== 1 ? 's' : ''}`, vision, parentGoal, existingGoals })} />
       </div>
       {domainValues.length > 0 && (
         <>
@@ -1440,7 +1440,7 @@ function AddGoalForm({
           onChange={(e) => setTitle(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && submit()}
         />
-        <AiRefineBtn value={title} onResult={setTitle} buildPrompt={(t) => PROMPTS.ltGoal(t, { values: domainValues, vision, existingGoals })} />
+        <AiRefineBtn value={title} onResult={setTitle} buildPrompt={(t) => PROMPTS.ltGoal(t, { values: domainValues, selectedValues: picked.map(i => domainValues[i]).filter(Boolean), timeframe: `${years} year${Number(years) !== 1 ? 's' : ''}`, vision, existingGoals })} />
       </div>
       {domainValues.length > 0 && (
         <>
