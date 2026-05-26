@@ -509,6 +509,31 @@ export default function App() {
   );
 }
 
+/* ---------------- Date / Time Button ---------------- */
+function DateBtn({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
+  const display = value
+    ? new Date(value + 'T00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+    : placeholder;
+  return (
+    <div className={`date-btn${value ? '' : ' date-btn--empty'}`}>
+      <span>{display}</span>
+      <input type="date" value={value} onChange={(e) => onChange(e.target.value)} />
+    </div>
+  );
+}
+
+function TimeBtn({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
+  const display = value
+    ? (() => { const [h, m] = value.split(':'); const d = new Date(); d.setHours(+h, +m); return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }); })()
+    : placeholder;
+  return (
+    <div className={`date-btn${value ? '' : ' date-btn--empty'}`}>
+      <span>{display}</span>
+      <input type="time" value={value} onChange={(e) => onChange(e.target.value)} />
+    </div>
+  );
+}
+
 /* ---------------- AI Refine Button ---------------- */
 function AiRefineBtn({ value, onResult, buildPrompt }: {
   value: string;
@@ -1270,10 +1295,7 @@ function AddActionForm({
               <option value="yearly">Yearly</option>
               <option value="custom">Custom…</option>
             </select>
-            <label className="date-field">
-              <span className="date-field-label">Start</span>
-              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-            </label>
+            <DateBtn value={startDate} onChange={setStartDate} placeholder="Start date" />
           </div>
           {recurrence === 'custom' && (
             <div className="field-row">
@@ -1291,14 +1313,8 @@ function AddActionForm({
         </>
       ) : (
         <div className="field-row">
-          <label className="date-field">
-            <span className="date-field-label">Due date</span>
-            <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-          </label>
-          <label className="date-field">
-            <span className="date-field-label">Due time</span>
-            <input type="time" value={dueTime} onChange={(e) => setDueTime(e.target.value)} />
-          </label>
+          <DateBtn value={dueDate} onChange={setDueDate} placeholder="Due date" />
+          <TimeBtn value={dueTime} onChange={setDueTime} placeholder="Due time" />
         </div>
       )}
 
