@@ -880,6 +880,26 @@ h1 {
   font-weight: 500;
 }
 
+.backdate-btn {
+  position: relative;
+  flex-shrink: 0;
+  align-self: center;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  font-size: 11px;
+  color: var(--muted);
+  overflow: hidden;
+  cursor: pointer;
+}
+.backdate-btn input[type='date'] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  color-scheme: dark;
+}
+
 .reflect-prompt {
   margin-top: 30px;
   width: 100%;

@@ -54,6 +54,8 @@ export interface Habit {
   completedAt?: number;
   /** habit only: consecutive periods completed in a row */
   streak?: number;
+  /** habit only: "YYYY-MM-DD" strings for every logged completion */
+  completions?: string[];
 }
 
 export const domains: Domain[] = [

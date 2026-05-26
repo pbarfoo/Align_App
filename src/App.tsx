@@ -88,6 +88,7 @@ function habitToRow(h: Habit, userId: string): Row {
     due_date: h.dueDate ?? null, due_time: h.dueTime ?? null,
     completed: h.completed ?? null, completed_at: h.completedAt ?? null,
     streak: h.streak ?? 0,
+    completions: h.completions ?? [],
   };
 }
 function habitFromRow(row: Row): Habit {
@@ -104,6 +105,7 @@ function habitFromRow(row: Row): Habit {
     completed: row.completed ?? undefined,
     completedAt: row.completed_at ?? undefined,
     streak: row.streak ?? 0,
+    completions: row.completions ?? [],
   };
 }
 
@@ -885,15 +887,18 @@ function Align({
   const toggleHabit = (id: string) =>
     setHabits((prev) => prev.map((h) => {
       if (h.id !== id) return h;
-      const currentlyDone = h.kind === 'task' ? !!h.completed : isHabitDoneThisPeriod(h);
-      const turningOn = !currentlyDone;
+      if (h.kind === 'task') {
+        const turningOn = !h.completed;
+        return { ...h, completed: turningOn, completedAt: turningOn ? Date.now() : undefined };
+      }
+      const today = toDateStr(new Date());
+      const completions = h.completions ?? [];
+      const turningOn = !completions.includes(today);
       return {
         ...h,
-        doneToday: h.kind === 'habit' ? turningOn : h.doneToday,
-        ...(h.kind === 'task' ? { completed: turningOn } : {}),
-        ...(h.kind === 'habit'
-          ? { streak: turningOn ? (h.streak || 0) + 1 : 0 }
-          : {}),
+        doneToday: turningOn,
+        completions: turningOn ? [...completions, today] : completions.filter((d) => d !== today),
+        streak: turningOn ? (h.streak || 0) + 1 : Math.max(0, (h.streak || 0) - 1),
         completedAt: turningOn ? Date.now() : undefined,
       };
     }));
@@ -1732,16 +1737,32 @@ function Today({
   const toggle = (id: string) => {
     setHabits((prev) => prev.map((h) => {
       if (h.id !== id) return h;
-      const currentlyDone = h.kind === 'task' ? !!h.completed : isHabitDoneThisPeriod(h);
-      const turningOn = !currentlyDone;
+      if (h.kind === 'task') {
+        const turningOn = !h.completed;
+        return { ...h, completed: turningOn, completedAt: turningOn ? Date.now() : undefined };
+      }
+      const today = toDateStr(new Date());
+      const completions = h.completions ?? [];
+      const turningOn = !completions.includes(today);
       return {
         ...h,
-        doneToday: h.kind === 'habit' ? turningOn : h.doneToday,
-        ...(h.kind === 'task' ? { completed: turningOn } : {}),
-        ...(h.kind === 'habit'
-          ? { streak: turningOn ? (h.streak || 0) + 1 : 0 }
-          : {}),
+        doneToday: turningOn,
+        completions: turningOn ? [...completions, today] : completions.filter((d) => d !== today),
+        streak: turningOn ? (h.streak || 0) + 1 : Math.max(0, (h.streak || 0) - 1),
         completedAt: turningOn ? Date.now() : undefined,
+      };
+    }));
+  };
+
+  const logHabitDate = (id: string, dateStr: string) => {
+    setHabits((prev) => prev.map((h) => {
+      if (h.id !== id || h.kind !== 'habit') return h;
+      const completions = h.completions ?? [];
+      if (completions.includes(dateStr)) return h;
+      return {
+        ...h,
+        completions: [...completions, dateStr],
+        completedAt: Math.max(h.completedAt ?? 0, new Date(dateStr + 'T12:00').getTime()),
       };
     }));
   };
@@ -1782,28 +1803,37 @@ function Today({
         </div>
       </div>
 
-      {habits.map((h) => (
-        <div className="habit-row" key={h.id}>
-          <button
-            className={`check${(h.kind === 'task' ? !!h.completed : isHabitDoneThisPeriod(h)) ? ' on' : ''}`}
-            onClick={() => toggle(h.id)}
-            aria-label="toggle"
-          >
-            <Tick />
-          </button>
-          <div>
-            <div className={`habit-title${(h.kind === 'task' ? !!h.completed : isHabitDoneThisPeriod(h)) ? ' done' : ''}`}>
-              {h.title}
+      {habits.map((h) => {
+        const isDone = h.kind === 'task' ? !!h.completed : isHabitDoneThisPeriod(h);
+        return (
+          <div className="habit-row" key={h.id}>
+            <button
+              className={`check${isDone ? ' on' : ''}`}
+              onClick={() => toggle(h.id)}
+              aria-label="toggle"
+            >
+              <Tick />
+            </button>
+            <div style={{ flex: 1 }}>
+              <div className={`habit-title${isDone ? ' done' : ''}`}>{h.title}</div>
+              <div className="habit-meta">
+                {h.kind === 'task' ? `Task · ${getTaskCountdown(h)}` : getRecurrenceString(h)}
+                &nbsp;·&nbsp; serves <b>{lineage(h.goalId)}</b>
+              </div>
             </div>
-            <div className="habit-meta">
-              {h.kind === 'task'
-                ? `Task · ${getTaskCountdown(h)}`
-                : getRecurrenceString(h)}
-              &nbsp;·&nbsp; serves <b>{lineage(h.goalId)}</b>
-            </div>
+            {h.kind === 'habit' && (
+              <div className="backdate-btn" title="Log a past date">
+                <span>+past</span>
+                <input
+                  type="date"
+                  max={toDateStr(new Date())}
+                  onChange={(e) => { if (e.target.value) { logHabitDate(h.id, e.target.value); e.target.value = ''; } }}
+                />
+              </div>
+            )}
           </div>
-        </div>
-      ))}
+        );
+      })}
 
       {new Date().getDay() === 0 && (
         <button className="reflect-prompt" onClick={onReflect}>
@@ -2716,32 +2746,24 @@ function getISOWeek(d: Date): number {
 }
 
 /** Returns true if the habit was completed within its current recurrence window. */
-function isHabitDoneThisPeriod(h: Habit): boolean {
-  if (!h.completedAt) return false;
-  const now = new Date();
-  const done = new Date(h.completedAt);
-  const sameDay =
-    done.getFullYear() === now.getFullYear() &&
-    done.getMonth() === now.getMonth() &&
-    done.getDate() === now.getDate();
+function toDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 
+function dateInCurrentPeriod(dateStr: string, h: Habit): boolean {
+  const d = new Date(dateStr + 'T12:00');
+  const now = new Date();
   switch (h.recurrence ?? 'daily') {
     case 'daily':
-      return sameDay;
+      return dateStr === toDateStr(now);
     case 'weekdays':
-      return sameDay && now.getDay() !== 0 && now.getDay() !== 6;
+      return dateStr === toDateStr(now) && now.getDay() !== 0 && now.getDay() !== 6;
     case 'weekly':
-      return (
-        getISOWeek(done) === getISOWeek(now) &&
-        done.getFullYear() === now.getFullYear()
-      );
+      return getISOWeek(d) === getISOWeek(now) && d.getFullYear() === now.getFullYear();
     case 'monthly':
-      return (
-        done.getFullYear() === now.getFullYear() &&
-        done.getMonth() === now.getMonth()
-      );
+      return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
     case 'yearly':
-      return done.getFullYear() === now.getFullYear();
+      return d.getFullYear() === now.getFullYear();
     case 'custom': {
       const unit = h.customUnit ?? 'weeks';
       const interval = Math.max(1, h.customInterval ?? 1);
@@ -2750,11 +2772,15 @@ function isHabitDoneThisPeriod(h: Habit): boolean {
         unit === 'weeks'  ? interval * 7 * 86_400_000 :
         unit === 'months' ? interval * 30.44 * 86_400_000 :
         /* years */         interval * 365.25 * 86_400_000;
-      return Date.now() - h.completedAt < windowMs;
+      return Date.now() - d.getTime() < windowMs;
     }
     default:
-      return sameDay;
+      return dateStr === toDateStr(now);
   }
+}
+
+function isHabitDoneThisPeriod(h: Habit): boolean {
+  return (h.completions ?? []).some((d) => dateInCurrentPeriod(d, h));
 }
 
 /* ---------------- bits ---------------- */
