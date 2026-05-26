@@ -2262,12 +2262,12 @@ function GoalsDashboard({
   onClose: () => void;
 }) {
   const longGoals  = goals.filter((g) => g.horizon === 'long');
-  const looseShort = goals.filter((g) => g.horizon === 'short' && !g.parentGoalId);
+  const allShort   = goals.filter((g) => g.horizon === 'short');
   const ltMetrics  = new Map(longGoals.map((g) => [g.id, vitalityFor(g, goals, habits)] as const));
-  const stMetrics  = new Map(looseShort.map((g) => [g.id, stGoalMetrics(g, habits)] as const));
+  const stMetrics  = new Map(allShort.map((g) => [g.id, stGoalMetrics(g, habits)] as const));
 
   const ltSpiderValues = longGoals.map((g) => ltMetrics.get(g.id)!.health);
-  const stSpiderValues = looseShort.map((g) => stMetrics.get(g.id)!.health);
+  const stSpiderValues = allShort.map((g) => stMetrics.get(g.id)!.health);
 
   const [activeSlide, setActiveSlide] = useState<0 | 1>(0);
   const trackRef = useRef<HTMLDivElement>(null);
@@ -2334,19 +2334,27 @@ function GoalsDashboard({
       <div className="spider-track" ref={trackRef} role="region" aria-label="Goal charts">
         {/* Slide 0: Short-term */}
         <div className="spider-slide">
-          {looseShort.length > 0
-            ? <DashSpider goals={looseShort} values={stSpiderValues} />
-            : <p className="spider-empty">No standalone short-term goals yet.</p>}
+          {allShort.length > 0
+            ? <DashSpider goals={allShort} values={stSpiderValues} />
+            : <p className="spider-empty">No short-term goals yet.</p>}
           {domains.map((d) => {
-            const dShort = looseShort.filter((g) => g.domainId === d.id);
+            const dShort = allShort.filter((g) => g.domainId === d.id);
             if (!dShort.length) return null;
             const domainColor = DOMAIN_COLORS[d.id] ?? 'var(--accent)';
             return (
               <div key={d.id} className="dash-domain-section">
                 <div className="dash-domain-label" style={{ color: domainColor }}>{d.name}</div>
-                {dShort.map((sg) => (
-                  <GoalStrip key={sg.id} goal={sg} metrics={stMetrics.get(sg.id)!} domainColor={domainColor} isShort />
-                ))}
+                {dShort.map((sg) => {
+                  const parent = sg.parentGoalId ? longGoals.find((lg) => lg.id === sg.parentGoalId) : null;
+                  return (
+                    <div key={sg.id}>
+                      {parent && (
+                        <div className="dash-st-parent-label">↳ {parent.title}</div>
+                      )}
+                      <GoalStrip goal={sg} metrics={stMetrics.get(sg.id)!} domainColor={domainColor} isShort />
+                    </div>
+                  );
+                })}
               </div>
             );
           })}
