@@ -2041,7 +2041,7 @@ function valueAlignmentScore(
   // Blend
   let score: number;
   if (reflComponent !== null && activityComponent !== null) {
-    score = (6 * reflComponent + 5 * activityComponent) / 11; // 60∶50 normalised
+    score = 0.6 * reflComponent + 0.4 * activityComponent;
   } else if (reflComponent !== null) {
     score = reflComponent;
   } else if (activityComponent !== null) {
@@ -2755,7 +2755,7 @@ function ReviewPanel({
               );
             })}
             <div className="review-decay-note">
-              Score 0–10: reflection weighted 60%, goal &amp; habit activity weighted 50% (normalised)
+              Score 0–10: reflection 60%, goal &amp; habit activity 40%
             </div>
           </div>
 
