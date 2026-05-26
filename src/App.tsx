@@ -396,6 +396,7 @@ export default function App() {
             setHabits={setHabits}
             goals={goals}
             domains={domains}
+            reflections={reflections}
             onReflect={() => setReflectOpen(true)}
           />
         )}
@@ -1723,12 +1724,14 @@ function Today({
   setHabits,
   goals,
   domains,
+  reflections,
   onReflect,
 }: {
   habits: Habit[];
   setHabits: React.Dispatch<React.SetStateAction<Habit[]>>;
   goals: Goal[];
   domains: Domain[];
+  reflections: ReflectionEntry[];
   onReflect: () => void;
 }) {
   const done = habits.filter((h) => h.kind === 'task' ? !!h.completed : isHabitDoneThisPeriod(h)).length;
@@ -1801,6 +1804,7 @@ function Today({
         <div className="bar">
           <i style={{ width: `${pct}%` }} />
         </div>
+        <button className="reflect-mini-btn" onClick={onReflect} title="Weekly reflection">✦ Reflect</button>
       </div>
 
       {habits.map((h) => {
@@ -1835,11 +1839,24 @@ function Today({
         );
       })}
 
-      {new Date().getDay() === 0 && (
-        <button className="reflect-prompt" onClick={onReflect}>
-          It's Sunday — take two minutes to reflect on the week →
-        </button>
-      )}
+      {(() => {
+        const now = new Date();
+        const day = now.getDay(); // 0=Sun, 1=Mon … 6=Sat
+        const week = getISOWeek(now);
+        const year = now.getFullYear();
+        const thisWeekDone = reflections.some(
+          (r) => r.weekNumber === week && new Date(r.date).getFullYear() === year
+        );
+        // Show on Sunday, or Mon–Wed as a grace window, if this week isn't reflected yet
+        const inWindow = day === 0 || (day >= 1 && day <= 3);
+        if (thisWeekDone || !inWindow) return null;
+        const label = day === 0
+          ? "It's Sunday — take two minutes to reflect on the week →"
+          : "Weekly reflection pending — fill it in before it slips away →";
+        return (
+          <button className="reflect-prompt" onClick={onReflect}>{label}</button>
+        );
+      })()}
     </div>
   );
 }

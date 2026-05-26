@@ -900,6 +900,20 @@ h1 {
   color-scheme: dark;
 }
 
+.reflect-mini-btn {
+  margin-top: 14px;
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 500;
+  opacity: 0.75;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+.reflect-mini-btn:hover { opacity: 1; }
+
 .reflect-prompt {
   margin-top: 30px;
   width: 100%;
