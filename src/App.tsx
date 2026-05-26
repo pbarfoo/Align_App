@@ -2758,15 +2758,32 @@ function ReviewPanel({
           {/* Reset — at very bottom */}
           {reflections.length > 0 && (
             <div className="review-reset-section">
-              {confirmReset ? (
-                <div className="review-reset-confirm">
-                  <span>Delete all {reflections.length} entries?</span>
-                  <button className="review-reset-yes" onClick={() => { onReset(); setConfirmReset(false); }}>Delete</button>
-                  <button className="review-reset-cancel" onClick={() => setConfirmReset(false)}>Cancel</button>
-                </div>
-              ) : (
-                <button className="review-reset-btn" onClick={() => setConfirmReset(true)}>Reset all reflections</button>
-              )}
+              <button className="review-reset-btn" onClick={() => setConfirmReset(true)}>
+                Reset all reflections
+              </button>
+            </div>
+          )}
+
+          {/* Reset warning modal */}
+          {confirmReset && (
+            <div className="scrim" role="dialog" aria-modal="true" onClick={() => setConfirmReset(false)}>
+              <div className="sheet" onClick={(e) => e.stopPropagation()}>
+                <div className="reset-warn-icon">⚠</div>
+                <h2 style={{ marginBottom: 8 }}>Delete all reflections?</h2>
+                <p className="reset-warn-body">
+                  This will permanently delete all {reflections.length} weekly reflection{reflections.length !== 1 ? 's' : ''}.
+                  Your scores, notes, and history cannot be recovered.
+                </p>
+                <button
+                  className="reset-warn-confirm"
+                  onClick={() => { onReset(); setConfirmReset(false); }}
+                >
+                  Yes, delete everything
+                </button>
+                <button className="ghost" onClick={() => setConfirmReset(false)}>
+                  Cancel
+                </button>
+              </div>
             </div>
           )}
         </>
