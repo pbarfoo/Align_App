@@ -242,32 +242,6 @@ h1 {
   outline: 1px solid var(--accent);
 }
 
-/* ---------- AI Refine ---------- */
-.ai-field { display: flex; align-items: center; gap: 6px; }
-.ai-field input, .ai-field textarea { flex: 1; }
-.ai-field--block { flex-direction: column; align-items: flex-end; gap: 4px; }
-
-.ai-btn {
-  flex-shrink: 0;
-  width: 28px; height: 28px; border-radius: 50%;
-  background: var(--accent); color: var(--bg);
-  border: none; cursor: pointer; font-size: 20px; font-weight: 700;
-  display: flex; align-items: center; justify-content: center;
-  opacity: 0.9; transition: opacity 0.15s, transform 0.15s;
-  line-height: 1;
-}
-.ai-btn:hover { opacity: 1; transform: scale(1.1); }
-.ai-btn:disabled { cursor: default; transform: none; }
-
-.ai-btn--loading { background: var(--muted); }
-
-@keyframes ai-spin { to { transform: rotate(360deg); } }
-.ai-spinner {
-  display: block; width: 12px; height: 12px; border-radius: 50%;
-  border: 2px solid transparent; border-top-color: var(--bg);
-  animation: ai-spin 0.7s linear infinite;
-}
-
 /* ---------- Align ---------- */
 .hide-tasks-toggle {
   display: block;

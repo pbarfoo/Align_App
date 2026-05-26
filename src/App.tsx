@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { callGemini, geminiAvailable, PROMPTS } from './gemini';
 import {
   domains as seedDomains,
   initialGoals,
@@ -538,34 +537,6 @@ function TimeBtn({ value, onChange, placeholder }: { value: string; onChange: (v
   );
 }
 
-/* ---------------- AI Refine Button ---------------- */
-function AiRefineBtn({ value, onResult, buildPrompt }: {
-  value: string;
-  onResult: (text: string) => void;
-  buildPrompt: (text: string) => string;
-}) {
-  const [loading, setLoading] = useState(false);
-  if (!geminiAvailable) return null;
-
-  const run = async () => {
-    setLoading(true);
-    try {
-      const result = await callGemini(buildPrompt(value));
-      if (result) onResult(result);
-    } catch {
-      // silently ignore — no key or network issue
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <button type="button" className={`ai-btn${loading ? ' ai-btn--loading' : ''}`} onClick={run} title={value.trim() ? 'Improve with AI' : 'Suggest with AI'} disabled={loading}>
-      {loading ? <span className="ai-spinner" /> : '✦'}
-    </button>
-  );
-}
-
 /* ---------------- Foundation ---------------- */
 function Foundation({
   domains,
@@ -1014,9 +985,6 @@ function Align({
             {addingFor === lg.id && (
               <AddShortGoalForm
                 domainValues={domain.values}
-                vision={domain.vision}
-                parentGoal={lg.title}
-                existingGoals={domainGoals.filter(g => g.parentGoalId === lg.id).map(g => g.title)}
                 forceOpen
                 onClose={() => setAddingFor(null)}
                 indent="short"
@@ -1056,14 +1024,10 @@ function Align({
 
         <AddShortGoalForm
           domainValues={domain.values}
-          vision={domain.vision}
-          existingGoals={looseShort.map(g => g.title)}
           onAdd={addLooseShortGoal}
         />
         <AddGoalForm
           domainValues={domain.values}
-          vision={domain.vision}
-          existingGoals={longGoals.map(g => g.title)}
           onAdd={(idxs, title, years) => addLongGoal(idxs, title, years)}
         />
       </div>
@@ -1089,8 +1053,6 @@ function ShortWithActions({
   onToggleGoalComplete,
   onToggleHabit,
   hideCompleted,
-  domainValues,
-  domainVision,
 }: {
   goal: Goal;
   displayValues: string[];
@@ -1196,9 +1158,6 @@ function ShortWithActions({
             <AddActionForm
               goalId={h.goalId}
               initial={h}
-              goalTitle={goal.title}
-              domainValues={domainValues}
-              vision={domainVision}
               onSave={(updates) => { onEditHabit(h.id, updates); setEditingHabitId(null); }}
               onClose={() => setEditingHabitId(null)}
             />
@@ -1209,9 +1168,6 @@ function ShortWithActions({
       {addingFor === goal.id && (
         <AddActionForm
           goalId={goal.id}
-          goalTitle={goal.title}
-          domainValues={domainValues}
-          vision={domainVision}
           onAdd={onAddAction}
           onClose={() => setAddingFor(null)}
         />
@@ -1226,18 +1182,12 @@ function AddActionForm({
   onSave,
   onClose,
   initial,
-  goalTitle,
-  domainValues,
-  vision,
 }: {
   goalId: string;
   onAdd?: (goalId: string, title: string, kind: ActionKind, input: ActionInput) => void;
   onSave?: (updates: Partial<Habit>) => void;
   onClose: () => void;
   initial?: Habit;
-  goalTitle?: string;
-  domainValues?: string[];
-  vision?: string;
 }) {
   const [kind, setKind] = useState<ActionKind>(initial?.kind ?? 'habit');
   const [title, setTitle] = useState(initial?.title ?? '');
@@ -1288,7 +1238,7 @@ function AddActionForm({
           onChange={(e) => setTitle(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && submit()}
         />
-        <AiRefineBtn value={title} onResult={setTitle} buildPrompt={(t) => (kind === 'habit' ? PROMPTS.habit : PROMPTS.task)(t, { goalTitle, values: domainValues, vision })} />
+
       </div>
 
       {kind === 'habit' ? (
@@ -1339,18 +1289,12 @@ function AddActionForm({
 
 function AddShortGoalForm({
   domainValues,
-  vision,
-  parentGoal,
-  existingGoals,
   onAdd,
   forceOpen,
   onClose,
   indent,
 }: {
   domainValues: string[];
-  vision?: string;
-  parentGoal?: string;
-  existingGoals?: string[];
   onAdd: (title: string, months: number, valueIndexes: number[]) => void;
   forceOpen?: boolean;
   onClose?: () => void;
@@ -1392,7 +1336,6 @@ function AddShortGoalForm({
           onChange={(e) => setTitle(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && submit()}
         />
-        <AiRefineBtn value={title} onResult={setTitle} buildPrompt={(t) => PROMPTS.stGoal(t, { values: domainValues, selectedValues: picked.map(i => domainValues[i]).filter(Boolean), timeframe: `${months} month${Number(months) !== 1 ? 's' : ''}`, vision, parentGoal, existingGoals })} />
       </div>
       {domainValues.length > 0 && (
         <>
@@ -1424,13 +1367,9 @@ function AddShortGoalForm({
 
 function AddGoalForm({
   domainValues,
-  vision,
-  existingGoals,
   onAdd,
 }: {
   domainValues: string[];
-  vision?: string;
-  existingGoals?: string[];
   onAdd: (valueIndexes: number[], title: string, years: number) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -1472,7 +1411,6 @@ function AddGoalForm({
           onChange={(e) => setTitle(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && submit()}
         />
-        <AiRefineBtn value={title} onResult={setTitle} buildPrompt={(t) => PROMPTS.ltGoal(t, { values: domainValues, selectedValues: picked.map(i => domainValues[i]).filter(Boolean), timeframe: `${years} year${Number(years) !== 1 ? 's' : ''}`, vision, existingGoals })} />
       </div>
       {domainValues.length > 0 && (
         <>
@@ -1625,7 +1563,6 @@ function GoalNode({
               }}
               onClick={(e) => e.stopPropagation()}
             />
-            <AiRefineBtn value={draft} onResult={setDraft} buildPrompt={goal.horizon === 'long' ? PROMPTS.ltGoal : PROMPTS.stGoal} />
           </div>
         ) : (
           <div
