@@ -1226,7 +1226,7 @@ h1 {
   position: fixed;
   inset: 0;
   background: var(--bg);
-  overflow: hidden;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   z-index: 200;
