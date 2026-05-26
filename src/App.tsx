@@ -451,6 +451,7 @@ export default function App() {
         <ReviewPanel
           domains={domains}
           goals={goals}
+          habits={habits}
           reflections={reflections}
           onReset={() => {
             setReflections([]);
@@ -1994,6 +1995,63 @@ function Reflect({
 }
 
 /* ---------------- ReviewPanel ---------------- */
+
+// Blended 0–10 score: 50% from reflection history, 50% from goal/habit completion
+function valueAlignmentScore(
+  key: string,
+  goals: Goal[],
+  habits: Habit[],
+  reflections: ReflectionEntry[],
+): number {
+  const [domainId, viStr] = key.split(':');
+  const vi = Number(viStr);
+
+  // Goals directly tagged with this value
+  const tagged = goals.filter(
+    (g) => g.domainId === domainId && g.valueIndexes.includes(vi),
+  );
+  // Sub-goals of tagged long-term goals (inherit the value)
+  const taggedLtIds = new Set(tagged.filter((g) => g.horizon === 'long').map((g) => g.id));
+  const inherited = goals.filter(
+    (g) => g.horizon === 'short' && g.parentGoalId && taggedLtIds.has(g.parentGoalId)
+      && !tagged.some((t) => t.id === g.id),
+  );
+  const allTagged = [...tagged, ...inherited];
+  const taggedIds = new Set(allTagged.map((g) => g.id));
+
+  // Activity score (0–1): average health across tagged goals + their habits
+  let actSum = 0, actCount = 0;
+  for (const g of allTagged) {
+    const h = g.horizon === 'long'
+      ? vitalityFor(g, goals, habits).health
+      : stGoalMetrics(g, habits).health;
+    actSum += h; actCount++;
+  }
+  for (const h of habits.filter((h) => h.goalId && taggedIds.has(h.goalId))) {
+    const streak = h.streak ?? 0;
+    const recent = isHabitDoneThisPeriod(h) ? 1 : Math.max(0, 1 - streak / 14);
+    actSum += Math.min(1, recent); actCount++;
+  }
+  const activityComponent = actCount > 0 ? actSum / actCount : null;
+
+  // Reflection component (0–1)
+  const hasRefl = reflections.some((r) => r.scores[key] !== undefined);
+  const reflComponent = hasRefl ? decayedAvg(key, reflections) / 3 : null;
+
+  // Blend
+  let score: number;
+  if (reflComponent !== null && activityComponent !== null) {
+    score = 0.5 * reflComponent + 0.5 * activityComponent;
+  } else if (reflComponent !== null) {
+    score = reflComponent;
+  } else if (activityComponent !== null) {
+    score = activityComponent;
+  } else {
+    score = 0;
+  }
+  return score * 10; // 0–10
+}
+
 /* ---------------- GoalsDashboard ---------------- */
 
 function vitalityFor(
@@ -2488,9 +2546,13 @@ function ValueLineChart({
 /* ---------------- RadarChart ---------------- */
 function RadarChart({
   domains,
+  goals,
+  habits,
   reflections,
 }: {
   domains: Domain[];
+  goals: Goal[];
+  habits: Habit[];
   reflections: ReflectionEntry[];
 }) {
   const axes = domains.flatMap((d) =>
@@ -2509,7 +2571,7 @@ function RadarChart({
   };
 
   const rings = [0.25, 0.5, 0.75, 1];
-  const dataPoints = axes.map((ax, i) => pt(i, decayedAvg(ax.key, reflections) / 3));
+  const dataPoints = axes.map((ax) => pt(axes.indexOf(ax), valueAlignmentScore(ax.key, goals, habits, reflections) / 10));
   const poly = dataPoints.map((p) => `${p.x},${p.y}`).join(' ');
 
   const labelAnchor = (i: number): 'start' | 'end' | 'middle' => {
@@ -2575,12 +2637,14 @@ function formatReviewDateFull(ts: number): string {
 function ReviewPanel({
   domains,
   goals,
+  habits,
   reflections,
   onReset,
   onClose,
 }: {
   domains: Domain[];
   goals: Goal[];
+  habits: Habit[];
   reflections: ReflectionEntry[];
   onReset: () => void;
   onClose: () => void;
@@ -2613,7 +2677,7 @@ function ReviewPanel({
   return (
     <div className="review-panel">
       <div className="review-header">
-        <h2>Reflection</h2>
+        <h2>Value Alignment</h2>
         <div className="review-header-actions">
           <button className="icon-btn" onClick={onClose}>✕</button>
         </div>
@@ -2625,7 +2689,7 @@ function ReviewPanel({
         <>
           {/* Radar chart */}
           <div className="radar-wrap">
-            <RadarChart domains={domains} reflections={reflections} />
+            <RadarChart domains={domains} goals={goals} habits={habits} reflections={reflections} />
           </div>
 
           {/* Domain-grouped value breakdown */}
@@ -2656,8 +2720,8 @@ function ReviewPanel({
                     <span className="review-domain-chevron">{isCollapsed ? '▾' : '▴'}</span>
                   </button>
                   {!isCollapsed && allValueRows.map(({ label, key }) => {
-                    const avg = decayedAvg(key, reflections);
-                    const pct = avg / 3;
+                    const score = valueAlignmentScore(key, goals, habits, reflections);
+                    const pct = score / 10;
                     const isOpen = selectedKey === key;
                     return (
                       <div key={key} className="review-value-row">
@@ -2672,7 +2736,7 @@ function ReviewPanel({
                               style={{ width: `${Math.round(pct * 100)}%`, background: domainColor }}
                             />
                           </div>
-                          <span className="review-value-score">{avg.toFixed(1)}</span>
+                          <span className="review-value-score">{score.toFixed(1)}</span>
                           <span className="review-value-chevron">{isOpen ? '▴' : '▾'}</span>
                         </button>
                         {isOpen && (
@@ -2691,7 +2755,7 @@ function ReviewPanel({
               );
             })}
             <div className="review-decay-note">
-              Scores weighted by recency — recent weeks count more
+              Score 0–10: blends weekly reflection (50%) + goal &amp; habit completion (50%)
             </div>
           </div>
 
