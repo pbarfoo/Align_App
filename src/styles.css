@@ -1362,12 +1362,25 @@ h1 {
   margin-bottom: 18px;
 }
 .review-value-domain-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: none;
+  border: none;
   font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   margin-bottom: 6px;
   opacity: 0.9;
+  cursor: pointer;
+  padding: 4px 0;
+  text-align: left;
+}
+.review-domain-chevron {
+  font-size: 9px;
+  opacity: 0.6;
 }
 .review-value-row {
   margin-bottom: 2px;
@@ -1913,6 +1926,14 @@ h1 {
   cursor: pointer;
   padding: 3px 10px;
   border-radius: 6px;
+}
+
+.review-reset-section {
+  margin-top: 32px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  justify-content: center;
 }
 
 /* ---------- Reflection log ---------- */

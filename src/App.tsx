@@ -2580,6 +2580,14 @@ function ReviewPanel({
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
   const [logOpen, setLogOpen] = useState(false);
+  const [collapsedDomains, setCollapsedDomains] = useState<Set<string>>(new Set());
+
+  const toggleDomain = (id: string) =>
+    setCollapsedDomains((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
 
   const latest = reflections[reflections.length - 1];
 
@@ -2599,17 +2607,6 @@ function ReviewPanel({
       <div className="review-header">
         <h2>Reflection</h2>
         <div className="review-header-actions">
-          {reflections.length > 0 && (
-            confirmReset ? (
-              <div className="review-reset-confirm">
-                <span>Delete all {reflections.length} entries?</span>
-                <button className="review-reset-yes" onClick={() => { onReset(); setConfirmReset(false); }}>Delete</button>
-                <button className="review-reset-cancel" onClick={() => setConfirmReset(false)}>Cancel</button>
-              </div>
-            ) : (
-              <button className="review-reset-btn" onClick={() => setConfirmReset(true)}>Reset</button>
-            )
-          )}
           <button className="icon-btn" onClick={onClose}>✕</button>
         </div>
       </div>
@@ -2627,14 +2624,30 @@ function ReviewPanel({
           <div className="review-values-section">
             {domains.map((d) => {
               const domainColor = DOMAIN_COLORS[d.id] ?? 'var(--accent)';
-              if (!d.values.length) return null;
+              // Collect all value keys for this domain: current values + any orphaned scored keys
+              const currentKeys = d.values.map((v, vi) => ({ label: v, key: `${d.id}:${vi}` }));
+              const scoredKeys = new Set(
+                reflections.flatMap((r) =>
+                  Object.keys(r.scores).filter((k) => k.startsWith(`${d.id}:`))
+                )
+              );
+              const orphanedKeys = [...scoredKeys]
+                .filter((k) => !currentKeys.some((c) => c.key === k))
+                .map((k) => ({ label: `Value ${k.split(':')[1]}`, key: k }));
+              const allValueRows = [...currentKeys, ...orphanedKeys];
+              if (!allValueRows.length) return null;
+              const isCollapsed = collapsedDomains.has(d.id);
               return (
                 <div key={d.id} className="review-value-domain-group">
-                  <div className="review-value-domain-header" style={{ color: domainColor }}>
-                    {d.name}
-                  </div>
-                  {d.values.map((v, vi) => {
-                    const key = `${d.id}:${vi}`;
+                  <button
+                    className="review-value-domain-header"
+                    style={{ color: domainColor }}
+                    onClick={() => toggleDomain(d.id)}
+                  >
+                    <span>{d.name}</span>
+                    <span className="review-domain-chevron">{isCollapsed ? '▾' : '▴'}</span>
+                  </button>
+                  {!isCollapsed && allValueRows.map(({ label, key }) => {
                     const avg = decayedAvg(key, reflections);
                     const pct = avg / 3;
                     const isOpen = selectedKey === key;
@@ -2644,7 +2657,7 @@ function ReviewPanel({
                           className={`review-value-btn${isOpen ? ' open' : ''}`}
                           onClick={() => setSelectedKey(isOpen ? null : key)}
                         >
-                          <span className="review-value-name">{v}</span>
+                          <span className="review-value-name">{label}</span>
                           <div className="review-value-bar-wrap">
                             <div
                               className="review-value-bar"
@@ -2690,7 +2703,7 @@ function ReviewPanel({
             </div>
           )}
 
-          {/* Full log */}
+          {/* Reflection log */}
           <div className="review-log-section">
             <button
               className="review-log-toggle"
@@ -2741,6 +2754,21 @@ function ReviewPanel({
               </div>
             )}
           </div>
+
+          {/* Reset — at very bottom */}
+          {reflections.length > 0 && (
+            <div className="review-reset-section">
+              {confirmReset ? (
+                <div className="review-reset-confirm">
+                  <span>Delete all {reflections.length} entries?</span>
+                  <button className="review-reset-yes" onClick={() => { onReset(); setConfirmReset(false); }}>Delete</button>
+                  <button className="review-reset-cancel" onClick={() => setConfirmReset(false)}>Cancel</button>
+                </div>
+              ) : (
+                <button className="review-reset-btn" onClick={() => setConfirmReset(true)}>Reset all reflections</button>
+              )}
+            </div>
+          )}
         </>
       )}
     </div>
