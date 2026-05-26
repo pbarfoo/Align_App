@@ -564,6 +564,24 @@ h1 {
   color-scheme: dark;
 }
 
+.date-field {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 120px;
+}
+.date-field-label {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding-left: 2px;
+}
+.date-field input {
+  width: 100%;
+}
+
 .node {
   position: relative;
   display: flex;

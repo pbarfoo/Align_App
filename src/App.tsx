@@ -1270,7 +1270,10 @@ function AddActionForm({
               <option value="yearly">Yearly</option>
               <option value="custom">Custom…</option>
             </select>
-            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} title="Start date" />
+            <label className="date-field">
+              <span className="date-field-label">Start</span>
+              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+            </label>
           </div>
           {recurrence === 'custom' && (
             <div className="field-row">
@@ -1288,8 +1291,14 @@ function AddActionForm({
         </>
       ) : (
         <div className="field-row">
-          <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} title="Due date" />
-          <input type="time" value={dueTime} onChange={(e) => setDueTime(e.target.value)} title="Due time" />
+          <label className="date-field">
+            <span className="date-field-label">Due date</span>
+            <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+          </label>
+          <label className="date-field">
+            <span className="date-field-label">Due time</span>
+            <input type="time" value={dueTime} onChange={(e) => setDueTime(e.target.value)} />
+          </label>
         </div>
       )}
 
