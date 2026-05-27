@@ -325,16 +325,22 @@ h1 {
 
 /* Dotted connector threading linked goals + habits together */
 .goal-thread {
-  position: relative;
   margin-bottom: 14px;
 }
-.goal-thread::after {
+
+/* Draw the dotted segment only in the gap below each card */
+.goal-thread .node,
+.goal-thread .habit {
+  position: relative;
+}
+.goal-thread .node::after,
+.goal-thread .habit::after {
   content: '';
   position: absolute;
-  right: 0;
-  top: 0;
-  bottom: 10px;
-  border-right: 2px dotted color-mix(in srgb, var(--muted) 35%, transparent);
+  right: -1px;
+  top: 100%;          /* starts at bottom edge of card */
+  height: 10px;       /* matches node margin-bottom */
+  border-right: 2px dotted color-mix(in srgb, var(--muted) 40%, transparent);
   pointer-events: none;
 }
 
