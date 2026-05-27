@@ -2366,7 +2366,6 @@ function GoalsDashboard({
                   return (
                     <div key={pid} className="dash-st-parent-group">
                       <div className="dash-st-parent-header" style={{ borderColor: domainColor }}>
-                        <span className="dash-st-badge dash-st-badge--linked">⇢ Linked to</span>
                         <span className="dash-st-parent-title">{parent?.title ?? 'Long-term goal'}</span>
                       </div>
                       <div className="dash-st-children">
