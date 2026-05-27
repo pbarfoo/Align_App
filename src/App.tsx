@@ -1353,8 +1353,8 @@ function AddShortGoalForm({
         </>
       )}
       <select value={months} onChange={(e) => setMonths(e.target.value)}>
-        {[1, 3, 6].map((m) => (
-          <option key={m} value={m}>{m} Month{m > 1 ? 's' : ''}</option>
+        {[1, 3, 6, 12].map((m) => (
+          <option key={m} value={m}>{m === 12 ? '1 Year' : `${m} Month${m > 1 ? 's' : ''}`}</option>
         ))}
       </select>
       <div className="add-actions">
@@ -1535,7 +1535,7 @@ function GoalNode({
             >
               {goal.horizon === 'long'
                 ? [1,2,3,4,5].map((y) => <option key={y} value={y}>{y} yr</option>)
-                : [1,3,6].map((m) => <option key={m} value={m}>{m} mo</option>)
+                : [1,3,6,12].map((m) => <option key={m} value={m}>{m === 12 ? '1 yr' : `${m} mo`}</option>)
               }
             </select>
           ) : (
@@ -1544,7 +1544,7 @@ function GoalNode({
               title={onChangeTimeframe ? 'Click to edit' : undefined}
               style={onChangeTimeframe ? { cursor: 'pointer', textDecoration: 'underline dotted' } : undefined}
             >
-              {goal.horizon === 'long' ? `${goal.timeframe} yr` : `${goal.timeframe} mo`}
+              {goal.horizon === 'long' ? `${goal.timeframe} yr` : goal.timeframe === 12 ? '1 yr' : `${goal.timeframe} mo`}
             </span>
           )}
         </div>
