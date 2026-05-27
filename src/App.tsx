@@ -962,7 +962,7 @@ function Align({
                 <ShortWithActions
                   key={sg.id}
                   goal={sg}
-                  displayValues={lgValues}
+                  displayValues={[]}
                   habits={habits}
                   cls={cls}
                   lit={lit}
@@ -1001,7 +1001,7 @@ function Align({
           <ShortWithActions
             key={sg.id}
             goal={sg}
-            displayValues={[]}
+            displayValues={sg.valueIndexes.map((i) => domain.values[i]).filter(Boolean)}
             habits={habits}
             cls={cls}
             lit={lit}

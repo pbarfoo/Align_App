@@ -747,6 +747,34 @@ h1 {
   margin-left: 38px;
 }
 
+/* Arrow hook: L-line from above + right-pointing arrowhead */
+.goal-thread .node.short::before,
+.goal-thread .node.habit::before {
+  content: '';
+  position: absolute;
+  left: -20px;
+  top: -10px;
+  width: 14px;
+  height: calc(50% + 10px);
+  border-left: 1.5px solid color-mix(in srgb, var(--muted) 45%, transparent);
+  border-bottom: 1.5px solid color-mix(in srgb, var(--muted) 45%, transparent);
+  border-bottom-left-radius: 5px;
+  pointer-events: none;
+}
+.goal-thread .node.short::after,
+.goal-thread .node.habit::after {
+  content: '';
+  position: absolute;
+  left: -7px;
+  top: calc(50% - 4px);
+  width: 0;
+  height: 0;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-left: 6px solid color-mix(in srgb, var(--muted) 45%, transparent);
+  pointer-events: none;
+}
+
 .node.habit {
   margin-left: 58px;
   background: var(--surface-2);
