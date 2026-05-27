@@ -703,7 +703,7 @@ function Align({
   onDeleteGoalFromDb: (ids: string[]) => void;
   onDeleteHabitFromDb: (id: string) => void;
 }) {
-  const [domainId, setDomainId] = useState<DomainId>('self');
+  const [domainId, setDomainId] = useState<DomainId>('career');
   const [lit, setLit] = useState<string | null>(null);
   const [addingFor, setAddingFor] = useState<string | null>(null);
   const [editValuesFor, setEditValuesFor] = useState<string | null>(null);
