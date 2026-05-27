@@ -995,6 +995,9 @@ function Align({
           );
         })}
 
+        {looseShort.filter((sg) => !(hideCompleted && !!sg.completedAt)).length > 0 && (
+          <div className="align-section-divider">◎ Independent short-term goals</div>
+        )}
         {looseShort
           .filter((sg) => !(hideCompleted && !!sg.completedAt))
           .map((sg) => (
@@ -1523,7 +1526,7 @@ function GoalNode({
       )}
       <div className="node-main">
         <div className="node-tag">
-          {goal.horizon === 'long' ? 'Long-term · ' : 'Short-term · '}
+          {goal.horizon === 'long' ? 'Long-term · ' : goal.parentGoalId ? 'Short-term · ' : 'Short-term · ◎ Independent · '}
           {editingTimeframe && onChangeTimeframe ? (
             <select
               className="timeframe-select"
