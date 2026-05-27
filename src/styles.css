@@ -726,6 +726,15 @@ h1 {
   border-color: var(--muted);
 }
 
+/* Independent short-term goals — distinct teal colour */
+.node.independent {
+  border-color: #5db8c0;
+  background: color-mix(in srgb, #5db8c0 8%, var(--surface));
+}
+.node.independent .node-tag { color: #5db8c0; }
+.node.independent:hover { border-color: #3fa0a8; }
+.node.independent.lit { border-color: #3fa0a8; background: color-mix(in srgb, #5db8c0 14%, var(--surface)); }
+
 .node.dim {
   opacity: 0.38;
 }

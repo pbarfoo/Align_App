@@ -1004,6 +1004,7 @@ function Align({
           <ShortWithActions
             key={sg.id}
             goal={sg}
+            independent
             displayValues={[]}
             habits={habits}
             cls={cls}
@@ -1056,12 +1057,14 @@ function ShortWithActions({
   onToggleGoalComplete,
   onToggleHabit,
   hideCompleted,
+  independent,
 }: {
   goal: Goal;
   displayValues: string[];
   habits: Habit[];
   domainValues?: string[];
   domainVision?: string;
+  independent?: boolean;
   cls: (id: string, base?: string) => string;
   lit: string | null;
   setLit: (s: string | null) => void;
@@ -1091,6 +1094,7 @@ function ShortWithActions({
         goal={goal}
         values={displayValues}
         short
+        independent={independent}
         className={cls(`g:${goal.id}`)}
         onClick={() => setLit(lit === `g:${goal.id}` ? null : `g:${goal.id}`)}
         canAddChild
@@ -1463,6 +1467,7 @@ function GoalNode({
   domainValues,
   valueIndexes,
   short,
+  independent,
   className,
   onClick,
   canAddChild,
@@ -1482,6 +1487,7 @@ function GoalNode({
   domainValues?: string[];
   valueIndexes?: number[];
   short?: boolean;
+  independent?: boolean;
   className: string;
   onClick: () => void;
   canAddChild?: boolean;
@@ -1516,7 +1522,7 @@ function GoalNode({
   };
 
   return (
-    <div className={`${className}${short ? ' short' : ''}${isComplete ? ' completed' : ''}`} onClick={onClick}>
+    <div className={`${className}${short ? ' short' : ''}${independent ? ' independent' : ''}${isComplete ? ' completed' : ''}`} onClick={onClick}>
       {onToggleComplete && (
         <button
           className={`node-check${isComplete ? ' on' : ''}`}
@@ -1526,7 +1532,7 @@ function GoalNode({
       )}
       <div className="node-main">
         <div className="node-tag">
-          {goal.horizon === 'long' ? 'Long-term · ' : goal.parentGoalId ? 'Short-term · ' : 'Short-term · ◎ Independent · '}
+          {goal.horizon === 'long' ? 'Long-term · ' : 'Short-term · '}
           {editingTimeframe && onChangeTimeframe ? (
             <select
               className="timeframe-select"
