@@ -995,16 +995,12 @@ function Align({
           );
         })}
 
-        {looseShort.filter((sg) => !(hideCompleted && !!sg.completedAt)).length > 0 && (
-          <div className="align-section-divider">◎ Independent short-term goals</div>
-        )}
         {looseShort
           .filter((sg) => !(hideCompleted && !!sg.completedAt))
           .map((sg) => (
           <ShortWithActions
             key={sg.id}
             goal={sg}
-            independent
             displayValues={[]}
             habits={habits}
             cls={cls}
@@ -1057,14 +1053,12 @@ function ShortWithActions({
   onToggleGoalComplete,
   onToggleHabit,
   hideCompleted,
-  independent,
 }: {
   goal: Goal;
   displayValues: string[];
   habits: Habit[];
   domainValues?: string[];
   domainVision?: string;
-  independent?: boolean;
   cls: (id: string, base?: string) => string;
   lit: string | null;
   setLit: (s: string | null) => void;
@@ -1094,7 +1088,6 @@ function ShortWithActions({
         goal={goal}
         values={displayValues}
         short
-        independent={independent}
         className={cls(`g:${goal.id}`)}
         onClick={() => setLit(lit === `g:${goal.id}` ? null : `g:${goal.id}`)}
         canAddChild
@@ -1467,7 +1460,6 @@ function GoalNode({
   domainValues,
   valueIndexes,
   short,
-  independent,
   className,
   onClick,
   canAddChild,
@@ -1487,7 +1479,6 @@ function GoalNode({
   domainValues?: string[];
   valueIndexes?: number[];
   short?: boolean;
-  independent?: boolean;
   className: string;
   onClick: () => void;
   canAddChild?: boolean;
@@ -1522,7 +1513,7 @@ function GoalNode({
   };
 
   return (
-    <div className={`${className}${short ? ' short' : ''}${independent ? ' independent' : ''}${isComplete ? ' completed' : ''}`} onClick={onClick}>
+    <div className={`${className}${short ? ' short' : ''}${isComplete ? ' completed' : ''}`} onClick={onClick}>
       {onToggleComplete && (
         <button
           className={`node-check${isComplete ? ' on' : ''}`}
@@ -2345,40 +2336,17 @@ function GoalsDashboard({
             const dShort = allShort.filter((g) => g.domainId === d.id);
             if (!dShort.length) return null;
             const domainColor = DOMAIN_COLORS[d.id] ?? 'var(--accent)';
-
-            const standalone = dShort.filter((g) => !g.parentGoalId);
-            // group linked goals by their long-term parent
-            const linkedByParent = new Map<string, Goal[]>();
-            for (const sg of dShort.filter((g) => g.parentGoalId)) {
-              const pid = sg.parentGoalId!;
-              linkedByParent.set(pid, [...(linkedByParent.get(pid) ?? []), sg]);
-            }
-
             return (
               <div key={d.id} className="dash-domain-section">
                 <div className="dash-domain-label" style={{ color: domainColor }}>{d.name}</div>
-
-                {/* Standalone short-term goals */}
-                {standalone.map((sg) => (
-                  <div key={sg.id} className="dash-st-standalone">
-                    <span className="dash-st-badge dash-st-badge--solo">◎ Independent</span>
-                    <GoalStrip goal={sg} metrics={stMetrics.get(sg.id)!} domainColor={domainColor} isShort />
-                  </div>
-                ))}
-
-                {/* Linked short-term goals grouped under their long-term parent */}
-                {[...linkedByParent.entries()].map(([pid, sgs]) => {
-                  const parent = longGoals.find((lg) => lg.id === pid);
+                {dShort.map((sg) => {
+                  const parent = sg.parentGoalId ? longGoals.find((lg) => lg.id === sg.parentGoalId) : null;
                   return (
-                    <div key={pid} className="dash-st-parent-group">
-                      <div className="dash-st-parent-header" style={{ borderColor: domainColor }}>
-                        <span className="dash-st-parent-title">{parent?.title ?? 'Long-term goal'}</span>
-                      </div>
-                      <div className="dash-st-children">
-                        {sgs.map((sg) => (
-                          <GoalStrip key={sg.id} goal={sg} metrics={stMetrics.get(sg.id)!} domainColor={domainColor} isShort />
-                        ))}
-                      </div>
+                    <div key={sg.id}>
+                      {parent && (
+                        <div className="dash-st-parent-label">↳ {parent.title}</div>
+                      )}
+                      <GoalStrip goal={sg} metrics={stMetrics.get(sg.id)!} domainColor={domainColor} isShort />
                     </div>
                   );
                 })}

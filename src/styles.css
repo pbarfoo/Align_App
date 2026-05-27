@@ -322,24 +322,6 @@ h1 {
   display: flex;
   flex-direction: column;
 }
-.align-section-divider {
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--muted);
-  margin: 20px 0 10px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.align-section-divider::before {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: var(--line);
-  display: block;
-}
 
 .node-foot {
   display: flex;
@@ -725,15 +707,6 @@ h1 {
 .node:hover {
   border-color: var(--muted);
 }
-
-/* Independent short-term goals — distinct teal colour */
-.node.independent {
-  border-color: #5db8c0;
-  background: color-mix(in srgb, #5db8c0 8%, var(--surface));
-}
-.node.independent .node-tag { color: #5db8c0; }
-.node.independent:hover { border-color: #3fa0a8; }
-.node.independent.lit { border-color: #3fa0a8; background: color-mix(in srgb, #5db8c0 14%, var(--surface)); }
 
 .node.dim {
   opacity: 0.38;
@@ -1571,51 +1544,11 @@ h1 {
 .spider-dot.active { background: var(--accent); transform: scale(1.3); }
 
 .dash-domain-section { margin-bottom: 28px; }
-.dash-st-standalone {
-  margin-bottom: 6px;
-}
-.dash-st-badge {
-  display: inline-block;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  padding: 2px 7px;
-  border-radius: 99px;
-  margin-bottom: 4px;
-}
-.dash-st-badge--solo {
-  background: color-mix(in srgb, var(--muted) 15%, transparent);
+.dash-st-parent-label {
+  font-size: 11px;
   color: var(--muted);
-}
-.dash-st-badge--linked {
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
-  color: var(--accent);
-}
-.dash-st-parent-group {
-  margin-bottom: 14px;
-}
-.dash-st-parent-header {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  border-left: 2px solid var(--accent);
-  padding-left: 8px;
-  margin-bottom: 6px;
-}
-.dash-st-parent-title {
-  font-size: 12px;
-  color: var(--text);
-  font-weight: 500;
-  opacity: 0.8;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 220px;
-}
-.dash-st-children {
-  padding-left: 12px;
-  border-left: 1px solid var(--line);
-  margin-left: 3px;
+  margin: 8px 0 2px 4px;
+  font-style: italic;
 }
 .dash-domain-label {
   font-size: 10px;
