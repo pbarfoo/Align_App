@@ -529,7 +529,7 @@ function DateBtn({ value, onChange, placeholder }: { value: string; onChange: (v
       {display}
       <input ref={ref} type="date" value={value}
         onChange={(e) => onChange(e.target.value)}
-        style={{ position: 'absolute', width: 0, height: 0, opacity: 0, pointerEvents: 'none' }} />
+        style={{ position: 'absolute', left: '50%', top: '50%', width: 0, height: 0, opacity: 0, pointerEvents: 'none' }} />
     </button>
   );
 }
@@ -550,7 +550,7 @@ function TimeBtn({ value, onChange, placeholder }: { value: string; onChange: (v
       {display}
       <input ref={ref} type="time" value={value}
         onChange={(e) => onChange(e.target.value)}
-        style={{ position: 'absolute', width: 0, height: 0, opacity: 0, pointerEvents: 'none' }} />
+        style={{ position: 'absolute', left: '50%', top: '50%', width: 0, height: 0, opacity: 0, pointerEvents: 'none' }} />
     </button>
   );
 }
