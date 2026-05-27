@@ -517,11 +517,12 @@ function DateBtn({ value, onChange, placeholder }: { value: string; onChange: (v
   const display = value
     ? new Date(value + 'T00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
     : placeholder;
+  const id = React.useId();
   return (
-    <div className={`date-btn${value ? '' : ' date-btn--empty'}`}>
+    <label htmlFor={id} className={`date-btn${value ? '' : ' date-btn--empty'}`}>
       <span>{display}</span>
-      <input type="date" value={value} onChange={(e) => onChange(e.target.value)} />
-    </div>
+      <input id={id} type="date" value={value} onChange={(e) => onChange(e.target.value)} />
+    </label>
   );
 }
 
@@ -529,11 +530,12 @@ function TimeBtn({ value, onChange, placeholder }: { value: string; onChange: (v
   const display = value
     ? (() => { const [h, m] = value.split(':'); const d = new Date(); d.setHours(+h, +m); return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }); })()
     : placeholder;
+  const id = React.useId();
   return (
-    <div className={`date-btn${value ? '' : ' date-btn--empty'}`}>
+    <label htmlFor={id} className={`date-btn${value ? '' : ' date-btn--empty'}`}>
       <span>{display}</span>
-      <input type="time" value={value} onChange={(e) => onChange(e.target.value)} />
-    </div>
+      <input id={id} type="time" value={value} onChange={(e) => onChange(e.target.value)} />
+    </label>
   );
 }
 
