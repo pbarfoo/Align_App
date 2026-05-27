@@ -556,18 +556,8 @@ h1 {
   color: var(--text);
   overflow: hidden;
 }
-.date-btn--empty span { color: var(--muted); }
-.date-btn { cursor: pointer; }
-.date-btn input[type='date'],
-.date-btn input[type='time'] {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  width: 100%;
-  height: 100%;
-  color-scheme: dark;
-  font-size: 16px; /* prevents iOS zoom on focus */
-}
+.date-btn--empty { color: var(--muted); }
+.date-btn { cursor: pointer; position: relative; }
 
 .node {
   position: relative;

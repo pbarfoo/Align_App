@@ -514,28 +514,44 @@ export default function App() {
 
 /* ---------------- Date / Time Button ---------------- */
 function DateBtn({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
+  const ref = useRef<HTMLInputElement>(null);
   const display = value
     ? new Date(value + 'T00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
     : placeholder;
-  const id = React.useId();
+  const open = () => {
+    const el = ref.current;
+    if (!el) return;
+    if (typeof (el as any).showPicker === 'function') (el as any).showPicker();
+    else el.focus();
+  };
   return (
-    <label htmlFor={id} className={`date-btn${value ? '' : ' date-btn--empty'}`}>
-      <span>{display}</span>
-      <input id={id} type="date" value={value} onChange={(e) => onChange(e.target.value)} />
-    </label>
+    <button type="button" className={`date-btn${value ? '' : ' date-btn--empty'}`} onClick={open}>
+      {display}
+      <input ref={ref} type="date" value={value}
+        onChange={(e) => onChange(e.target.value)}
+        style={{ position: 'absolute', width: 0, height: 0, opacity: 0, pointerEvents: 'none' }} />
+    </button>
   );
 }
 
 function TimeBtn({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
+  const ref = useRef<HTMLInputElement>(null);
   const display = value
     ? (() => { const [h, m] = value.split(':'); const d = new Date(); d.setHours(+h, +m); return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }); })()
     : placeholder;
-  const id = React.useId();
+  const open = () => {
+    const el = ref.current;
+    if (!el) return;
+    if (typeof (el as any).showPicker === 'function') (el as any).showPicker();
+    else el.focus();
+  };
   return (
-    <label htmlFor={id} className={`date-btn${value ? '' : ' date-btn--empty'}`}>
-      <span>{display}</span>
-      <input id={id} type="time" value={value} onChange={(e) => onChange(e.target.value)} />
-    </label>
+    <button type="button" className={`date-btn${value ? '' : ' date-btn--empty'}`} onClick={open}>
+      {display}
+      <input ref={ref} type="time" value={value}
+        onChange={(e) => onChange(e.target.value)}
+        style={{ position: 'absolute', width: 0, height: 0, opacity: 0, pointerEvents: 'none' }} />
+    </button>
   );
 }
 
