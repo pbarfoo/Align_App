@@ -323,6 +323,21 @@ h1 {
   flex-direction: column;
 }
 
+/* Dotted connector threading linked goals + habits together */
+.goal-thread {
+  position: relative;
+  margin-bottom: 14px;
+}
+.goal-thread::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 10px;
+  border-right: 2px dotted color-mix(in srgb, var(--muted) 35%, transparent);
+  pointer-events: none;
+}
+
 .node-foot {
   display: flex;
   flex-wrap: wrap;

@@ -932,7 +932,7 @@ function Align({
           .map((lg) => {
           const lgValues = lg.valueIndexes.map((i) => domain.values[i]).filter(Boolean);
           return (
-          <div key={lg.id}>
+          <div key={lg.id} className="goal-thread">
             <GoalNode
               goal={lg}
               values={lgValues}
