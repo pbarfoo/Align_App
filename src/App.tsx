@@ -2707,7 +2707,7 @@ function ReviewPanel({
                               style={{ width: `${Math.round(pct * 100)}%`, background: domainColor }}
                             />
                           </div>
-                          <span className="review-value-score">{score.toFixed(1)}</span>
+                          <span className="review-value-score">{Math.round(pct * 100)}%</span>
                           <span className="review-value-chevron">{isOpen ? '▴' : '▾'}</span>
                         </button>
                         {isOpen && (
@@ -2726,7 +2726,7 @@ function ReviewPanel({
               );
             })}
             <div className="review-decay-note">
-              Score 0–10: reflection 70%, goal &amp; habit activity 30%
+              Score 0–100%: reflection 70%, goal &amp; habit activity 30%
             </div>
           </div>
 
