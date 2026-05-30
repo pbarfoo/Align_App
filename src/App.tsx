@@ -204,13 +204,19 @@ export default function App() {
 
   useEffect(() => {
     if (localMode) { setAuthLoading(false); return; }
+    // Hard timeout so a paused/unreachable Supabase project can't hang the app forever.
+    const authTimeout = setTimeout(() => setAuthLoading(false), 8000);
     supabase.auth.getSession().then(({ data }) => {
+      clearTimeout(authTimeout);
       setSession(data.session);
       setAuthLoading(false);
-    }).catch(() => setAuthLoading(false));
+    }).catch(() => { clearTimeout(authTimeout); setAuthLoading(false); });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
       setSession(s);
-      if (!s) setDataLoaded(false);
+      // Don't reset dataLoaded here — the data effect re-runs whenever session.user.id
+      // changes (including sign-out), so it handles the no-session case itself.
+      // Resetting dataLoaded on every null session (including INITIAL_SESSION when
+      // Supabase is unavailable) would permanently lock the app on the loading screen.
     });
     return () => subscription.unsubscribe();
   }, []);
