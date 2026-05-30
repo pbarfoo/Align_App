@@ -207,7 +207,7 @@ export default function App() {
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
       setAuthLoading(false);
-    });
+    }).catch(() => setAuthLoading(false));
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
       setSession(s);
       if (!s) setDataLoaded(false);
@@ -242,7 +242,7 @@ export default function App() {
       setDataLoaded(true);
       return;
     }
-    if (!session) return;
+    if (!session) { setDataLoaded(true); return; }
     const userId = session.user.id;
     Promise.all([
       supabase.from('domains').select('*').eq('user_id', userId),
