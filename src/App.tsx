@@ -244,6 +244,10 @@ export default function App() {
     }
     if (!session) { setDataLoaded(true); return; }
     const userId = session.user.id;
+    const timeout = setTimeout(() => {
+      setToast('⚠ Database taking too long — try refreshing');
+      setDataLoaded(true);
+    }, 10000);
     Promise.all([
       supabase.from('domains').select('*').eq('user_id', userId),
       supabase.from('goals').select('*').eq('user_id', userId),
@@ -287,6 +291,12 @@ export default function App() {
 
       // Mark this account as seeded so we never reseed/overwrite again.
       if (!alreadySeeded) supabase.auth.updateUser({ data: { seeded: true } });
+      clearTimeout(timeout);
+      setDataLoaded(true);
+    }).catch((err) => {
+      clearTimeout(timeout);
+      console.error('Supabase load failed:', err);
+      setToast('⚠ Could not reach database — check your connection');
       setDataLoaded(true);
     });
   }, [session?.user?.id]);
