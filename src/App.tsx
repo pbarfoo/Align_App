@@ -708,6 +708,7 @@ function Align({
   const [domainId, setDomainId] = useState<DomainId>('career');
   const [lit, setLit] = useState<string | null>(null);
   const [addingFor, setAddingFor] = useState<string | null>(null);
+  const [addingForKind, setAddingForKind] = useState<'short' | 'action' | null>(null);
   const [editValuesFor, setEditValuesFor] = useState<string | null>(null);
   const [hideCompleted, setHideCompleted] = useState(() => loadOr('align-hide-completed-v1', false));
   useEffect(() => {
@@ -780,6 +781,7 @@ function Align({
       timeframe: months,
     }]);
     setAddingFor(null);
+    setAddingForKind(null);
     flash('Short-term goal added');
   };
 
@@ -821,6 +823,7 @@ function Align({
           }),
     }]);
     setAddingFor(null);
+    setAddingForKind(null);
     flash(kind === 'habit' ? 'Habit added' : 'Task added');
   };
 
@@ -896,6 +899,7 @@ function Align({
               setDomainId(d.id);
               setLit(null);
               setAddingFor(null);
+              setAddingForKind(null);
               setEditValuesFor(null);
             }}
           >
@@ -949,15 +953,58 @@ function Align({
               onClick={() => setLit(lit === `g:${lg.id}` ? null : `g:${lg.id}`)}
               canAddChild
               addActive={addingFor === lg.id}
-              onAddChild={() =>
-                setAddingFor(addingFor === lg.id ? null : lg.id)
-              }
+              onAddChild={() => {
+                if (addingFor === lg.id) { setAddingFor(null); setAddingForKind(null); }
+                else { setAddingFor(lg.id); setAddingForKind(null); }
+              }}
               onDelete={() => deleteGoal(lg.id)}
               onRename={(title) => updateGoalTitle(lg.id, title)}
               onChangeTimeframe={(t) => updateGoalTimeframe(lg.id, t)}
               isComplete={!!lg.completedAt}
               onToggleComplete={() => toggleGoalComplete(lg.id)}
             />
+            {habits
+              .filter((h) => {
+                if (h.goalId !== lg.id) return false;
+                if (!hideCompleted) return true;
+                if (h.kind === 'task') return !h.completed;
+                return !isHabitDoneThisPeriod(h);
+              })
+              .map((h) => {
+                const done = h.kind === 'task' ? !!h.completed : isHabitDoneThisPeriod(h);
+                return (
+                  <div
+                    key={h.id}
+                    className={`${cls(`h:${h.id}`)} node short${done ? ' completed' : ''}`}
+                    style={{ background: 'var(--surface-2)' }}
+                    onClick={() => setLit(lit === `h:${h.id}` ? null : `h:${h.id}`)}
+                  >
+                    <button
+                      className={`node-check${done ? ' on' : ''}`}
+                      title={done ? 'Mark incomplete' : 'Mark complete'}
+                      onClick={(e) => { e.stopPropagation(); toggleHabit(h.id); }}
+                    />
+                    <div className="node-main">
+                      <div className="node-tag">{h.kind === 'task' ? 'Task' : 'Habit'}</div>
+                      <div className="node-title">{h.title}</div>
+                      <div className="node-foot">
+                        <span className="goal-date">
+                          {h.kind === 'task' ? getTaskCountdown(h) : getRecurrenceString(h)}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="node-ctrls">
+                      <button
+                        className="node-del"
+                        title="Delete"
+                        onClick={(e) => { e.stopPropagation(); deleteHabit(h.id); }}
+                      >
+                        <TrashIcon />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             {domainGoals
               .filter((s) => s.parentGoalId === lg.id)
               .map((sg) => (
@@ -985,13 +1032,29 @@ function Align({
                 />
               ))}
             {addingFor === lg.id && (
-              <AddShortGoalForm
-                domainValues={domain.values}
-                forceOpen
-                onClose={() => setAddingFor(null)}
-                indent="short"
-                onAdd={(title, months, vi) => addShortGoal(lg, title, months, vi)}
-              />
+              addingForKind === null ? (
+                <div className="inline-add short add-form">
+                  <div className="seg">
+                    <button type="button" onClick={() => setAddingForKind('short')}>Short-term goal</button>
+                    <button type="button" onClick={() => setAddingForKind('action')}>Habit / Task</button>
+                  </div>
+                  <button className="mini-ghost" onClick={() => { setAddingFor(null); setAddingForKind(null); }}>Cancel</button>
+                </div>
+              ) : addingForKind === 'short' ? (
+                <AddShortGoalForm
+                  domainValues={domain.values}
+                  forceOpen
+                  onClose={() => { setAddingFor(null); setAddingForKind(null); }}
+                  indent="short"
+                  onAdd={(title, months, vi) => addShortGoal(lg, title, months, vi)}
+                />
+              ) : (
+                <AddActionForm
+                  goalId={lg.id}
+                  onAdd={addAction}
+                  onClose={() => { setAddingFor(null); setAddingForKind(null); }}
+                />
+              )
             )}
           </div>
           );
