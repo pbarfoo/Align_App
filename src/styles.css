@@ -738,12 +738,12 @@ h1 {
 
 .node.short {
   margin-left: 38px;
+  background: color-mix(in srgb, var(--thread-color, var(--line)) 8%, var(--surface));
 }
-
 
 .node.habit {
   margin-left: 58px;
-  background: var(--surface-2);
+  background: color-mix(in srgb, var(--thread-color, var(--line)) 6%, var(--surface-2));
 }
 
 .unaligned {

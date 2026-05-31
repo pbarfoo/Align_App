@@ -937,8 +937,9 @@ function Align({
           .filter((lg) => !(hideCompleted && !!lg.completedAt))
           .map((lg) => {
           const lgValues = lg.valueIndexes.map((i) => domain.values[i]).filter(Boolean);
+          const threadColor = DOMAIN_COLORS[lg.domainId] ?? 'var(--line)';
           return (
-          <div key={lg.id} className="goal-thread">
+          <div key={lg.id} className="goal-thread" style={{ '--thread-color': threadColor } as React.CSSProperties}>
             <GoalNode
               goal={lg}
               values={lgValues}
@@ -976,7 +977,6 @@ function Align({
                   <div
                     key={h.id}
                     className={`${cls(`h:${h.id}`)} node short${done ? ' completed' : ''}`}
-                    style={{ background: 'var(--surface-2)' }}
                     onClick={() => setLit(lit === `h:${h.id}` ? null : `h:${h.id}`)}
                   >
                     <button
@@ -1063,28 +1063,29 @@ function Align({
         {looseShort
           .filter((sg) => !(hideCompleted && !!sg.completedAt))
           .map((sg) => (
-          <ShortWithActions
-            key={sg.id}
-            goal={sg}
-            displayValues={sg.valueIndexes.map((i) => domain.values[i]).filter(Boolean)}
-            habits={habits}
-            cls={cls}
-            lit={lit}
-            setLit={setLit}
-            addingFor={addingFor}
-            setAddingFor={setAddingFor}
-            onAddAction={addAction}
-            onDeleteGoal={deleteGoal}
-            onRenameGoal={updateGoalTitle}
-            onChangeGoalTimeframe={updateGoalTimeframe}
-            onDeleteHabit={deleteHabit}
-            onEditHabit={updateHabit}
-            onToggleGoalComplete={toggleGoalComplete}
-            onToggleHabit={toggleHabit}
-            hideCompleted={hideCompleted}
-            domainValues={domain.values}
-            domainVision={domain.vision}
-          />
+          <div key={sg.id} style={{ '--thread-color': DOMAIN_COLORS[sg.domainId] ?? 'var(--line)' } as React.CSSProperties}>
+            <ShortWithActions
+              goal={sg}
+              displayValues={sg.valueIndexes.map((i) => domain.values[i]).filter(Boolean)}
+              habits={habits}
+              cls={cls}
+              lit={lit}
+              setLit={setLit}
+              addingFor={addingFor}
+              setAddingFor={setAddingFor}
+              onAddAction={addAction}
+              onDeleteGoal={deleteGoal}
+              onRenameGoal={updateGoalTitle}
+              onChangeGoalTimeframe={updateGoalTimeframe}
+              onDeleteHabit={deleteHabit}
+              onEditHabit={updateHabit}
+              onToggleGoalComplete={toggleGoalComplete}
+              onToggleHabit={toggleHabit}
+              hideCompleted={hideCompleted}
+              domainValues={domain.values}
+              domainVision={domain.vision}
+            />
+          </div>
         ))}
 
         <AddShortGoalForm
