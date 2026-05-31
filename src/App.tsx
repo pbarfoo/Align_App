@@ -937,9 +937,8 @@ function Align({
           .filter((lg) => !(hideCompleted && !!lg.completedAt))
           .map((lg) => {
           const lgValues = lg.valueIndexes.map((i) => domain.values[i]).filter(Boolean);
-          const threadColor = DOMAIN_COLORS[lg.domainId] ?? 'var(--line)';
           return (
-          <div key={lg.id} className="goal-thread" style={{ '--thread-color': threadColor } as React.CSSProperties}>
+          <div key={lg.id} className="goal-thread" style={{ '--thread-color': threadColor(lg.id) } as React.CSSProperties}>
             <GoalNode
               goal={lg}
               values={lgValues}
@@ -1063,7 +1062,7 @@ function Align({
         {looseShort
           .filter((sg) => !(hideCompleted && !!sg.completedAt))
           .map((sg) => (
-          <div key={sg.id} style={{ '--thread-color': DOMAIN_COLORS[sg.domainId] ?? 'var(--line)' } as React.CSSProperties}>
+          <div key={sg.id} style={{ '--thread-color': threadColor(sg.id) } as React.CSSProperties}>
             <ShortWithActions
               goal={sg}
               displayValues={sg.valueIndexes.map((i) => domain.values[i]).filter(Boolean)}
@@ -2140,6 +2139,17 @@ const DOMAIN_COLORS: Record<string, string> = {
   self: '#4eb8e8',        // sky blue
   community: '#72ce6a',   // green
 };
+
+const THREAD_PALETTE = [
+  '#e8883c', '#4eb8e8', '#72ce6a', '#c8a96a',
+  '#a78be8', '#e87a8b', '#4ed8c8', '#e8d44e',
+];
+
+function threadColor(id: string): string {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) & 0xffffff;
+  return THREAD_PALETTE[h % THREAD_PALETTE.length];
+}
 
 function stGoalMetrics(sg: Goal, habits: Habit[]): { time: number; completion: number; health: number; completionRate: number; recencyScore: number; momentum: number } {
   const totalMs = (sg.timeframe || 1) * 30.44 * 86_400_000;

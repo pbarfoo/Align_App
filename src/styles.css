@@ -736,6 +736,10 @@ h1 {
   margin-top: 3px;
 }
 
+.goal-thread > .node {
+  background: color-mix(in srgb, var(--thread-color, var(--line)) 8%, var(--surface));
+}
+
 .node.short {
   margin-left: 38px;
   background: color-mix(in srgb, var(--thread-color, var(--line)) 8%, var(--surface));
