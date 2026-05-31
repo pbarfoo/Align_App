@@ -1126,6 +1126,7 @@ function ShortWithActions({
   onEditValues,
   onChangeValues,
   valueIndexes,
+  domainValues,
 }: {
   goal: Goal;
   displayValues: string[];
@@ -1181,6 +1182,7 @@ function ShortWithActions({
         onEditValues={onEditValues}
         onChangeValues={onChangeValues}
         valueIndexes={valueIndexes}
+        domainValues={domainValues}
       />
       {habits
         .filter((h) => {
