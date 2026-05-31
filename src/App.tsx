@@ -1083,6 +1083,10 @@ function Align({
               hideCompleted={hideCompleted}
               domainValues={domain.values}
               domainVision={domain.vision}
+              editValuesActive={editValuesFor === sg.id}
+              onEditValues={() => setEditValuesFor(editValuesFor === sg.id ? null : sg.id)}
+              onChangeValues={(idxs) => updateGoalValues(sg.id, idxs)}
+              valueIndexes={sg.valueIndexes}
             />
           </div>
         ))}
@@ -1118,6 +1122,10 @@ function ShortWithActions({
   onToggleGoalComplete,
   onToggleHabit,
   hideCompleted,
+  editValuesActive,
+  onEditValues,
+  onChangeValues,
+  valueIndexes,
 }: {
   goal: Goal;
   displayValues: string[];
@@ -1143,6 +1151,10 @@ function ShortWithActions({
   onToggleGoalComplete: (id: string) => void;
   onToggleHabit: (id: string) => void;
   hideCompleted: boolean;
+  editValuesActive?: boolean;
+  onEditValues?: () => void;
+  onChangeValues?: (idxs: number[]) => void;
+  valueIndexes?: number[];
 }) {
   const [editingHabitId, setEditingHabitId] = useState<string | null>(null);
   if (hideCompleted && !!goal.completedAt) return null;
@@ -1165,6 +1177,10 @@ function ShortWithActions({
         onChangeTimeframe={(t) => onChangeGoalTimeframe(goal.id, t)}
         isComplete={!!goal.completedAt}
         onToggleComplete={() => onToggleGoalComplete(goal.id)}
+        editValuesActive={editValuesActive}
+        onEditValues={onEditValues}
+        onChangeValues={onChangeValues}
+        valueIndexes={valueIndexes}
       />
       {habits
         .filter((h) => {
@@ -1558,7 +1574,7 @@ function GoalNode({
   isComplete?: boolean;
   onToggleComplete?: () => void;
 }) {
-  const canEditValues = !short && !!onEditValues;
+  const canEditValues = !!onEditValues;
   const idxs = valueIndexes ?? [];
   const [editingTitle, setEditingTitle] = useState(false);
   const [editingTimeframe, setEditingTimeframe] = useState(false);
