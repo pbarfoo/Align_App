@@ -109,10 +109,9 @@ function habitFromRow(row: Row): Habit {
 }
 
 function reflToRow(r: ReflectionEntry, userId: string): Row {
-  const year = new Date(r.date).getFullYear();
   return {
-    id: `${userId.slice(0, 8)}-${year}-W${r.weekNumber}`,
-    user_id: userId, week_number: r.weekNumber, year,
+    id: `${userId.slice(0, 8)}-${r.date}`,
+    user_id: userId, week_number: r.weekNumber, year: new Date(r.date).getFullYear(),
     date: r.date, scores: r.scores, note: r.note,
   };
 }
@@ -417,50 +416,19 @@ export default function App() {
         )}
       </main>
 
-      {reflectOpen && (() => {
-        const week = getISOWeek(new Date());
-        const year = new Date().getFullYear();
-        const thisWeek = reflections.find(
-          (x) => x.weekNumber === week && new Date(x.date).getFullYear() === year,
-        );
-        return (
+      {reflectOpen && (
         <Reflect
           domains={domains}
           goals={goals}
-          initialScores={thisWeek?.scores}
-          initialNote={thisWeek?.note}
+          reflections={reflections}
           onClose={() => setReflectOpen(false)}
-          onSave={(scores, note) => {
-            const now = new Date();
-            const week = getISOWeek(now);
-            const year = now.getFullYear();
-            const entry: ReflectionEntry = {
-              weekNumber: week,
-              date: Date.now(),
-              scores,
-              note,
-            };
-            setReflections((r) => {
-              // One reflection per week — overwrite if this week already has one
-              const existingIdx = r.findIndex(
-                (x) => x.weekNumber === week && new Date(x.date).getFullYear() === year,
-              );
-              if (existingIdx === -1) return [...r, entry];
-              const next = [...r];
-              next[existingIdx] = entry;
-              return next;
-            });
-            flash(
-              reflections.some(
-                (x) => x.weekNumber === week && new Date(x.date).getFullYear() === year,
-              )
-                ? 'This week’s reflection updated'
-                : 'Reflection saved',
-            );
+          onSave={(scores, note, weekNumber, date) => {
+            const entry: ReflectionEntry = { weekNumber, date, scores, note };
+            setReflections((r) => [...r, entry]);
+            flash('Reflection saved');
           }}
         />
-        );
-      })()}
+      )}
 
       {reviewOpen && (
         <ReviewPanel
@@ -1837,21 +1805,32 @@ function Today({
 function Reflect({
   domains,
   goals,
+  reflections,
   onClose,
   onSave,
-  initialScores,
-  initialNote,
 }: {
   domains: Domain[];
   goals: Goal[];
+  reflections: ReflectionEntry[];
   onClose: () => void;
-  onSave: (scores: Record<string, number>, note: string) => void;
-  initialScores?: Record<string, number>;
-  initialNote?: string;
+  onSave: (scores: Record<string, number>, note: string, weekNumber: number, date: number) => void;
 }) {
-  const [scores, setScores] = useState<Record<string, number>>(initialScores ?? {});
-  const [note, setNote] = useState(initialNote ?? '');
+  const [weekOffset, setWeekOffset] = useState<0 | -1>(0);
+  const [scores, setScores] = useState<Record<string, number>>({});
+  const [note, setNote] = useState('');
   const [step, setStep] = useState<'score' | 'insight'>('score');
+
+  useEffect(() => {
+    const d = new Date();
+    if (weekOffset === -1) d.setDate(d.getDate() - 7);
+    const week = getISOWeek(d);
+    const year = d.getFullYear();
+    const existing = [...reflections]
+      .filter((r) => r.weekNumber === week && new Date(r.date).getFullYear() === year)
+      .sort((a, b) => b.date - a.date)[0];
+    setScores(existing?.scores ?? {});
+    setNote(existing?.note ?? '');
+  }, [weekOffset]);
 
   const rows = domains.flatMap((d) =>
     d.values.map((v, i) => ({ d, v, i, key: `${d.id}:${i}` })),
@@ -1863,7 +1842,9 @@ function Reflect({
   };
 
   const handleSave = () => {
-    onSave(scores, note);
+    const d = new Date();
+    if (weekOffset === -1) d.setDate(d.getDate() - 7);
+    onSave(scores, note, getISOWeek(d), d.getTime());
     setStep('insight');
   };
 
@@ -1923,7 +1904,11 @@ function Reflect({
   return (
     <div className="scrim" role="dialog" aria-modal="true" onClick={onClose}>
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
-        <h2>This week</h2>
+        <h2>{weekOffset === -1 ? 'Last week' : 'This week'}</h2>
+        <div className="seg" style={{ marginBottom: 12 }}>
+          <button type="button" className={weekOffset === 0 ? 'on' : ''} onClick={() => setWeekOffset(0)}>This week</button>
+          <button type="button" className={weekOffset === -1 ? 'on' : ''} onClick={() => setWeekOffset(-1)}>Last week</button>
+        </div>
         <p>How well did your week reflect each value?</p>
         <div className="reflect-list">
           {rows.map(({ d, v, key }) => (
