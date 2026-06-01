@@ -693,20 +693,6 @@ h1 {
 .node-collapse:hover { color: var(--accent); }
 .node-collapse.collapsed svg { transform: rotate(-90deg); }
 
-.node-move {
-  flex-shrink: 0;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  font-size: 11px;
-  color: var(--muted);
-  background: transparent;
-  border: 1px solid var(--line);
-  transition: color 0.18s, border-color 0.18s;
-}
-.node-move:hover { color: var(--accent); border-color: var(--accent); }
 
 .node-del {
   flex-shrink: 0;

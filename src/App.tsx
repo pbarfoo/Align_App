@@ -1,5 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  DndContext, type DragEndEvent, MouseSensor, TouchSensor,
+  useSensor, useSensors, closestCenter,
+} from '@dnd-kit/core';
+import {
+  SortableContext, useSortable, arrayMove,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import {
   domains as seedDomains,
   initialGoals,
   initialHabits,
@@ -674,6 +683,21 @@ function EditableValues({
   );
 }
 
+/* ---------------- SortableGoal (drag-to-reorder wrapper) ---------------- */
+function SortableGoal({ id, children }: { id: string; children: React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.45 : 1 }}
+      {...attributes}
+      {...listeners}
+    >
+      {children}
+    </div>
+  );
+}
+
 /* ---------------- Align ---------------- */
 function Align({
   domains,
@@ -705,23 +729,20 @@ function Align({
   const toggleCollapse = (id: string) =>
     setCollapsedGoals(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
 
-  const moveLtGoal = (id: string, dir: -1 | 1) =>
-    setGoals(prev => {
-      const vis = prev.filter(g => g.domainId === domainId && g.horizon === 'long' && !(hideCompleted && !!g.completedAt));
-      const i = vis.findIndex(g => g.id === id); const j = i + dir;
-      if (j < 0 || j >= vis.length) return prev;
-      const ai = prev.findIndex(g => g.id === vis[i].id), bi = prev.findIndex(g => g.id === vis[j].id);
-      const next = [...prev]; [next[ai], next[bi]] = [next[bi], next[ai]]; return next;
-    });
+  const sensors = useSensors(
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
+  );
 
-  const moveLooseSt = (id: string, dir: -1 | 1) =>
+  const handleDragEnd = ({ active, over }: DragEndEvent) => {
+    if (!over || active.id === over.id) return;
     setGoals(prev => {
-      const vis = prev.filter(g => g.domainId === domainId && g.horizon === 'short' && !g.parentGoalId && !(hideCompleted && !!g.completedAt));
-      const i = vis.findIndex(g => g.id === id); const j = i + dir;
-      if (j < 0 || j >= vis.length) return prev;
-      const ai = prev.findIndex(g => g.id === vis[i].id), bi = prev.findIndex(g => g.id === vis[j].id);
-      const next = [...prev]; [next[ai], next[bi]] = [next[bi], next[ai]]; return next;
+      const oi = prev.findIndex(g => g.id === active.id);
+      const ni = prev.findIndex(g => g.id === over.id);
+      return arrayMove(prev, oi, ni);
     });
+  };
+
   useEffect(() => {
     localStorage.setItem('align-hide-completed-v1', JSON.stringify(hideCompleted));
   }, [hideCompleted]);
@@ -945,13 +966,16 @@ function Align({
       </button>
 
       <div className="spine">
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={longGoals.filter(lg => !(hideCompleted && !!lg.completedAt)).map(g => g.id)} strategy={verticalListSortingStrategy}>
         {longGoals
           .filter((lg) => !(hideCompleted && !!lg.completedAt))
-          .map((lg, ltIdx, ltArr) => {
+          .map((lg) => {
           const lgValues = lg.valueIndexes.map((i) => domain.values[i]).filter(Boolean);
           const ltHasChildren = habits.some((h) => h.goalId === lg.id) || domainGoals.some((s) => s.parentGoalId === lg.id);
           return (
-          <div key={lg.id} className="goal-thread" style={{ '--thread-color': threadColor(lg.id) } as React.CSSProperties}>
+          <SortableGoal key={lg.id} id={lg.id}>
+          <div className="goal-thread" style={{ '--thread-color': threadColor(lg.id) } as React.CSSProperties}>
             <GoalNode
               goal={lg}
               values={lgValues}
@@ -977,10 +1001,6 @@ function Align({
               onToggleComplete={() => toggleGoalComplete(lg.id)}
               isCollapsed={collapsedGoals.has(lg.id)}
               onToggleCollapse={ltHasChildren ? () => toggleCollapse(lg.id) : undefined}
-              canMoveUp={ltIdx > 0}
-              canMoveDown={ltIdx < ltArr.length - 1}
-              onMoveUp={() => moveLtGoal(lg.id, -1)}
-              onMoveDown={() => moveLtGoal(lg.id, 1)}
             />
             {!collapsedGoals.has(lg.id) && habits
               .filter((h) => {
@@ -1075,13 +1095,19 @@ function Align({
               )
             )}
           </div>
+          </SortableGoal>
           );
         })}
+        </SortableContext>
+        </DndContext>
 
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={looseShort.filter(sg => !(hideCompleted && !!sg.completedAt)).map(g => g.id)} strategy={verticalListSortingStrategy}>
         {looseShort
           .filter((sg) => !(hideCompleted && !!sg.completedAt))
-          .map((sg, sgIdx, sgArr) => (
-          <div key={sg.id} style={{ '--thread-color': threadColor(sg.id) } as React.CSSProperties}>
+          .map((sg) => (
+          <SortableGoal key={sg.id} id={sg.id}>
+          <div style={{ '--thread-color': threadColor(sg.id) } as React.CSSProperties}>
             <ShortWithActions
               goal={sg}
               displayValues={sg.valueIndexes.map((i) => domain.values[i]).filter(Boolean)}
@@ -1108,13 +1134,12 @@ function Align({
               valueIndexes={sg.valueIndexes}
               isCollapsed={collapsedGoals.has(sg.id)}
               onToggleCollapse={habits.some((h) => h.goalId === sg.id) ? () => toggleCollapse(sg.id) : undefined}
-              canMoveUp={sgIdx > 0}
-              canMoveDown={sgIdx < sgArr.length - 1}
-              onMoveUp={() => moveLooseSt(sg.id, -1)}
-              onMoveDown={() => moveLooseSt(sg.id, 1)}
             />
           </div>
+          </SortableGoal>
         ))}
+        </SortableContext>
+        </DndContext>
 
         <AddShortGoalForm
           domainValues={domain.values}
@@ -1154,10 +1179,6 @@ function ShortWithActions({
   domainValues,
   isCollapsed,
   onToggleCollapse,
-  canMoveUp,
-  canMoveDown,
-  onMoveUp,
-  onMoveDown,
 }: {
   goal: Goal;
   displayValues: string[];
@@ -1189,10 +1210,6 @@ function ShortWithActions({
   valueIndexes?: number[];
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
-  canMoveUp?: boolean;
-  canMoveDown?: boolean;
-  onMoveUp?: () => void;
-  onMoveDown?: () => void;
 }) {
   const [editingHabitId, setEditingHabitId] = useState<string | null>(null);
   if (hideCompleted && !!goal.completedAt) return null;
@@ -1222,10 +1239,6 @@ function ShortWithActions({
         domainValues={domainValues}
         isCollapsed={isCollapsed}
         onToggleCollapse={onToggleCollapse}
-        canMoveUp={canMoveUp}
-        canMoveDown={canMoveDown}
-        onMoveUp={onMoveUp}
-        onMoveDown={onMoveDown}
       />
       {!isCollapsed && habits
         .filter((h) => {
@@ -1644,10 +1657,6 @@ function GoalNode({
   onToggleComplete,
   isCollapsed,
   onToggleCollapse,
-  canMoveUp,
-  canMoveDown,
-  onMoveUp,
-  onMoveDown,
 }: {
   goal: Goal;
   values?: string[];
@@ -1669,10 +1678,6 @@ function GoalNode({
   onToggleComplete?: () => void;
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
-  canMoveUp?: boolean;
-  canMoveDown?: boolean;
-  onMoveUp?: () => void;
-  onMoveDown?: () => void;
 }) {
   const canEditValues = !!onEditValues;
   const idxs = valueIndexes ?? [];
@@ -1819,12 +1824,6 @@ function GoalNode({
         )}
       </div>
       <div className="node-ctrls">
-        {canMoveUp && (
-          <button className="node-move" title="Move up" onClick={(e) => { e.stopPropagation(); onMoveUp?.(); }}>↑</button>
-        )}
-        {canMoveDown && (
-          <button className="node-move" title="Move down" onClick={(e) => { e.stopPropagation(); onMoveDown?.(); }}>↓</button>
-        )}
         {canAddChild && (
           <button
             className={`node-add${addActive ? ' on' : ''}`}
