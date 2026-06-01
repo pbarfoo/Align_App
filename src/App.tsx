@@ -1903,8 +1903,47 @@ function Today({
   reflections: ReflectionEntry[];
   onReflect: () => void;
 }) {
-  const done = habits.filter((h) => h.kind === 'task' ? !!h.completed : isHabitDoneThisPeriod(h)).length;
-  const pct = habits.length ? Math.round((done / habits.length) * 100) : 0;
+  const [showDone, setShowDone] = useState(false);
+  const today = toDateStr(new Date());
+
+  // --- Classify what's relevant *today* ---
+  const scheduledHabits = habits.filter(
+    (h) => h.kind === 'habit' && isHabitScheduledToday(h),
+  );
+  const openHabits = scheduledHabits.filter((h) => !isHabitDoneThisPeriod(h));
+  const doneHabits = scheduledHabits.filter((h) => isHabitDoneThisPeriod(h));
+
+  const tasks = habits.filter((h) => h.kind === 'task');
+  const openTasks = tasks.filter((h) => !h.completed);
+  const overdueTasks = openTasks.filter((t) => t.dueDate && t.dueDate < today);
+  const dueTodayTasks = openTasks.filter((t) => t.dueDate === today);
+  const upcomingTasks = openTasks.filter((t) => !t.dueDate || t.dueDate > today);
+  const completedToday = tasks.filter(
+    (t) => t.completed && t.completedAt && toDateStr(new Date(t.completedAt)) === today,
+  );
+
+  const needsAttention = [...overdueTasks, ...dueTodayTasks];
+  const doneItems = [...doneHabits, ...completedToday];
+
+  // Progress: today's habits + urgent tasks + tasks finished today
+  const totalCount =
+    scheduledHabits.length + overdueTasks.length + dueTodayTasks.length + completedToday.length;
+  const done = doneHabits.length + completedToday.length;
+  const pct = totalCount ? Math.round((done / totalCount) * 100) : 0;
+
+  // Group today's open items (habits + upcoming tasks) by domain for the
+  // main list, so balance across life areas is visible.
+  const domainOf = (goalId: string) =>
+    goals.find((g) => g.id === goalId)?.domainId;
+  const todayItemsByDomain = (domainId: DomainId) =>
+    [
+      ...openHabits.filter((h) => domainOf(h.goalId) === domainId),
+      ...upcomingTasks.filter((t) => domainOf(t.goalId) === domainId),
+    ];
+  // Domains that have at least one active (non-completed) goal — used to
+  // surface neglect when such a domain has nothing scheduled today.
+  const domainHasGoals = (domainId: DomainId) =>
+    goals.some((g) => g.domainId === domainId && !g.completedAt);
 
   const toggle = (id: string) => {
     setHabits((prev) => prev.map((h) => {
@@ -1950,6 +1989,43 @@ function Today({
     ? allValues[getISOWeek(new Date()) % allValues.length]
     : null;
 
+  const renderRow = (h: Habit) => {
+    const isDone = h.kind === 'task' ? !!h.completed : isHabitDoneThisPeriod(h);
+    return (
+      <div className="habit-row" key={h.id}>
+        <button
+          className={`check${isDone ? ' on' : ''}`}
+          onClick={() => toggle(h.id)}
+          aria-label="toggle"
+        >
+          <Tick />
+        </button>
+        <div style={{ flex: 1 }}>
+          <div className={`habit-title${isDone ? ' done' : ''}`}>{h.title}</div>
+          <div className="habit-meta">
+            {h.kind === 'task' ? `Task · ${getTaskCountdown(h)}` : getRecurrenceString(h)}
+            &nbsp;·&nbsp; serves <b>{lineage(h.goalId)}</b>
+          </div>
+        </div>
+        {h.kind === 'habit' && (
+          <div className="backdate-btn" title="Log a past date">
+            <span>+past</span>
+            <input
+              type="date"
+              max={toDateStr(new Date())}
+              onChange={(e) => { if (e.target.value) { logHabitDate(h.id, e.target.value); e.target.value = ''; } }}
+            />
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const hasAnythingToday =
+    needsAttention.length > 0 ||
+    openHabits.length > 0 ||
+    upcomingTasks.length > 0;
+
   return (
     <div className="screen">
       <div className="eyebrow">Today</div>
@@ -1968,7 +2044,7 @@ function Today({
       <div className="progress-wrap">
         <div className="progress-num">
           {done}
-          <span> / {habits.length} done</span>
+          <span> / {totalCount} today</span>
         </div>
         <div className="bar">
           <i style={{ width: `${pct}%` }} />
@@ -1976,37 +2052,56 @@ function Today({
         <button className="reflect-mini-btn" onClick={onReflect} title="Weekly reflection">✦ Reflect</button>
       </div>
 
-      {habits.map((h) => {
-        const isDone = h.kind === 'task' ? !!h.completed : isHabitDoneThisPeriod(h);
+      {/* Needs attention: overdue + due-today tasks */}
+      {needsAttention.length > 0 && (
+        <div className="today-section attention">
+          <div className="today-section-head">
+            Needs attention
+            <span className="today-count">{needsAttention.length}</span>
+          </div>
+          {needsAttention.map(renderRow)}
+        </div>
+      )}
+
+      {/* Today, grouped by domain */}
+      {domains.map((dom) => {
+        const items = todayItemsByDomain(dom.id);
+        if (items.length === 0 && !domainHasGoals(dom.id)) return null;
         return (
-          <div className="habit-row" key={h.id}>
-            <button
-              className={`check${isDone ? ' on' : ''}`}
-              onClick={() => toggle(h.id)}
-              aria-label="toggle"
-            >
-              <Tick />
-            </button>
-            <div style={{ flex: 1 }}>
-              <div className={`habit-title${isDone ? ' done' : ''}`}>{h.title}</div>
-              <div className="habit-meta">
-                {h.kind === 'task' ? `Task · ${getTaskCountdown(h)}` : getRecurrenceString(h)}
-                &nbsp;·&nbsp; serves <b>{lineage(h.goalId)}</b>
-              </div>
-            </div>
-            {h.kind === 'habit' && (
-              <div className="backdate-btn" title="Log a past date">
-                <span>+past</span>
-                <input
-                  type="date"
-                  max={toDateStr(new Date())}
-                  onChange={(e) => { if (e.target.value) { logHabitDate(h.id, e.target.value); e.target.value = ''; } }}
-                />
-              </div>
-            )}
+          <div className="today-section" key={dom.id}>
+            <div className="today-domain-head">{dom.name}</div>
+            {items.length > 0
+              ? items.map(renderRow)
+              : (
+                <div className="today-empty-domain">
+                  Nothing scheduled for {dom.name} today.
+                </div>
+              )}
           </div>
         );
       })}
+
+      {!hasAnythingToday && doneItems.length === 0 && (
+        <div className="today-allclear">Nothing on the list today.</div>
+      )}
+      {!hasAnythingToday && doneItems.length > 0 && (
+        <div className="today-allclear">✦ All done for today. Nice.</div>
+      )}
+
+      {/* Done — collapsed by default */}
+      {doneItems.length > 0 && (
+        <div className="today-section done">
+          <button
+            className="today-done-toggle"
+            onClick={() => setShowDone((v) => !v)}
+          >
+            <Chevron up={showDone} />
+            Done today
+            <span className="today-count">{doneItems.length}</span>
+          </button>
+          {showDone && doneItems.map(renderRow)}
+        </div>
+      )}
 
       {(() => {
         const now = new Date();
@@ -3119,6 +3214,21 @@ function dateInCurrentPeriod(dateStr: string, h: Habit): boolean {
 
 function isHabitDoneThisPeriod(h: Habit): boolean {
   return (h.completions ?? []).some((d) => dateInCurrentPeriod(d, h));
+}
+
+/** Is this habit actually scheduled to appear today? Cadence-aware. */
+function isHabitScheduledToday(h: Habit): boolean {
+  const day = new Date().getDay(); // 0=Sun … 6=Sat
+  switch (h.recurrence ?? 'daily') {
+    case 'weekdays':
+      return day !== 0 && day !== 6;
+    case 'specific-days':
+      return (h.specificDays ?? []).includes(day);
+    // weekly / monthly / yearly / custom are open commitments: shown until
+    // completed for the current period, then they fall into Done.
+    default:
+      return true;
+  }
 }
 
 /* ---------------- bits ---------------- */
