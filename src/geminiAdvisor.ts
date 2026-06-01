@@ -163,8 +163,17 @@ Only use IDs from the actionable items list above.`;
   return picks;
 }
 
-function coachCacheKey(date: string) {
-  return `gemini-coach-v3-${date}`;
+function valueFingerprint(domains: Domain[]): string {
+  const joined = domains.flatMap((d) => d.values).join('|');
+  let h = 0;
+  for (let i = 0; i < joined.length; i++) {
+    h = (h * 31 + joined.charCodeAt(i)) & 0xffffffff;
+  }
+  return Math.abs(h).toString(36);
+}
+
+function coachCacheKey(date: string, domains: Domain[]) {
+  return `gemini-coach-v4-${date}-${valueFingerprint(domains)}`;
 }
 
 export async function getGeminiCoachCard(
@@ -177,7 +186,7 @@ export async function getGeminiCoachCard(
   if (!apiKey) throw new Error('No VITE_GEMINI_API_KEY');
 
   const today = toDateStr(new Date());
-  const cached = localStorage.getItem(coachCacheKey(today));
+  const cached = localStorage.getItem(coachCacheKey(today, domains));
   if (cached) {
     try { return JSON.parse(cached) as CoachCard; } catch { /* fall through */ }
   }
@@ -297,6 +306,6 @@ Return JSON only: {"title": "...", "blurb": "..."}`;
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
   const card = JSON.parse(text) as CoachCard;
 
-  localStorage.setItem(coachCacheKey(today), JSON.stringify(card));
+  localStorage.setItem(coachCacheKey(today, domains), JSON.stringify(card));
   return card;
 }
