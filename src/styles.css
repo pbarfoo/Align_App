@@ -45,7 +45,7 @@ button {
 .app {
   width: 100%;
   max-width: 480px;
-  margin: 0 auto;
+  margin: 0;
   min-height: 100%;
   display: flex;
   flex-direction: column;
@@ -1269,9 +1269,10 @@ h1 {
   position: fixed;
   bottom: 0;
   left: 0;
-  right: 0;
+  right: auto;
+  width: 100%;
   max-width: 480px;
-  margin: 0 auto;
+  margin: 0;
   display: flex;
   background: rgba(15, 17, 21, 0.92);
   backdrop-filter: blur(12px);
@@ -1319,7 +1320,8 @@ h1 {
 .profile-btn {
   position: fixed;
   top: 14px;
-  right: 60px;
+  left: calc(min(100vw, 480px) - 96px);
+  right: auto;
   width: 36px;
   height: 36px;
   border-radius: 50%;
@@ -1339,7 +1341,8 @@ h1 {
 .user-menu {
   position: fixed;
   top: 14px;
-  right: 16px;
+  left: calc(min(100vw, 480px) - 52px);
+  right: auto;
   z-index: 20;
 }
 
@@ -1655,7 +1658,8 @@ h1 {
 .dashboard-btn {
   position: fixed;
   top: 14px;
-  right: 104px;
+  left: calc(min(100vw, 480px) - 140px);
+  right: auto;
   width: 36px;
   height: 36px;
   border-radius: 50%;
