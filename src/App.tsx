@@ -683,18 +683,44 @@ function EditableValues({
   );
 }
 
+/* Context so GoalNode can render a grip handle that holds the drag listeners */
+type DragListeners = Record<string, (...args: unknown[]) => unknown>;
+const DragHandleCtx = React.createContext<DragListeners | null>(null);
+
+/* Grip icon button — only renders when inside a SortableGoal */
+function DragHandle() {
+  const listeners = React.useContext(DragHandleCtx);
+  if (!listeners) return null;
+  return (
+    <button
+      className="node-drag"
+      aria-label="Drag to reorder"
+      title="Hold to drag"
+      {...(listeners as React.HTMLAttributes<HTMLButtonElement>)}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <svg width="8" height="12" viewBox="0 0 8 12" fill="currentColor" aria-hidden="true">
+        <circle cx="2" cy="1.5" r="1.5"/><circle cx="6" cy="1.5" r="1.5"/>
+        <circle cx="2" cy="6" r="1.5"/><circle cx="6" cy="6" r="1.5"/>
+        <circle cx="2" cy="10.5" r="1.5"/><circle cx="6" cy="10.5" r="1.5"/>
+      </svg>
+    </button>
+  );
+}
+
 /* ---------------- SortableGoal (drag-to-reorder wrapper) ---------------- */
 function SortableGoal({ id, children }: { id: string; children: React.ReactNode }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
   return (
-    <div
-      ref={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.45 : 1 }}
-      {...attributes}
-      {...listeners}
-    >
-      {children}
-    </div>
+    <DragHandleCtx.Provider value={(listeners ?? null) as DragListeners | null}>
+      <div
+        ref={setNodeRef}
+        style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.45 : 1 }}
+        {...attributes}
+      >
+        {children}
+      </div>
+    </DragHandleCtx.Provider>
   );
 }
 
@@ -730,8 +756,8 @@ function Align({
     setCollapsedGoals(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
 
   const sensors = useSensors(
-    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
-    useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 8 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 3 } }),
   );
 
   const handleDragEnd = ({ active, over }: DragEndEvent) => {
@@ -1001,6 +1027,7 @@ function Align({
               onToggleComplete={() => toggleGoalComplete(lg.id)}
               isCollapsed={collapsedGoals.has(lg.id)}
               onToggleCollapse={ltHasChildren ? () => toggleCollapse(lg.id) : undefined}
+              showDragHandle
             />
             {!collapsedGoals.has(lg.id) && habits
               .filter((h) => {
@@ -1134,6 +1161,7 @@ function Align({
               valueIndexes={sg.valueIndexes}
               isCollapsed={collapsedGoals.has(sg.id)}
               onToggleCollapse={habits.some((h) => h.goalId === sg.id) ? () => toggleCollapse(sg.id) : undefined}
+              showDragHandle
             />
           </div>
           </SortableGoal>
@@ -1179,6 +1207,7 @@ function ShortWithActions({
   domainValues,
   isCollapsed,
   onToggleCollapse,
+  showDragHandle,
 }: {
   goal: Goal;
   displayValues: string[];
@@ -1210,6 +1239,7 @@ function ShortWithActions({
   valueIndexes?: number[];
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
+  showDragHandle?: boolean;
 }) {
   const [editingHabitId, setEditingHabitId] = useState<string | null>(null);
   if (hideCompleted && !!goal.completedAt) return null;
@@ -1239,6 +1269,7 @@ function ShortWithActions({
         domainValues={domainValues}
         isCollapsed={isCollapsed}
         onToggleCollapse={onToggleCollapse}
+        showDragHandle={showDragHandle}
       />
       {!isCollapsed && habits
         .filter((h) => {
@@ -1657,6 +1688,7 @@ function GoalNode({
   onToggleComplete,
   isCollapsed,
   onToggleCollapse,
+  showDragHandle,
 }: {
   goal: Goal;
   values?: string[];
@@ -1678,6 +1710,7 @@ function GoalNode({
   onToggleComplete?: () => void;
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
+  showDragHandle?: boolean;
 }) {
   const canEditValues = !!onEditValues;
   const idxs = valueIndexes ?? [];
@@ -1824,6 +1857,7 @@ function GoalNode({
         )}
       </div>
       <div className="node-ctrls">
+        {showDragHandle && <DragHandle />}
         {canAddChild && (
           <button
             className={`node-add${addActive ? ' on' : ''}`}
