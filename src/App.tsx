@@ -498,43 +498,29 @@ export default function App() {
 
 /* ---------------- Date / Time Button ---------------- */
 function DateBtn({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
-  const ref = useRef<HTMLInputElement>(null);
   const display = value
     ? new Date(value + 'T00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
     : placeholder;
-  const open = () => {
-    const el = ref.current;
-    if (!el) return;
-    if (typeof (el as any).showPicker === 'function') (el as any).showPicker();
-    else el.focus();
-  };
   return (
-    <button type="button" className={`date-btn${value ? '' : ' date-btn--empty'}`} onClick={open}>
+    <button type="button" className={`date-btn${value ? '' : ' date-btn--empty'}`}>
       {display}
-      <input ref={ref} type="date" value={value}
+      <input type="date" value={value}
         onChange={(e) => onChange(e.target.value)}
-        style={{ position: 'absolute', left: '50%', top: '50%', width: 0, height: 0, opacity: 0, pointerEvents: 'none' }} />
+        style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', width: '100%', height: '100%', colorScheme: 'dark' }} />
     </button>
   );
 }
 
 function TimeBtn({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
-  const ref = useRef<HTMLInputElement>(null);
   const display = value
     ? (() => { const [h, m] = value.split(':'); const d = new Date(); d.setHours(+h, +m); return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }); })()
     : placeholder;
-  const open = () => {
-    const el = ref.current;
-    if (!el) return;
-    if (typeof (el as any).showPicker === 'function') (el as any).showPicker();
-    else el.focus();
-  };
   return (
-    <button type="button" className={`date-btn${value ? '' : ' date-btn--empty'}`} onClick={open}>
+    <button type="button" className={`date-btn${value ? '' : ' date-btn--empty'}`}>
       {display}
-      <input ref={ref} type="time" value={value}
+      <input type="time" value={value}
         onChange={(e) => onChange(e.target.value)}
-        style={{ position: 'absolute', left: '50%', top: '50%', width: 0, height: 0, opacity: 0, pointerEvents: 'none' }} />
+        style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', width: '100%', height: '100%', colorScheme: 'dark' }} />
     </button>
   );
 }
