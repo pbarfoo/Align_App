@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { getGeminiFocusPicks, type FocusPick } from './geminiAdvisor';
+import { getGeminiFocusPicks, getGeminiCoachCard, type FocusPick, type CoachCard } from './geminiAdvisor';
 import {
   DndContext, type DragEndEvent, MouseSensor, TouchSensor,
   useSensor, useSensors, closestCenter,
@@ -1913,6 +1913,8 @@ function Today({
 
   const [geminiFocus, setGeminiFocus] = useState<FocusPick[] | null>(null);
   const [geminiLoading, setGeminiLoading] = useState(false);
+  const [coachCard, setCoachCard] = useState<CoachCard | null>(null);
+  const [coachLoading, setCoachLoading] = useState(false);
   const today = toDateStr(new Date());
 
   // --- Classify what's relevant *today* ---
@@ -2065,6 +2067,17 @@ function Today({
       .finally(() => setGeminiLoading(false));
   }, []); // once per mount (cache handles per-day freshness)
 
+  useEffect(() => {
+    setCoachLoading(true);
+    getGeminiCoachCard(domains, goals, habits, reflections)
+      .then(setCoachCard)
+      .catch((err) => {
+        console.warn('Gemini coach unavailable:', err);
+        setCoachCard(null);
+      })
+      .finally(() => setCoachLoading(false));
+  }, []); // once per mount (cache handles per-day freshness)
+
   // Resolve the display focus: Gemini picks if available, else heuristic
   const habitMap = new Map(habits.map((h) => [h.id, h]));
   const focusDisplay: Array<{ item: Habit; reason?: string }> = geminiFocus
@@ -2130,6 +2143,22 @@ function Today({
         </div>
         <button className="reflect-mini-btn" onClick={onReflect} title="Weekly reflection">✦ Reflect</button>
       </div>
+
+      {/* Daily coaching card */}
+      {(coachCard || coachLoading) && (
+        <div className="today-section coach-card">
+          <div className="today-section-head">
+            ✦ Coach
+            {coachLoading && <span className="focus-loading">thinking…</span>}
+          </div>
+          {coachCard && (
+            <>
+              <div className="coach-title">{coachCard.title}</div>
+              <div className="coach-blurb">{coachCard.blurb}</div>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Today's focus: Gemini-powered top-3, heuristic fallback */}
       {(focusDisplay.length > 0 || geminiLoading) && (
@@ -2858,83 +2887,6 @@ function decayedAvg(key: string, reflections: ReflectionEntry[]): number {
   return wTotal > 0 ? wSum / wTotal : 0;
 }
 
-/* ---------------- ValueLineChart ---------------- */
-function ValueLineChart({
-  valueKey,
-  reflections,
-  color,
-}: {
-  valueKey: string;
-  reflections: ReflectionEntry[];
-  color: string;
-}) {
-  const points = reflections
-    .filter((r) => r.scores[valueKey] !== undefined)
-    .sort((a, b) => a.date - b.date);
-
-  if (!points.length) {
-    return <p className="chart-empty">No data yet</p>;
-  }
-
-  const W = 280, H = 82, PL = 6, PR = 6, PT = 8, PB = 16;
-  const chartW = W - PL - PR;
-  const chartH = H - PT - PB;
-  const n = points.length;
-
-  // Equal index-based spacing — right for weekly data, avoids same-day collapse
-  const cx = (i: number) =>
-    n === 1 ? PL + chartW / 2 : PL + (i / (n - 1)) * chartW;
-  const cy = (i: number) =>
-    PT + chartH - (points[i].scores[valueKey] / 3) * chartH;
-
-  const linePath = points
-    .map((_, i) => `${i === 0 ? 'M' : 'L'}${cx(i).toFixed(1)},${cy(i).toFixed(1)}`)
-    .join(' ');
-
-  const areaPath =
-    linePath +
-    ` L${cx(n - 1).toFixed(1)},${(PT + chartH).toFixed(1)}` +
-    ` L${cx(0).toFixed(1)},${(PT + chartH).toFixed(1)} Z`;
-
-  // Only label every Nth dot so text doesn't overlap on dense charts
-  const labelEvery = n <= 6 ? 1 : n <= 12 ? 2 : 3;
-
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="value-line-chart">
-      {/* gridlines */}
-      {[0, 1, 2, 3].map((v) => {
-        const y = PT + chartH - (v / 3) * chartH;
-        return (
-          <line key={v} x1={PL} y1={y} x2={W - PR} y2={y}
-            stroke="var(--line)" strokeWidth={v === 0 ? 1 : 0.5}
-            strokeDasharray={v > 0 ? '3 3' : ''} />
-        );
-      })}
-      {/* area */}
-      <path d={areaPath} fill={color} fillOpacity="0.12" />
-      {/* line */}
-      {n > 1 && (
-        <path d={linePath} fill="none" stroke={color} strokeWidth="2"
-          strokeLinejoin="round" strokeLinecap="round" />
-      )}
-      {/* dots */}
-      {points.map((_, i) => (
-        <circle key={i} cx={cx(i)} cy={cy(i)} r="3.5" fill={color} />
-      ))}
-      {/* date label under every Nth dot */}
-      {points.map((p, i) => {
-        if (i % labelEvery !== 0 && i !== n - 1) return null;
-        const anchor = i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle';
-        return (
-          <text key={i} x={cx(i)} y={H - 3} textAnchor={anchor}
-            fontSize="6.5" fill="var(--muted)">
-            {formatReviewDate(p.date)}
-          </text>
-        );
-      })}
-    </svg>
-  );
-}
 
 /* ---------------- RadarChart ---------------- */
 function RadarChart({
@@ -3017,11 +2969,6 @@ function RadarChart({
 
 const REVIEW_MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-function formatReviewDate(ts: number): string {
-  const d = new Date(ts);
-  return `${REVIEW_MONTH_NAMES[d.getMonth()]} ${d.getDate()}`;
-}
-
 function formatReviewDateFull(ts: number): string {
   const d = new Date(ts);
   return `${REVIEW_MONTH_NAMES[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
@@ -3042,7 +2989,6 @@ function ReviewPanel({
   onReset: () => void;
   onClose: () => void;
 }) {
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
   const [logOpen, setLogOpen] = useState(false);
   const [collapsedDomains, setCollapsedDomains] = useState<Set<string>>(new Set());
@@ -3115,13 +3061,9 @@ function ReviewPanel({
                   {!isCollapsed && allValueRows.map(({ label, key }) => {
                     const score = valueAlignmentScore(key, goals, habits, reflections);
                     const pct = score / 10;
-                    const isOpen = selectedKey === key;
                     return (
                       <div key={key} className="review-value-row">
-                        <button
-                          className={`review-value-btn${isOpen ? ' open' : ''}`}
-                          onClick={() => setSelectedKey(isOpen ? null : key)}
-                        >
+                        <div className="review-value-btn">
                           <span className="review-value-name">{label}</span>
                           <div className="review-value-bar-wrap">
                             <div
@@ -3130,17 +3072,7 @@ function ReviewPanel({
                             />
                           </div>
                           <span className="review-value-score">{Math.round(pct * 100)}%</span>
-                          <span className="review-value-chevron">{isOpen ? '▴' : '▾'}</span>
-                        </button>
-                        {isOpen && (
-                          <div className="review-value-chart">
-                            <ValueLineChart
-                              valueKey={key}
-                              reflections={reflections}
-                              color={domainColor}
-                            />
-                          </div>
-                        )}
+                        </div>
                       </div>
                     );
                   })}

@@ -1,8 +1,13 @@
-import type { Domain, Goal, Habit } from './data';
+import type { Domain, Goal, Habit, ReflectionEntry } from './data';
 
 export interface FocusPick {
   id: string;
   reason: string;
+}
+
+export interface CoachCard {
+  title: string;
+  blurb: string;
 }
 
 const API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent';
@@ -144,4 +149,126 @@ Only use IDs from the actionable items list above.`;
 
   localStorage.setItem(cacheKey(today), JSON.stringify(picks));
   return picks;
+}
+
+function coachCacheKey(date: string) {
+  return `gemini-coach-v1-${date}`;
+}
+
+export async function getGeminiCoachCard(
+  domains: Domain[],
+  goals: Goal[],
+  habits: Habit[],
+  reflections: ReflectionEntry[],
+): Promise<CoachCard> {
+  const apiKey = import.meta.env.VITE_GEMINI_API_KEY as string | undefined;
+  if (!apiKey) throw new Error('No VITE_GEMINI_API_KEY');
+
+  const today = toDateStr(new Date());
+  const cached = localStorage.getItem(coachCacheKey(today));
+  if (cached) {
+    try { return JSON.parse(cached) as CoachCard; } catch { /* fall through */ }
+  }
+
+  const now = new Date();
+  const dayName = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][now.getDay()];
+  const allValues = domains.flatMap((d) => d.values);
+  const weekValue = allValues.length ? allValues[isoWeek(now) % allValues.length] : null;
+
+  const goalMap = new Map(goals.map((g) => [g.id, g]));
+
+  const contextLines: string[] = [
+    `Today is ${dayName}, ${today}.`,
+    weekValue ? `This week's focus theme: "${weekValue}".` : '',
+    '',
+    '## Domains, values, and life visions',
+    ...domains.map((d) =>
+      `- ${d.name}: values=[${d.values.join(', ')}] | vision="${d.vision}"`
+    ),
+    '',
+    '## All goals (id | title | horizon | timeframe | domain | values | status)',
+    ...goals.map((g) => {
+      const dom = domains.find((d) => d.id === g.domainId);
+      const vals = dom ? g.valueIndexes.map((i) => dom.values[i]).join(', ') : '';
+      const status = g.completedAt ? 'completed' : 'active';
+      return `- ${g.id} | "${g.title}" | ${g.horizon} | ${g.timeframe}${g.horizon === 'long' ? 'yr' : 'mo'} | ${dom?.name ?? '?'} | [${vals}] | ${status}`;
+    }),
+    '',
+    '## All habits & tasks (id | kind | title | goal | recurrence/due | streak | completion history)',
+    ...habits.map((h) => {
+      const g = goalMap.get(h.goalId);
+      const goalTitle = g?.title ?? '?';
+      if (h.kind === 'task') {
+        const status = h.completed ? `completed ${h.completedAt ? toDateStr(new Date(h.completedAt)) : '?'}` : `open, due:${h.dueDate ?? 'none'}`;
+        return `- ${h.id} | task | "${h.title}" | goal:"${goalTitle}" | ${status}`;
+      }
+      const cadence = h.recurrence ?? 'daily';
+      const streak = h.streak ?? 0;
+      const recent = (h.completions ?? []).slice(-14).join(', ') || 'none';
+      return `- ${h.id} | habit | "${h.title}" | goal:"${goalTitle}" | ${cadence} | streak:${streak} | recent completions:[${recent}]`;
+    }),
+    '',
+    '## Weekly reflections (week | date | domain scores | note)',
+    ...(reflections.length > 0
+      ? reflections.slice(-8).map((r) => {
+          const scores = Object.entries(r.scores).map(([k, v]) => `${k}:${v}`).join(', ');
+          return `- week ${r.weekNumber} | ${toDateStr(new Date(r.date))} | [${scores}] | "${r.note}"`;
+        })
+      : ['- (no reflections yet)']),
+  ];
+
+  const prompt = `You are a warm, insightful personal coach for someone using an alignment app to live with intention.
+
+Based on ALL of the user's goals, habits, and reflections below, write today's coaching card.
+
+The card should feel personal and grounded — like a trusted coach who actually knows their life. It can be:
+- An encouraging observation about what they're doing right
+- A gentle, honest nudge about something they're neglecting or could improve
+- A connecting insight that ties their habits to their deeper values or vision
+- Or whatever would genuinely be most useful today
+
+Tone: warm, direct, not preachy. Speak as "you" (second person). No fluff. Keep it real.
+
+Title: 3–7 words. Should intrigue or resonate immediately.
+Blurb: 2–4 sentences. Specific to their actual data — reference a real goal, habit, value, or pattern.
+
+${contextLines.join('\n')}
+
+Return JSON only: {"title": "...", "blurb": "..."}`;
+
+  const body = {
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: {
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: 'OBJECT',
+        properties: {
+          title: { type: 'STRING' },
+          blurb: { type: 'STRING' },
+        },
+        required: ['title', 'blurb'],
+      },
+      temperature: 0.7,
+    },
+  };
+
+  const res = await fetch(`${API_URL}?key=${apiKey}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: { message?: string } })?.error?.message ?? `HTTP ${res.status}`);
+  }
+
+  const data = await res.json() as {
+    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+  };
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+  const card = JSON.parse(text) as CoachCard;
+
+  localStorage.setItem(coachCacheKey(today), JSON.stringify(card));
+  return card;
 }
