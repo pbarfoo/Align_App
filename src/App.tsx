@@ -697,6 +697,28 @@ function Align({
   const [addingForKind, setAddingForKind] = useState<'short' | 'action' | null>(null);
   const [editValuesFor, setEditValuesFor] = useState<string | null>(null);
   const [hideCompleted, setHideCompleted] = useState(() => loadOr('align-hide-completed-v1', false));
+  const [collapsedGoals, setCollapsedGoals] = useState<Set<string>>(new Set());
+
+  const toggleCollapse = (id: string) =>
+    setCollapsedGoals(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+
+  const moveLtGoal = (id: string, dir: -1 | 1) =>
+    setGoals(prev => {
+      const vis = prev.filter(g => g.domainId === domainId && g.horizon === 'long' && !(hideCompleted && !!g.completedAt));
+      const i = vis.findIndex(g => g.id === id); const j = i + dir;
+      if (j < 0 || j >= vis.length) return prev;
+      const ai = prev.findIndex(g => g.id === vis[i].id), bi = prev.findIndex(g => g.id === vis[j].id);
+      const next = [...prev]; [next[ai], next[bi]] = [next[bi], next[ai]]; return next;
+    });
+
+  const moveLooseSt = (id: string, dir: -1 | 1) =>
+    setGoals(prev => {
+      const vis = prev.filter(g => g.domainId === domainId && g.horizon === 'short' && !g.parentGoalId && !(hideCompleted && !!g.completedAt));
+      const i = vis.findIndex(g => g.id === id); const j = i + dir;
+      if (j < 0 || j >= vis.length) return prev;
+      const ai = prev.findIndex(g => g.id === vis[i].id), bi = prev.findIndex(g => g.id === vis[j].id);
+      const next = [...prev]; [next[ai], next[bi]] = [next[bi], next[ai]]; return next;
+    });
   useEffect(() => {
     localStorage.setItem('align-hide-completed-v1', JSON.stringify(hideCompleted));
   }, [hideCompleted]);
@@ -921,7 +943,7 @@ function Align({
       <div className="spine">
         {longGoals
           .filter((lg) => !(hideCompleted && !!lg.completedAt))
-          .map((lg) => {
+          .map((lg, ltIdx, ltArr) => {
           const lgValues = lg.valueIndexes.map((i) => domain.values[i]).filter(Boolean);
           return (
           <div key={lg.id} className="goal-thread" style={{ '--thread-color': threadColor(lg.id) } as React.CSSProperties}>
@@ -948,8 +970,14 @@ function Align({
               onChangeTimeframe={(t) => updateGoalTimeframe(lg.id, t)}
               isComplete={!!lg.completedAt}
               onToggleComplete={() => toggleGoalComplete(lg.id)}
+              isCollapsed={collapsedGoals.has(lg.id)}
+              onToggleCollapse={() => toggleCollapse(lg.id)}
+              canMoveUp={ltIdx > 0}
+              canMoveDown={ltIdx < ltArr.length - 1}
+              onMoveUp={() => moveLtGoal(lg.id, -1)}
+              onMoveDown={() => moveLtGoal(lg.id, 1)}
             />
-            {habits
+            {!collapsedGoals.has(lg.id) && habits
               .filter((h) => {
                 if (h.goalId !== lg.id) return false;
                 if (!hideCompleted) return true;
@@ -990,7 +1018,7 @@ function Align({
                   </div>
                 );
               })}
-            {domainGoals
+            {!collapsedGoals.has(lg.id) && domainGoals
               .filter((s) => s.parentGoalId === lg.id)
               .map((sg) => (
                 <ShortWithActions
@@ -1016,7 +1044,7 @@ function Align({
                   domainVision={domain.vision}
                 />
               ))}
-            {addingFor === lg.id && (
+            {!collapsedGoals.has(lg.id) && addingFor === lg.id && (
               addingForKind === null ? (
                 <div className="inline-add short add-form">
                   <div className="seg">
@@ -1047,7 +1075,7 @@ function Align({
 
         {looseShort
           .filter((sg) => !(hideCompleted && !!sg.completedAt))
-          .map((sg) => (
+          .map((sg, sgIdx, sgArr) => (
           <div key={sg.id} style={{ '--thread-color': threadColor(sg.id) } as React.CSSProperties}>
             <ShortWithActions
               goal={sg}
@@ -1073,6 +1101,12 @@ function Align({
               onEditValues={() => setEditValuesFor(editValuesFor === sg.id ? null : sg.id)}
               onChangeValues={(idxs) => updateGoalValues(sg.id, idxs)}
               valueIndexes={sg.valueIndexes}
+              isCollapsed={collapsedGoals.has(sg.id)}
+              onToggleCollapse={() => toggleCollapse(sg.id)}
+              canMoveUp={sgIdx > 0}
+              canMoveDown={sgIdx < sgArr.length - 1}
+              onMoveUp={() => moveLooseSt(sg.id, -1)}
+              onMoveDown={() => moveLooseSt(sg.id, 1)}
             />
           </div>
         ))}
@@ -1113,6 +1147,12 @@ function ShortWithActions({
   onChangeValues,
   valueIndexes,
   domainValues,
+  isCollapsed,
+  onToggleCollapse,
+  canMoveUp,
+  canMoveDown,
+  onMoveUp,
+  onMoveDown,
 }: {
   goal: Goal;
   displayValues: string[];
@@ -1142,6 +1182,12 @@ function ShortWithActions({
   onEditValues?: () => void;
   onChangeValues?: (idxs: number[]) => void;
   valueIndexes?: number[];
+  isCollapsed?: boolean;
+  onToggleCollapse?: () => void;
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
 }) {
   const [editingHabitId, setEditingHabitId] = useState<string | null>(null);
   if (hideCompleted && !!goal.completedAt) return null;
@@ -1169,8 +1215,14 @@ function ShortWithActions({
         onChangeValues={onChangeValues}
         valueIndexes={valueIndexes}
         domainValues={domainValues}
+        isCollapsed={isCollapsed}
+        onToggleCollapse={onToggleCollapse}
+        canMoveUp={canMoveUp}
+        canMoveDown={canMoveDown}
+        onMoveUp={onMoveUp}
+        onMoveDown={onMoveDown}
       />
-      {habits
+      {!isCollapsed && habits
         .filter((h) => {
           if (h.goalId !== goal.id) return false;
           if (!hideCompleted) return true;
@@ -1234,7 +1286,7 @@ function ShortWithActions({
           </React.Fragment>
           );
         })}
-      {addingFor === goal.id && (
+      {!isCollapsed && addingFor === goal.id && (
         <AddActionForm
           goalId={goal.id}
           onAdd={onAddAction}
@@ -1540,6 +1592,12 @@ function GoalNode({
   onChangeValues,
   isComplete,
   onToggleComplete,
+  isCollapsed,
+  onToggleCollapse,
+  canMoveUp,
+  canMoveDown,
+  onMoveUp,
+  onMoveDown,
 }: {
   goal: Goal;
   values?: string[];
@@ -1559,6 +1617,12 @@ function GoalNode({
   onChangeValues?: (idxs: number[]) => void;
   isComplete?: boolean;
   onToggleComplete?: () => void;
+  isCollapsed?: boolean;
+  onToggleCollapse?: () => void;
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
 }) {
   const canEditValues = !!onEditValues;
   const idxs = valueIndexes ?? [];
@@ -1581,6 +1645,17 @@ function GoalNode({
 
   return (
     <div className={`${className}${short ? ' short' : ''}${isComplete ? ' completed' : ''}`} onClick={onClick}>
+      {onToggleCollapse && (
+        <button
+          className={`node-collapse${isCollapsed ? ' collapsed' : ''}`}
+          title={isCollapsed ? 'Expand' : 'Collapse'}
+          onClick={(e) => { e.stopPropagation(); onToggleCollapse(); }}
+        >
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+            <path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </button>
+      )}
       {onToggleComplete && (
         <button
           className={`node-check${isComplete ? ' on' : ''}`}
@@ -1694,6 +1769,12 @@ function GoalNode({
         )}
       </div>
       <div className="node-ctrls">
+        {canMoveUp && (
+          <button className="node-move" title="Move up" onClick={(e) => { e.stopPropagation(); onMoveUp?.(); }}>↑</button>
+        )}
+        {canMoveDown && (
+          <button className="node-move" title="Move down" onClick={(e) => { e.stopPropagation(); onMoveDown?.(); }}>↓</button>
+        )}
         {canAddChild && (
           <button
             className={`node-add${addActive ? ' on' : ''}`}
