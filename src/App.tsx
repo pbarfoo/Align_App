@@ -997,12 +997,12 @@ function Align({
         <SortableContext items={longGoals.filter(lg => !(hideCompleted && !!lg.completedAt)).map(g => g.id)} strategy={verticalListSortingStrategy}>
         {longGoals
           .filter((lg) => !(hideCompleted && !!lg.completedAt))
-          .map((lg) => {
+          .map((lg, ltIdx) => {
           const lgValues = lg.valueIndexes.map((i) => domain.values[i]).filter(Boolean);
           const ltHasChildren = habits.some((h) => h.goalId === lg.id) || domainGoals.some((s) => s.parentGoalId === lg.id);
           return (
           <SortableGoal key={lg.id} id={lg.id}>
-          <div className="goal-thread" style={{ '--thread-color': threadColor(lg.id) } as React.CSSProperties}>
+          <div className="goal-thread" style={{ '--thread-color': THREAD_PALETTE[ltIdx % THREAD_PALETTE.length] } as React.CSSProperties}>
             <GoalNode
               goal={lg}
               values={lgValues}
@@ -1133,9 +1133,9 @@ function Align({
         <SortableContext items={looseShort.filter(sg => !(hideCompleted && !!sg.completedAt)).map(g => g.id)} strategy={verticalListSortingStrategy}>
         {looseShort
           .filter((sg) => !(hideCompleted && !!sg.completedAt))
-          .map((sg) => (
+          .map((sg, stIdx) => (
           <SortableGoal key={sg.id} id={sg.id}>
-          <div style={{ '--thread-color': threadColor(sg.id) } as React.CSSProperties}>
+          <div style={{ '--thread-color': THREAD_PALETTE[(longGoals.length + stIdx) % THREAD_PALETTE.length] } as React.CSSProperties}>
             <ShortWithActions
               goal={sg}
               displayValues={sg.valueIndexes.map((i) => domain.values[i]).filter(Boolean)}
@@ -2568,11 +2568,6 @@ const THREAD_PALETTE = [
   '#a78be8', '#e87a8b', '#4ed8c8', '#e8d44e',
 ];
 
-function threadColor(id: string): string {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) & 0xffffff;
-  return THREAD_PALETTE[h % THREAD_PALETTE.length];
-}
 
 function stGoalMetrics(sg: Goal, habits: Habit[]): { time: number; completion: number; health: number; completionRate: number; recencyScore: number; momentum: number } {
   const totalMs = (sg.timeframe || 1) * 30.44 * 86_400_000;
