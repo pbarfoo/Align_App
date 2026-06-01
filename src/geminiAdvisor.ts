@@ -10,6 +10,29 @@ export interface CoachCard {
   blurb: string;
 }
 
+export interface CoachFeedback {
+  date: string;
+  title: string;
+  rating: 'up' | 'down';
+}
+
+const FEEDBACK_KEY = 'gemini-coach-feedback';
+
+export function saveCoachFeedback(date: string, title: string, rating: 'up' | 'down' | null): void {
+  const history = getCoachFeedbackHistory().filter((f) => f.date !== date);
+  const updated = rating ? [...history, { date, title, rating }].slice(-30) : history;
+  localStorage.setItem(FEEDBACK_KEY, JSON.stringify(updated));
+}
+
+export function getCoachFeedbackHistory(): CoachFeedback[] {
+  try { return JSON.parse(localStorage.getItem(FEEDBACK_KEY) ?? '[]') as CoachFeedback[]; }
+  catch { return []; }
+}
+
+export function getTodayCoachRating(date: string, title: string): 'up' | 'down' | null {
+  return getCoachFeedbackHistory().find((f) => f.date === date && f.title === title)?.rating ?? null;
+}
+
 const API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent';
 
 function cacheKey(date: string) {
@@ -254,6 +277,13 @@ export async function getGeminiCoachCard(
       : ['- (no reflections yet)']),
   ];
 
+  const feedback = getCoachFeedbackHistory().slice(-20);
+  const liked = feedback.filter((f) => f.rating === 'up').map((f) => `"${f.title}"`).join(', ');
+  const disliked = feedback.filter((f) => f.rating === 'down').map((f) => `"${f.title}"`).join(', ');
+  const feedbackLines = (liked || disliked)
+    ? `\n## User feedback on past cards\n- Liked: ${liked || 'none'}\n- Disliked: ${disliked || 'none'}\nWrite more cards like the liked ones and avoid the style/tone of the disliked ones.\n`
+    : '';
+
   const prompt = `You are a direct personal coach. Write a daily coaching card based on the user's data below.
 
 Rules:
@@ -262,7 +292,7 @@ Rules:
 - ONLY use value names exactly as they appear in the "Domains, values" section. Never paraphrase, reinterpret, or invent related concepts (e.g. if "honesty" is not listed as a value, do not mention it).
 - Only reference goals, habits, and values that appear verbatim in the data below.
 - Tone: warm but brief. No filler.
-
+${feedbackLines}
 ${contextLines.join('\n')}
 
 Return JSON only: {"title": "...", "blurb": "..."}`;

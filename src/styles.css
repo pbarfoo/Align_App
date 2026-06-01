@@ -1031,6 +1031,30 @@ h1 {
   color: var(--muted);
   line-height: 1.55;
 }
+.coach-feedback {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+}
+.coach-feedback-btn {
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 3px 10px;
+  font-size: 14px;
+  cursor: pointer;
+  color: var(--muted);
+  transition: border-color 0.15s, background 0.15s;
+  line-height: 1.6;
+}
+.coach-feedback-btn.up.active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.coach-feedback-btn.down.active {
+  border-color: #e57373;
+  background: color-mix(in srgb, #e57373 12%, transparent);
+}
 
 .today-empty-domain {
   font-size: 13px;

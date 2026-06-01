@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { getGeminiFocusPicks, getGeminiCoachCard, type FocusPick, type CoachCard } from './geminiAdvisor';
+import { getGeminiFocusPicks, getGeminiCoachCard, saveCoachFeedback, getTodayCoachRating, type FocusPick, type CoachCard } from './geminiAdvisor';
 import {
   DndContext, type DragEndEvent, MouseSensor, TouchSensor,
   useSensor, useSensors, closestCenter,
@@ -1915,6 +1915,7 @@ function Today({
   const [geminiLoading, setGeminiLoading] = useState(false);
   const [coachCard, setCoachCard] = useState<CoachCard | null>(null);
   const [coachLoading, setCoachLoading] = useState(false);
+  const [coachRating, setCoachRating] = useState<'up' | 'down' | null>(null);
   const today = toDateStr(new Date());
 
   // --- Classify what's relevant *today* ---
@@ -2070,7 +2071,10 @@ function Today({
   useEffect(() => {
     setCoachLoading(true);
     getGeminiCoachCard(domains, goals, habits, reflections)
-      .then(setCoachCard)
+      .then((card) => {
+        setCoachCard(card);
+        setCoachRating(getTodayCoachRating(today, card.title));
+      })
       .catch((err) => {
         console.warn('Gemini coach unavailable:', err);
         setCoachCard(null);
@@ -2155,6 +2159,26 @@ function Today({
             <>
               <div className="coach-title">{coachCard.title}</div>
               <div className="coach-blurb">{coachCard.blurb}</div>
+              <div className="coach-feedback">
+                <button
+                  className={`coach-feedback-btn up${coachRating === 'up' ? ' active' : ''}`}
+                  onClick={() => {
+                    const next = coachRating === 'up' ? null : 'up';
+                    setCoachRating(next);
+                    saveCoachFeedback(today, coachCard.title, next);
+                  }}
+                  aria-label="Helpful"
+                >👍</button>
+                <button
+                  className={`coach-feedback-btn down${coachRating === 'down' ? ' active' : ''}`}
+                  onClick={() => {
+                    const next = coachRating === 'down' ? null : 'down';
+                    setCoachRating(next);
+                    saveCoachFeedback(today, coachCard.title, next);
+                  }}
+                  aria-label="Not helpful"
+                >👎</button>
+              </div>
             </>
           )}
         </div>
