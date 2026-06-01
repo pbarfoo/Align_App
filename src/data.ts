@@ -66,25 +66,25 @@ export const domains: Domain[] = [
     id: 'career',
     name: 'Career',
     blurb: 'The work you put into the world.',
-    values: ['Craft over speed', 'Autonomy', 'Teach what I learn'],
+    values: ['Leadership', 'Autonomy', 'Flexibility', 'Professional Respect', 'Competence', 'Service'],
     vision:
-      'I build things I am proud of, on my own terms, and leave people more capable than I found them.',
+      'To build a respected and flexible career in film and media where I have the autonomy to teach, create meaningful work, and positively contribute to others.',
   },
   {
     id: 'self',
     name: 'Self',
     blurb: 'Your mind, body, and inner life.',
-    values: ['Health is the base', 'Calm attention', 'Honest with myself'],
+    values: ['Physical Health', 'Growth', 'Maturity', 'Balance', 'Joy', 'Challenges'],
     vision:
-      'I am steady, clear-headed, and physically strong enough to do the things I care about for decades.',
+      'To become physically healthy, emotionally steady, and genuinely at ease — growing continuously without burning out.',
   },
   {
     id: 'community',
     name: 'Family/Others',
     blurb: 'The people you belong to.',
-    values: ['Show up in person', 'Generous with time', 'Keep promises'],
+    values: ['Leadership', 'Financial Security', 'Presence', 'Integrity', 'Love', 'Community'],
     vision:
-      'The people close to me know they can count on me, and our time together is unhurried and real.',
+      'To be a present, loving husband and father who leads his family with integrity, warmth, and a long view — creating a stable, generous home deeply connected to community.',
   },
 ];
 
