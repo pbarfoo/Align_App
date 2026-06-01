@@ -2109,9 +2109,6 @@ function Today({
         <div className="today-section focus">
           <div className="today-section-head">
             ✦ Today's focus
-            {weekValue && (
-              <span className="focus-theme">aligned with “{weekValue}”</span>
-            )}
           </div>
           {todaysFocus.map(renderRow)}
         </div>
