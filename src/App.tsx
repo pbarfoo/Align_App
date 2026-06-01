@@ -1374,42 +1374,66 @@ function AddActionForm({
       {kind === 'habit' ? (
         <>
           <div className="field-row">
-            <select value={recurrence} onChange={(e) => setRecurrence(e.target.value as Recurrence)}>
+            <select
+              value={recurrence === 'specific-days' ? 'custom' : recurrence}
+              onChange={(e) => {
+                const v = e.target.value as Recurrence;
+                setRecurrence(v);
+              }}
+            >
               <option value="daily">Daily</option>
               <option value="weekdays">Every weekday</option>
               <option value="weekly">Weekly</option>
-              <option value="specific-days">Specific days…</option>
               <option value="monthly">Monthly</option>
               <option value="yearly">Yearly</option>
               <option value="custom">Custom…</option>
             </select>
           </div>
-          {recurrence === 'specific-days' && (
-            <div className="day-picker">
-              {['Su','Mo','Tu','We','Th','Fr','Sa'].map((label, i) => (
+          {(recurrence === 'custom' || recurrence === 'specific-days') && (
+            <>
+              <div className="seg">
                 <button
-                  key={i}
                   type="button"
-                  className={`day-btn${specificDays.includes(i) ? ' on' : ''}`}
-                  onClick={() => toggleDay(i)}
+                  className={recurrence === 'custom' ? 'on' : ''}
+                  onClick={() => setRecurrence('custom')}
                 >
-                  {label}
+                  Interval
                 </button>
-              ))}
-            </div>
-          )}
-          {recurrence === 'custom' && (
-            <div className="field-row">
-              <span className="field-label">Every</span>
-              <input type="number" min="1" max="99" value={customInterval}
-                onChange={(e) => setCustomInterval(e.target.value)} style={{ width: '64px' }} />
-              <select value={customUnit} onChange={(e) => setCustomUnit(e.target.value as CustomUnit)}>
-                <option value="days">days</option>
-                <option value="weeks">weeks</option>
-                <option value="months">months</option>
-                <option value="years">years</option>
-              </select>
-            </div>
+                <button
+                  type="button"
+                  className={recurrence === 'specific-days' ? 'on' : ''}
+                  onClick={() => setRecurrence('specific-days')}
+                >
+                  Specific days
+                </button>
+              </div>
+              {recurrence === 'custom' ? (
+                <div className="field-row">
+                  <span className="field-label">Every</span>
+                  <input type="number" min="1" max="99" value={customInterval}
+                    onChange={(e) => setCustomInterval(e.target.value)} style={{ width: '64px' }} />
+                  <select value={customUnit} onChange={(e) => setCustomUnit(e.target.value as CustomUnit)}>
+                    <option value="days">days</option>
+                    <option value="weeks">weeks</option>
+                    <option value="months">months</option>
+                    <option value="years">years</option>
+                  </select>
+                </div>
+              ) : (
+                <div className="day-picker">
+                  {['Su','Mo','Tu','We','Th','Fr','Sa'].map((label, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      className={`day-btn${specificDays.includes(i) ? ' on' : ''}`}
+                      onClick={() => toggleDay(i)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </>
       ) : (
