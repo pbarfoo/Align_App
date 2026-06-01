@@ -902,6 +902,15 @@ h1 {
   font-size: 15px;
 }
 
+.kind-icon {
+  display: inline-flex;
+  vertical-align: -2px;
+  margin-right: 7px;
+  color: var(--muted);
+}
+.kind-icon.habit { color: var(--accent); }
+.habit-title.done .kind-icon { color: var(--muted); }
+
 .habit-title.done {
   color: var(--muted);
   text-decoration: line-through;

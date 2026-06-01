@@ -2025,7 +2025,15 @@ function Today({
           <Tick />
         </button>
         <div style={{ flex: 1 }}>
-          <div className={`habit-title${isDone ? ' done' : ''}`}>{h.title}</div>
+          <div className={`habit-title${isDone ? ' done' : ''}`}>
+            <span
+              className={`kind-icon ${h.kind}`}
+              title={h.kind === 'task' ? 'One-off task' : 'Repeatable habit'}
+            >
+              {h.kind === 'task' ? <TaskArrow /> : <RepeatIcon />}
+            </span>
+            {h.title}
+          </div>
           <div className="habit-meta">
             {h.kind === 'task' ? `Task · ${getTaskCountdown(h)}` : getRecurrenceString(h)}
             &nbsp;·&nbsp; serves <b>{lineage(h.goalId)}</b>
@@ -3327,6 +3335,27 @@ function Tick() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
       <path d="M5 13l4 4L19 7" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/** One-way arrow — marks a one-off task. */
+function TaskArrow() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M5 12h13M13 7l5 5-5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/** Two cyclic arrows — marks a repeatable habit. */
+function RepeatIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M4 9a8 8 0 0 1 13.7-3.3L20 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M20 4v4h-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M20 15a8 8 0 0 1-13.7 3.3L4 16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M4 20v-4h4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
