@@ -2288,7 +2288,7 @@ function Reflect({
   }, [weekOffset]);
 
   const rows = domains.flatMap((d) =>
-    d.values.map((v, i) => ({ d, v, i, key: `${d.id}:${i}` })),
+    d.values.map((v) => ({ d, v, key: `${d.id}:${v}` })),
   );
 
   const labelFor = (key: string) => {
@@ -2311,12 +2311,15 @@ function Reflect({
   const worstEntry = scoreEntries.length
     ? [...scoreEntries].sort((a, b) => a[1] - b[1])[0]
     : null;
-  const atRisk = goals.filter((g) =>
-    g.valueIndexes.some((vi) => {
-      const key = `${g.domainId}:${vi}`;
-      return (scores[key] ?? 3) < 2;
-    }),
-  );
+  const atRisk = goals.filter((g) => {
+    const dom = domains.find((d) => d.id === g.domainId);
+    if (!dom) return false;
+    return g.valueIndexes.some((vi) => {
+      const vName = dom.values[vi];
+      if (!vName) return false;
+      return (scores[`${g.domainId}:${vName}`] ?? 3) < 2;
+    });
+  });
 
   if (step === 'insight') {
     return (
@@ -2413,13 +2416,17 @@ function valueAlignmentScore(
   goals: Goal[],
   habits: Habit[],
   reflections: ReflectionEntry[],
+  domains: Domain[],
 ): number {
-  const [domainId, viStr] = key.split(':');
-  const vi = Number(viStr);
+  const colonIdx = key.indexOf(':');
+  const domainId = key.slice(0, colonIdx);
+  const valueName = key.slice(colonIdx + 1);
+  const dom = domains.find((d) => d.id === domainId);
+  const vi = dom ? dom.values.indexOf(valueName) : -1;
 
   // Goals directly tagged with this value
   const tagged = goals.filter(
-    (g) => g.domainId === domainId && g.valueIndexes.includes(vi),
+    (g) => g.domainId === domainId && vi >= 0 && g.valueIndexes.includes(vi),
   );
   // Sub-goals of tagged long-term goals (inherit the value)
   const taggedLtIds = new Set(tagged.filter((g) => g.horizon === 'long').map((g) => g.id));
@@ -2901,9 +2908,9 @@ function RadarChart({
   reflections: ReflectionEntry[];
 }) {
   const axes = domains.flatMap((d) =>
-    d.values.map((v, i) => ({
+    d.values.map((v) => ({
       label: v,
-      key: `${d.id}:${i}`,
+      key: `${d.id}:${v}`,
       color: DOMAIN_COLORS[d.id] ?? 'var(--muted)',
     })),
   );
@@ -2916,7 +2923,7 @@ function RadarChart({
   };
 
   const rings = [0.25, 0.5, 0.75, 1];
-  const dataPoints = axes.map((ax) => pt(axes.indexOf(ax), valueAlignmentScore(ax.key, goals, habits, reflections) / 10));
+  const dataPoints = axes.map((ax) => pt(axes.indexOf(ax), valueAlignmentScore(ax.key, goals, habits, reflections, domains) / 10));
   const poly = dataPoints.map((p) => `${p.x},${p.y}`).join(' ');
 
   const labelAnchor = (i: number): 'start' | 'end' | 'middle' => {
@@ -3007,8 +3014,10 @@ function ReviewPanel({
         (g) =>
           g.horizon === 'long' &&
           g.valueIndexes.some((vi) => {
-            const key = `${g.domainId}:${vi}`;
-            return (latest.scores[key] ?? 3) < 2;
+            const dom = domains.find((d) => d.id === g.domainId);
+            const vName = dom?.values[vi];
+            if (!vName) return false;
+            return (latest.scores[`${g.domainId}:${vName}`] ?? 3) < 2;
           }),
       )
     : [];
@@ -3035,7 +3044,7 @@ function ReviewPanel({
           <div className="review-values-section">
             {domains.map((d) => {
               const domainColor = DOMAIN_COLORS[d.id] ?? 'var(--accent)';
-              const allValueRows = d.values.map((v, vi) => ({ label: v, key: `${d.id}:${vi}` }));
+              const allValueRows = d.values.map((v) => ({ label: v, key: `${d.id}:${v}` }));
               if (!allValueRows.length) return null;
               const isCollapsed = collapsedDomains.has(d.id);
               return (
@@ -3049,7 +3058,7 @@ function ReviewPanel({
                     <span className="review-domain-chevron">{isCollapsed ? '▾' : '▴'}</span>
                   </button>
                   {!isCollapsed && allValueRows.map(({ label, key }) => {
-                    const score = valueAlignmentScore(key, goals, habits, reflections);
+                    const score = valueAlignmentScore(key, goals, habits, reflections, domains);
                     const pct = score / 10;
                     return (
                       <div key={key} className="review-value-row">
@@ -3109,16 +3118,16 @@ function ReviewPanel({
                     </div>
                     {domains.map((d) => {
                       const color = DOMAIN_COLORS[d.id] ?? 'var(--accent)';
-                      const hasScores = d.values.some((_, vi) => r.scores[`${d.id}:${vi}`] != null);
+                      const hasScores = d.values.some((v) => r.scores[`${d.id}:${v}`] != null);
                       if (!hasScores) return null;
                       return (
                         <div key={d.id} className="review-log-domain">
                           <div className="review-log-domain-label" style={{ color }}>{d.name}</div>
-                          {d.values.map((v, vi) => {
-                            const score = r.scores[`${d.id}:${vi}`];
+                          {d.values.map((v) => {
+                            const score = r.scores[`${d.id}:${v}`];
                             if (score == null) return null;
                             return (
-                              <div key={vi} className="review-log-value-row">
+                              <div key={v} className="review-log-value-row">
                                 <span className="review-log-value-name">{v}</span>
                                 <div className="review-log-dots">
                                   {[1, 2, 3].map((n) => (

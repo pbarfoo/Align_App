@@ -64,7 +64,7 @@ export async function getGeminiFocusPicks(
 
   // Maps "domainId:valueIndex" -> "DomainName/ValueName" for current values only
   const valueLookup = new Map<string, string>();
-  domains.forEach((d) => d.values.forEach((v, i) => valueLookup.set(`${d.id}:${i}`, `${d.name}/${v}`)));
+  domains.forEach((d) => d.values.forEach((v) => valueLookup.set(`${d.id}:${v}`, `${d.name}/${v}`)));
 
   const resolveGoalValues = (g: Goal): string => {
     const dom = domains.find((d) => d.id === g.domainId);
@@ -200,7 +200,7 @@ export async function getGeminiCoachCard(
 
   // Maps "domainId:valueIndex" -> "DomainName/ValueName" for current values only
   const valueLookup = new Map<string, string>();
-  domains.forEach((d) => d.values.forEach((v, i) => valueLookup.set(`${d.id}:${i}`, `${d.name}/${v}`)));
+  domains.forEach((d) => d.values.forEach((v) => valueLookup.set(`${d.id}:${v}`, `${d.name}/${v}`)));
 
   const resolveGoalValues = (g: Goal): string => {
     const dom = domains.find((d) => d.id === g.domainId);
