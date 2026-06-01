@@ -26,6 +26,7 @@ interface ActionInput {
   recurrence?: Recurrence;
   customInterval?: number;
   customUnit?: CustomUnit;
+  specificDays?: number[];
   dueDate?: string;
   dueTime?: string;
 }
@@ -84,6 +85,7 @@ function habitToRow(h: Habit, userId: string): Row {
     title: h.title, kind: h.kind, done_today: h.doneToday,
     start_date: h.startDate ?? null, recurrence: h.recurrence ?? null,
     custom_interval: h.customInterval ?? null, custom_unit: h.customUnit ?? null,
+    specific_days: h.specificDays ?? null,
     due_date: h.dueDate ?? null, due_time: h.dueTime ?? null,
     completed: h.completed ?? null, completed_at: h.completedAt ?? null,
     streak: h.streak ?? 0,
@@ -99,6 +101,7 @@ function habitFromRow(row: Row): Habit {
     recurrence: (row.recurrence as Recurrence) ?? undefined,
     customInterval: row.custom_interval ?? undefined,
     customUnit: (row.custom_unit as CustomUnit) ?? undefined,
+    specificDays: row.specific_days ?? undefined,
     dueDate: row.due_date ?? undefined,
     dueTime: row.due_time ?? undefined,
     completed: row.completed ?? undefined,
@@ -824,6 +827,7 @@ function Align({
             recurrence: input.recurrence ?? 'daily',
             customInterval: input.customInterval ?? 1,
             customUnit: input.customUnit ?? 'weeks',
+            specificDays: input.specificDays ?? undefined,
           }
         : {
             dueDate: input.dueDate || undefined,
@@ -1315,8 +1319,12 @@ function AddActionForm({
   const [recurrence, setRecurrence] = useState<Recurrence>(initial?.recurrence ?? 'daily');
   const [customInterval, setCustomInterval] = useState(String(initial?.customInterval ?? 1));
   const [customUnit, setCustomUnit] = useState<CustomUnit>(initial?.customUnit ?? 'weeks');
+  const [specificDays, setSpecificDays] = useState<number[]>(initial?.specificDays ?? []);
   const [dueDate, setDueDate] = useState(initial?.dueDate ?? '');
   const [dueTime, setDueTime] = useState(initial?.dueTime ?? '');
+
+  const toggleDay = (d: number) =>
+    setSpecificDays((prev) => prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d].sort((a, b) => a - b));
 
   const submit = () => {
     if (!title.trim()) return;
@@ -1324,6 +1332,7 @@ function AddActionForm({
       if (kind === 'habit') {
         onSave({ title: title.trim(), kind, recurrence,
           customInterval: Number(customInterval) || 1, customUnit,
+          specificDays: recurrence === 'specific-days' ? specificDays : undefined,
           dueDate: undefined, dueTime: undefined, startDate: undefined });
       } else {
         onSave({ title: title.trim(), kind, dueDate: dueDate || undefined,
@@ -1332,7 +1341,8 @@ function AddActionForm({
     } else if (onAdd) {
       if (kind === 'habit') {
         onAdd(goalId, title, 'habit', { recurrence,
-          customInterval: Number(customInterval) || 1, customUnit });
+          customInterval: Number(customInterval) || 1, customUnit,
+          specificDays: recurrence === 'specific-days' ? specificDays : undefined });
       } else {
         onAdd(goalId, title, 'task', { dueDate, dueTime });
       }
@@ -1368,11 +1378,26 @@ function AddActionForm({
               <option value="daily">Daily</option>
               <option value="weekdays">Every weekday</option>
               <option value="weekly">Weekly</option>
+              <option value="specific-days">Specific days…</option>
               <option value="monthly">Monthly</option>
               <option value="yearly">Yearly</option>
               <option value="custom">Custom…</option>
             </select>
           </div>
+          {recurrence === 'specific-days' && (
+            <div className="day-picker">
+              {['Su','Mo','Tu','We','Th','Fr','Sa'].map((label, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  className={`day-btn${specificDays.includes(i) ? ' on' : ''}`}
+                  onClick={() => toggleDay(i)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
           {recurrence === 'custom' && (
             <div className="field-row">
               <span className="field-label">Every</span>
@@ -3020,6 +3045,11 @@ function dateInCurrentPeriod(dateStr: string, h: Habit): boolean {
         unit === 'months' ? interval * 30.44 * 86_400_000 :
         /* years */         interval * 365.25 * 86_400_000;
       return Date.now() - d.getTime() < windowMs;
+    }
+    case 'specific-days': {
+      const scheduled = h.specificDays ?? [];
+      if (!scheduled.includes(now.getDay())) return false;
+      return dateStr === toDateStr(now);
     }
     default:
       return dateStr === toDateStr(now);

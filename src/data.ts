@@ -31,7 +31,8 @@ export type Recurrence =
   | 'weekly'
   | 'monthly'
   | 'yearly'
-  | 'custom';
+  | 'custom'
+  | 'specific-days';
 export type CustomUnit = 'days' | 'weeks' | 'months' | 'years';
 
 export interface Habit {
@@ -56,6 +57,8 @@ export interface Habit {
   streak?: number;
   /** habit only: "YYYY-MM-DD" strings for every logged completion */
   completions?: string[];
+  /** specific-days recurrence: 0=Sun, 1=Mon … 6=Sat */
+  specificDays?: number[];
 }
 
 export const domains: Domain[] = [
@@ -284,6 +287,14 @@ export function getRecurrenceString(h: Habit): string {
         iv === 1
           ? `Repeats every ${unit.slice(0, -1)}`
           : `Repeats every ${iv} ${unit}`;
+      break;
+    }
+    case 'specific-days': {
+      const SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      const days = (h.specificDays ?? []).slice().sort((a, b) => a - b);
+      recStr = days.length
+        ? `Repeats ${days.map((d) => SHORT[d]).join(', ')}`
+        : 'Repeats (no days set)';
       break;
     }
     default:
