@@ -2137,52 +2137,48 @@ function Today({
         </div>
       )}
 
-      <div className="progress-wrap">
-        <div className="progress-num">
-          {done}
-          <span> / {totalCount} today</span>
-        </div>
-        <div className="bar">
-          <i style={{ width: `${pct}%` }} />
-        </div>
-        <button className="reflect-mini-btn" onClick={onReflect} title="Weekly reflection">✦ Reflect</button>
-      </div>
-
-      {/* Daily coaching card */}
-      {(coachCard || coachLoading) && (
-        <div className="today-section coach-card">
-          <div className="today-section-head">
-            ✦ Coach
-            {coachLoading && <span className="focus-loading">thinking…</span>}
+      {/* Coach card + progress counter side by side */}
+      <div className="coach-row">
+        {(coachCard || coachLoading) && (
+          <div className="today-section coach-card">
+            <div className="today-section-head">
+              ✦ Coach
+              {coachLoading && <span className="focus-loading">thinking…</span>}
+            </div>
+            {coachCard && (
+              <>
+                <div className="coach-title">{coachCard.title}</div>
+                <div className="coach-blurb">{coachCard.blurb}</div>
+                <div className="coach-feedback">
+                  <button
+                    className={`coach-feedback-btn up${coachRating === 'up' ? ' active' : ''}`}
+                    onClick={() => {
+                      const next = coachRating === 'up' ? null : 'up';
+                      setCoachRating(next);
+                      saveCoachFeedback(today, coachCard.title, next);
+                    }}
+                    aria-label="Helpful"
+                  >👍</button>
+                  <button
+                    className={`coach-feedback-btn down${coachRating === 'down' ? ' active' : ''}`}
+                    onClick={() => {
+                      const next = coachRating === 'down' ? null : 'down';
+                      setCoachRating(next);
+                      saveCoachFeedback(today, coachCard.title, next);
+                    }}
+                    aria-label="Not helpful"
+                  >👎</button>
+                </div>
+              </>
+            )}
           </div>
-          {coachCard && (
-            <>
-              <div className="coach-title">{coachCard.title}</div>
-              <div className="coach-blurb">{coachCard.blurb}</div>
-              <div className="coach-feedback">
-                <button
-                  className={`coach-feedback-btn up${coachRating === 'up' ? ' active' : ''}`}
-                  onClick={() => {
-                    const next = coachRating === 'up' ? null : 'up';
-                    setCoachRating(next);
-                    saveCoachFeedback(today, coachCard.title, next);
-                  }}
-                  aria-label="Helpful"
-                >👍</button>
-                <button
-                  className={`coach-feedback-btn down${coachRating === 'down' ? ' active' : ''}`}
-                  onClick={() => {
-                    const next = coachRating === 'down' ? null : 'down';
-                    setCoachRating(next);
-                    saveCoachFeedback(today, coachCard.title, next);
-                  }}
-                  aria-label="Not helpful"
-                >👎</button>
-              </div>
-            </>
-          )}
+        )}
+        <div className="progress-square">
+          <div className="progress-sq-nums">{done}<span>/{totalCount}</span></div>
+          <div className="progress-sq-bar"><i style={{ height: `${pct}%` }} /></div>
+          <button className="progress-sq-reflect" onClick={onReflect} title="Weekly reflection">✦</button>
         </div>
-      )}
+      </div>
 
       {/* Today's focus: Gemini-powered top-3, heuristic fallback */}
       {(focusDisplay.length > 0 || geminiLoading) && (

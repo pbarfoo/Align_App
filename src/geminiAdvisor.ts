@@ -196,7 +196,7 @@ function valueFingerprint(domains: Domain[]): string {
 }
 
 function coachCacheKey(date: string, domains: Domain[]) {
-  return `gemini-coach-v6-${date}-${valueFingerprint(domains)}`;
+  return `gemini-coach-v7-${date}-${valueFingerprint(domains)}`;
 }
 
 export async function getGeminiCoachCard(
@@ -284,13 +284,15 @@ export async function getGeminiCoachCard(
     ? `\n## User feedback on past cards\n- Liked: ${liked || 'none'}\n- Disliked: ${disliked || 'none'}\nWrite more cards like the liked ones and avoid the style/tone of the disliked ones.\n`
     : '';
 
+  const validValues = domains.flatMap((d) => d.values);
+
   const prompt = `You are a direct personal coach. Write a daily coaching card based on the user's data below.
 
 Rules:
 - Title: 4–6 words max.
-- Blurb: exactly 2 sentences. First sentence: one specific encouragement (name a real habit, goal, or streak). Second sentence: one concrete action or nudge tied to a real gap.
-- ONLY use value names exactly as they appear in the "Domains, values" section. Never paraphrase, reinterpret, or invent related concepts (e.g. if "honesty" is not listed as a value, do not mention it).
-- Only reference goals, habits, and values that appear verbatim in the data below.
+- Blurb: exactly 2 sentences. First sentence: one specific encouragement (name a real habit, goal, or streak from the data). Second sentence: one concrete action or nudge tied to a real gap.
+- The ONLY valid value names are: [${validValues.join(', ')}]. Do not use any other value names or invent new ones.
+- Only reference goal titles, habit titles, and value names that appear verbatim in the data below. Never invent items.
 - Tone: warm but brief. No filler.
 ${feedbackLines}
 ${contextLines.join('\n')}
