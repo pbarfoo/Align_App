@@ -2013,11 +2013,14 @@ function Today({
         const day = now.getDay(); // 0=Sun, 1=Mon … 6=Sat
         const week = getISOWeek(now);
         const year = now.getFullYear();
+        // Mon–Wed: the "pending" reflection is from the ISO week that just ended Sunday
+        const inGrace = day >= 1 && day <= 3;
+        const checkWeek = inGrace ? (week > 1 ? week - 1 : 52) : week;
+        const checkYear = (inGrace && week === 1) ? year - 1 : year;
         const thisWeekDone = reflections.some(
-          (r) => r.weekNumber === week && new Date(r.date).getFullYear() === year
+          (r) => r.weekNumber === checkWeek && new Date(r.date).getFullYear() === checkYear
         );
-        // Show on Sunday, or Mon–Wed as a grace window, if this week isn't reflected yet
-        const inWindow = day === 0 || (day >= 1 && day <= 3);
+        const inWindow = day === 0 || inGrace;
         if (thisWeekDone || !inWindow) return null;
         const label = day === 0
           ? "It's Sunday — take two minutes to reflect on the week →"
