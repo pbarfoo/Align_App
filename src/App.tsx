@@ -3035,17 +3035,7 @@ function ReviewPanel({
           <div className="review-values-section">
             {domains.map((d) => {
               const domainColor = DOMAIN_COLORS[d.id] ?? 'var(--accent)';
-              // Collect all value keys for this domain: current values + any orphaned scored keys
-              const currentKeys = d.values.map((v, vi) => ({ label: v, key: `${d.id}:${vi}` }));
-              const scoredKeys = new Set(
-                reflections.flatMap((r) =>
-                  Object.keys(r.scores).filter((k) => k.startsWith(`${d.id}:`))
-                )
-              );
-              const orphanedKeys = [...scoredKeys]
-                .filter((k) => !currentKeys.some((c) => c.key === k))
-                .map((k) => ({ label: `Value ${k.split(':')[1]}`, key: k }));
-              const allValueRows = [...currentKeys, ...orphanedKeys];
+              const allValueRows = d.values.map((v, vi) => ({ label: v, key: `${d.id}:${vi}` }));
               if (!allValueRows.length) return null;
               const isCollapsed = collapsedDomains.has(d.id);
               return (
