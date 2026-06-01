@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { getGeminiFocusPicks, type FocusPick } from './geminiAdvisor';
 import {
   DndContext, type DragEndEvent, MouseSensor, TouchSensor,
   useSensor, useSensors, closestCenter,
@@ -1909,6 +1910,9 @@ function Today({
   );
   const toggleDomain = (id: DomainId) =>
     setCollapsedDomains(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+
+  const [geminiFocus, setGeminiFocus] = useState<FocusPick[] | null>(null);
+  const [geminiLoading, setGeminiLoading] = useState(false);
   const today = toDateStr(new Date());
 
   // --- Classify what's relevant *today* ---
@@ -2043,6 +2047,32 @@ function Today({
     .slice(0, 3)
     .map((x) => x.item);
 
+  const allActionableIds = [...openHabits, ...openTasks].map((h) => h.id);
+
+  useEffect(() => {
+    if (!allActionableIds.length) return;
+    setGeminiLoading(true);
+    getGeminiFocusPicks(domains, goals, habits, allActionableIds)
+      .then((picks) => {
+        // Keep only IDs that are still actionable (in case of stale cache)
+        const live = new Set(allActionableIds);
+        setGeminiFocus(picks.filter((p) => live.has(p.id)));
+      })
+      .catch((err) => {
+        console.warn('Gemini focus unavailable, using heuristic:', err);
+        setGeminiFocus(null);
+      })
+      .finally(() => setGeminiLoading(false));
+  }, []); // once per mount (cache handles per-day freshness)
+
+  // Resolve the display focus: Gemini picks if available, else heuristic
+  const habitMap = new Map(habits.map((h) => [h.id, h]));
+  const focusDisplay: Array<{ item: Habit; reason?: string }> = geminiFocus
+    ? geminiFocus
+        .map((p) => ({ item: habitMap.get(p.id)!, reason: p.reason }))
+        .filter((x) => !!x.item)
+    : todaysFocus.map((item) => ({ item }));
+
   const renderRow = (h: Habit) => {
     const isDone = h.kind === 'task' ? !!h.completed : isHabitDoneThisPeriod(h);
     return (
@@ -2101,13 +2131,19 @@ function Today({
         <button className="reflect-mini-btn" onClick={onReflect} title="Weekly reflection">✦ Reflect</button>
       </div>
 
-      {/* Today's focus: smart pick of the 3 most important, theme-aligned items */}
-      {todaysFocus.length > 0 && (
+      {/* Today's focus: Gemini-powered top-3, heuristic fallback */}
+      {(focusDisplay.length > 0 || geminiLoading) && (
         <div className="today-section focus">
           <div className="today-section-head">
             ✦ Today's focus
+            {geminiLoading && <span className="focus-loading">thinking…</span>}
           </div>
-          {todaysFocus.map(renderRow)}
+          {focusDisplay.map(({ item, reason }) => (
+            <React.Fragment key={item.id}>
+              {renderRow(item)}
+              {reason && <div className="focus-reason">{reason}</div>}
+            </React.Fragment>
+          ))}
         </div>
       )}
 

@@ -982,6 +982,27 @@ h1 {
 .today-section.focus .habit-row:last-child {
   border-bottom: none;
 }
+.focus-reason {
+  font-size: 11px;
+  font-style: italic;
+  color: var(--muted);
+  padding: 0 4px 10px 44px;
+  margin-top: -8px;
+}
+.focus-loading {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--muted);
+  font-style: italic;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
 
 .today-empty-domain {
   font-size: 13px;
