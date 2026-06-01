@@ -2016,6 +2016,46 @@ function Today({
     ? allValues[getISOWeek(new Date()) % allValues.length]
     : null;
 
+  // --- Today's focus: pick the 3 most important, theme-aligned items ---
+  const goalAlignsWithTheme = (goalId: string): boolean => {
+    if (!weekValue) return false;
+    const g = goals.find((x) => x.id === goalId);
+    if (!g) return false;
+    const dom = domains.find((d) => d.id === g.domainId);
+    if (!dom) return false;
+    return g.valueIndexes.some((i) => dom.values[i] === weekValue);
+  };
+  const focusScore = (item: Habit): number => {
+    let s = 0;
+    if (goalAlignsWithTheme(item.goalId)) s += 50; // this week's theme
+    if (horizonOf(item.goalId) === 'short') s += 12; // active push
+    if (item.kind === 'task') {
+      if (item.dueDate) {
+        if (item.dueDate < today) s += 45; // overdue
+        else if (item.dueDate === today) s += 35; // due today
+        else {
+          const dLeft = Math.round(
+            (new Date(item.dueDate + 'T12:00').getTime() - Date.now()) / 86_400_000,
+          );
+          if (dLeft <= 3) s += 20;
+          else if (dLeft <= 7) s += 10;
+        }
+      }
+    } else {
+      if (isNeglected(item)) s += 25;
+      const since = daysSinceLastDone(item);
+      const interval = naturalIntervalDays(item);
+      s += since === Infinity ? 12 : Math.min(20, (since / interval) * 8);
+      if ((item.streak ?? 0) >= 3) s += 6; // protect a streak
+    }
+    return s;
+  };
+  const todaysFocus = [...openHabits, ...openTasks]
+    .map((item) => ({ item, score: focusScore(item) }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3)
+    .map((x) => x.item);
+
   const renderRow = (h: Habit) => {
     const isDone = h.kind === 'task' ? !!h.completed : isHabitDoneThisPeriod(h);
     return (
@@ -2086,6 +2126,19 @@ function Today({
         </div>
         <button className="reflect-mini-btn" onClick={onReflect} title="Weekly reflection">✦ Reflect</button>
       </div>
+
+      {/* Today's focus: smart pick of the 3 most important, theme-aligned items */}
+      {todaysFocus.length > 0 && (
+        <div className="today-section focus">
+          <div className="today-section-head">
+            ✦ Today's focus
+            {weekValue && (
+              <span className="focus-theme">aligned with “{weekValue}”</span>
+            )}
+          </div>
+          {todaysFocus.map(renderRow)}
+        </div>
+      )}
 
       {/* Needs attention: overdue + due-today tasks */}
       {needsAttention.length > 0 && (
