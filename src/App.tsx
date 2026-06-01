@@ -1904,7 +1904,9 @@ function Today({
   onReflect: () => void;
 }) {
   const [showDone, setShowDone] = useState(false);
-  const [collapsedDomains, setCollapsedDomains] = useState<Set<DomainId>>(new Set());
+  const [collapsedDomains, setCollapsedDomains] = useState<Set<DomainId>>(
+    () => new Set(domains.map((d) => d.id)),
+  );
   const toggleDomain = (id: DomainId) =>
     setCollapsedDomains(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
   const today = toDateStr(new Date());
@@ -1920,12 +1922,10 @@ function Today({
   const openTasks = tasks.filter((h) => !h.completed);
   const overdueTasks = openTasks.filter((t) => t.dueDate && t.dueDate < today);
   const dueTodayTasks = openTasks.filter((t) => t.dueDate === today);
-  const upcomingTasks = openTasks.filter((t) => !t.dueDate || t.dueDate > today);
   const completedToday = tasks.filter(
     (t) => t.completed && t.completedAt && toDateStr(new Date(t.completedAt)) === today,
   );
 
-  const needsAttention = [...overdueTasks, ...dueTodayTasks];
   const doneItems = [...doneHabits, ...completedToday];
 
   // Progress: today's habits + urgent tasks + tasks finished today
@@ -1965,7 +1965,7 @@ function Today({
   const todayItemsByDomain = (domainId: DomainId) =>
     [
       ...openHabits.filter((h) => domainOf(h.goalId) === domainId),
-      ...upcomingTasks.filter((t) => domainOf(t.goalId) === domainId),
+      ...openTasks.filter((t) => domainOf(t.goalId) === domainId),
     ].sort(byPriority);
   // Domains that have at least one active (non-completed) goal — used to
   // surface neglect when such a domain has nothing scheduled today.
@@ -2073,10 +2073,7 @@ function Today({
     );
   };
 
-  const hasAnythingToday =
-    needsAttention.length > 0 ||
-    openHabits.length > 0 ||
-    upcomingTasks.length > 0;
+  const hasAnythingToday = openHabits.length > 0 || openTasks.length > 0;
 
   return (
     <div className="screen">
@@ -2111,17 +2108,6 @@ function Today({
             ✦ Today's focus
           </div>
           {todaysFocus.map(renderRow)}
-        </div>
-      )}
-
-      {/* Needs attention: overdue + due-today tasks */}
-      {needsAttention.length > 0 && (
-        <div className="today-section attention">
-          <div className="today-section-head">
-            Needs attention
-            <span className="today-count">{needsAttention.length}</span>
-          </div>
-          {needsAttention.map(renderRow)}
         </div>
       )}
 

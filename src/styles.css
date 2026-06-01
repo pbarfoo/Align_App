@@ -983,22 +983,6 @@ h1 {
   border-bottom: none;
 }
 
-/* Needs attention band */
-.today-section.attention .today-section-head {
-  color: #e5544b;
-  border-bottom-color: color-mix(in srgb, #e5544b 35%, var(--line));
-}
-.today-section.attention {
-  background: color-mix(in srgb, #e5544b 7%, transparent);
-  border-radius: 12px;
-  padding: 4px 12px 6px;
-  margin-left: -12px;
-  margin-right: -12px;
-}
-.today-section.attention .habit-row:last-child {
-  border-bottom: none;
-}
-
 .today-empty-domain {
   font-size: 13px;
   font-style: italic;
