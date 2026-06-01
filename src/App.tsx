@@ -1261,7 +1261,6 @@ function AddActionForm({
   const [kind, setKind] = useState<ActionKind>(initial?.kind ?? 'habit');
   const [title, setTitle] = useState(initial?.title ?? '');
   const [recurrence, setRecurrence] = useState<Recurrence>(initial?.recurrence ?? 'daily');
-  const [startDate, setStartDate] = useState(initial?.startDate ?? '');
   const [customInterval, setCustomInterval] = useState(String(initial?.customInterval ?? 1));
   const [customUnit, setCustomUnit] = useState<CustomUnit>(initial?.customUnit ?? 'weeks');
   const [dueDate, setDueDate] = useState(initial?.dueDate ?? '');
@@ -1271,16 +1270,16 @@ function AddActionForm({
     if (!title.trim()) return;
     if (onSave) {
       if (kind === 'habit') {
-        onSave({ title: title.trim(), kind, recurrence, startDate: startDate || undefined,
+        onSave({ title: title.trim(), kind, recurrence,
           customInterval: Number(customInterval) || 1, customUnit,
-          dueDate: undefined, dueTime: undefined });
+          dueDate: undefined, dueTime: undefined, startDate: undefined });
       } else {
         onSave({ title: title.trim(), kind, dueDate: dueDate || undefined,
           dueTime: dueTime || undefined, recurrence: undefined, startDate: undefined });
       }
     } else if (onAdd) {
       if (kind === 'habit') {
-        onAdd(goalId, title, 'habit', { startDate, recurrence,
+        onAdd(goalId, title, 'habit', { recurrence,
           customInterval: Number(customInterval) || 1, customUnit });
       } else {
         onAdd(goalId, title, 'task', { dueDate, dueTime });
@@ -1321,7 +1320,6 @@ function AddActionForm({
               <option value="yearly">Yearly</option>
               <option value="custom">Custom…</option>
             </select>
-            <DateBtn value={startDate} onChange={setStartDate} placeholder="Start date" />
           </div>
           {recurrence === 'custom' && (
             <div className="field-row">
