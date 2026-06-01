@@ -152,7 +152,7 @@ Only use IDs from the actionable items list above.`;
 }
 
 function coachCacheKey(date: string) {
-  return `gemini-coach-v1-${date}`;
+  return `gemini-coach-v2-${date}`;
 }
 
 export async function getGeminiCoachCard(
@@ -221,16 +221,16 @@ export async function getGeminiCoachCard(
 
 Based on ALL of the user's goals, habits, and reflections below, write today's coaching card.
 
-The card should feel personal and grounded — like a trusted coach who actually knows their life. It can be:
-- An encouraging observation about what they're doing right
-- A gentle, honest nudge about something they're neglecting or could improve
-- A connecting insight that ties their habits to their deeper values or vision
-- Or whatever would genuinely be most useful today
+Every card must do BOTH of the following:
+1. Acknowledge something specific they are doing well or making progress on — be genuine, not generic.
+2. Offer one clear, actionable piece of advice tied to a real gap, neglected habit, or opportunity in their data.
 
-Tone: warm, direct, not preachy. Speak as "you" (second person). No fluff. Keep it real.
+Structure the blurb so encouragement comes first, then the advice — like a coach who opens with what's working before pointing to what's next.
 
-Title: 3–7 words. Should intrigue or resonate immediately.
-Blurb: 2–4 sentences. Specific to their actual data — reference a real goal, habit, value, or pattern.
+Tone: warm, direct, not preachy. Speak as "you" (second person). No fluff. Grounded in their actual data.
+
+Title: 3–7 words. Should feel relevant and worth reading immediately.
+Blurb: 2–4 sentences. Reference real goals, habits, values, or patterns — never generic advice.
 
 ${contextLines.join('\n')}
 
