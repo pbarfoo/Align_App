@@ -1935,11 +1935,35 @@ function Today({
   // main list, so balance across life areas is visible.
   const domainOf = (goalId: string) =>
     goals.find((g) => g.id === goalId)?.domainId;
+  const horizonOf = (goalId: string) =>
+    goals.find((g) => g.id === goalId)?.horizon;
+
+  // Priority tier (lower = higher up). Short-term goals are the active push,
+  // so they rank above long-term — but a long-term item that's been neglected
+  // escalates to the top so it doesn't quietly rot at the bottom.
+  const tierOf = (item: Habit): number => {
+    if (horizonOf(item.goalId) === 'long') {
+      return isNeglected(item) ? 0 : 2;
+    }
+    return 1; // short-term (and items on goals with no horizon)
+  };
+  // Within a tier: habits that have been waiting longest first, then tasks by
+  // due date. Habits sort ahead of upcoming tasks within the same tier.
+  const subKey = (item: Habit): number => {
+    if (item.kind === 'habit') {
+      const since = daysSinceLastDone(item);
+      return -(since === Infinity ? 1e9 : since);
+    }
+    return item.dueDate ? new Date(item.dueDate + 'T12:00').getTime() : Number.MAX_SAFE_INTEGER;
+  };
+  const byPriority = (a: Habit, b: Habit) =>
+    tierOf(a) - tierOf(b) || subKey(a) - subKey(b);
+
   const todayItemsByDomain = (domainId: DomainId) =>
     [
       ...openHabits.filter((h) => domainOf(h.goalId) === domainId),
       ...upcomingTasks.filter((t) => domainOf(t.goalId) === domainId),
-    ];
+    ].sort(byPriority);
   // Domains that have at least one active (non-completed) goal — used to
   // surface neglect when such a domain has nothing scheduled today.
   const domainHasGoals = (domainId: DomainId) =>
@@ -3229,6 +3253,46 @@ function isHabitScheduledToday(h: Habit): boolean {
     default:
       return true;
   }
+}
+
+/** Roughly how many days between expected completions, by cadence. */
+function naturalIntervalDays(h: Habit): number {
+  switch (h.recurrence ?? 'daily') {
+    case 'weekly':
+      return 7;
+    case 'monthly':
+      return 30;
+    case 'yearly':
+      return 365;
+    case 'specific-days': {
+      const n = (h.specificDays ?? []).length;
+      return n ? 7 / n : 7;
+    }
+    case 'custom': {
+      const iv = Math.max(1, h.customInterval ?? 1);
+      const u = h.customUnit ?? 'weeks';
+      return iv * (u === 'days' ? 1 : u === 'weeks' ? 7 : u === 'months' ? 30 : 365);
+    }
+    default: // daily, weekdays
+      return 1;
+  }
+}
+
+/** Days since this habit was last completed; Infinity if never. */
+function daysSinceLastDone(h: Habit): number {
+  const comps = h.completions ?? [];
+  if (!comps.length) return Infinity;
+  const last = comps.reduce(
+    (max, d) => Math.max(max, new Date(d + 'T12:00').getTime()),
+    0,
+  );
+  return (Date.now() - last) / 86_400_000;
+}
+
+/** A habit has been neglected when it's overdue by ≥ 2× its natural interval. */
+function isNeglected(h: Habit): boolean {
+  if (h.kind !== 'habit') return false;
+  return daysSinceLastDone(h) >= naturalIntervalDays(h) * 2;
 }
 
 /* ---------------- bits ---------------- */
