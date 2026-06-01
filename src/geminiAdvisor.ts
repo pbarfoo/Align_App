@@ -62,6 +62,19 @@ export async function getGeminiFocusPicks(
 
   const goalMap = new Map(goals.map((g) => [g.id, g]));
 
+  // Maps "domainId:valueIndex" -> "DomainName/ValueName" for current values only
+  const valueLookup = new Map<string, string>();
+  domains.forEach((d) => d.values.forEach((v, i) => valueLookup.set(`${d.id}:${i}`, `${d.name}/${v}`)));
+
+  const resolveGoalValues = (g: Goal): string => {
+    const dom = domains.find((d) => d.id === g.domainId);
+    if (!dom) return '';
+    return g.valueIndexes
+      .filter((i) => i < dom.values.length)
+      .map((i) => dom.values[i])
+      .join(', ');
+  };
+
   const contextLines: string[] = [
     `Today is ${dayName}, ${today}.`,
     weekValue ? `This week's focus theme: "${weekValue}".` : '',
@@ -75,8 +88,7 @@ export async function getGeminiFocusPicks(
     ...goals
       .filter((g) => !g.completedAt)
       .map((g) => {
-        const dom = domains.find((d) => d.id === g.domainId)!;
-        const vals = g.valueIndexes.map((i) => dom.values[i]).join(', ');
+        const vals = resolveGoalValues(g);
         return `- ${g.id} | "${g.title}" | ${g.horizon} | ${g.timeframe}${g.horizon === 'long' ? 'yr' : 'mo'} | [${vals}]`;
       }),
     '',
@@ -152,7 +164,7 @@ Only use IDs from the actionable items list above.`;
 }
 
 function coachCacheKey(date: string) {
-  return `gemini-coach-v2-${date}`;
+  return `gemini-coach-v3-${date}`;
 }
 
 export async function getGeminiCoachCard(
@@ -177,6 +189,19 @@ export async function getGeminiCoachCard(
 
   const goalMap = new Map(goals.map((g) => [g.id, g]));
 
+  // Maps "domainId:valueIndex" -> "DomainName/ValueName" for current values only
+  const valueLookup = new Map<string, string>();
+  domains.forEach((d) => d.values.forEach((v, i) => valueLookup.set(`${d.id}:${i}`, `${d.name}/${v}`)));
+
+  const resolveGoalValues = (g: Goal): string => {
+    const dom = domains.find((d) => d.id === g.domainId);
+    if (!dom) return '';
+    return g.valueIndexes
+      .filter((i) => i < dom.values.length)
+      .map((i) => dom.values[i])
+      .join(', ');
+  };
+
   const contextLines: string[] = [
     `Today is ${dayName}, ${today}.`,
     weekValue ? `This week's focus theme: "${weekValue}".` : '',
@@ -189,7 +214,7 @@ export async function getGeminiCoachCard(
     '## All goals (id | title | horizon | timeframe | domain | values | status)',
     ...goals.map((g) => {
       const dom = domains.find((d) => d.id === g.domainId);
-      const vals = dom ? g.valueIndexes.map((i) => dom.values[i]).join(', ') : '';
+      const vals = resolveGoalValues(g);
       const status = g.completedAt ? 'completed' : 'active';
       return `- ${g.id} | "${g.title}" | ${g.horizon} | ${g.timeframe}${g.horizon === 'long' ? 'yr' : 'mo'} | ${dom?.name ?? '?'} | [${vals}] | ${status}`;
     }),
@@ -208,11 +233,14 @@ export async function getGeminiCoachCard(
       return `- ${h.id} | habit | "${h.title}" | goal:"${goalTitle}" | ${cadence} | streak:${streak} | recent completions:[${recent}]`;
     }),
     '',
-    '## Weekly reflections (week | date | domain scores | note)',
+    '## Weekly reflections (week | date | value scores | note)',
     ...(reflections.length > 0
       ? reflections.slice(-8).map((r) => {
-          const scores = Object.entries(r.scores).map(([k, v]) => `${k}:${v}`).join(', ');
-          return `- week ${r.weekNumber} | ${toDateStr(new Date(r.date))} | [${scores}] | "${r.note}"`;
+          const scores = Object.entries(r.scores)
+            .filter(([k]) => valueLookup.has(k))
+            .map(([k, v]) => `${valueLookup.get(k)}:${v}`)
+            .join(', ');
+          return `- week ${r.weekNumber} | ${toDateStr(new Date(r.date))} | [${scores || 'no current values scored'}] | "${r.note}"`;
         })
       : ['- (no reflections yet)']),
   ];
