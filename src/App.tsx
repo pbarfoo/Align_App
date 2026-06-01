@@ -949,6 +949,7 @@ function Align({
           .filter((lg) => !(hideCompleted && !!lg.completedAt))
           .map((lg, ltIdx, ltArr) => {
           const lgValues = lg.valueIndexes.map((i) => domain.values[i]).filter(Boolean);
+          const ltHasChildren = habits.some((h) => h.goalId === lg.id) || domainGoals.some((s) => s.parentGoalId === lg.id);
           return (
           <div key={lg.id} className="goal-thread" style={{ '--thread-color': threadColor(lg.id) } as React.CSSProperties}>
             <GoalNode
@@ -975,7 +976,7 @@ function Align({
               isComplete={!!lg.completedAt}
               onToggleComplete={() => toggleGoalComplete(lg.id)}
               isCollapsed={collapsedGoals.has(lg.id)}
-              onToggleCollapse={() => toggleCollapse(lg.id)}
+              onToggleCollapse={ltHasChildren ? () => toggleCollapse(lg.id) : undefined}
               canMoveUp={ltIdx > 0}
               canMoveDown={ltIdx < ltArr.length - 1}
               onMoveUp={() => moveLtGoal(lg.id, -1)}
@@ -1106,7 +1107,7 @@ function Align({
               onChangeValues={(idxs) => updateGoalValues(sg.id, idxs)}
               valueIndexes={sg.valueIndexes}
               isCollapsed={collapsedGoals.has(sg.id)}
-              onToggleCollapse={() => toggleCollapse(sg.id)}
+              onToggleCollapse={habits.some((h) => h.goalId === sg.id) ? () => toggleCollapse(sg.id) : undefined}
               canMoveUp={sgIdx > 0}
               canMoveDown={sgIdx < sgArr.length - 1}
               onMoveUp={() => moveLooseSt(sg.id, -1)}
