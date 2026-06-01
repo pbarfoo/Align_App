@@ -1992,19 +1992,6 @@ function Today({
     }));
   };
 
-  const logHabitDate = (id: string, dateStr: string) => {
-    setHabits((prev) => prev.map((h) => {
-      if (h.id !== id || h.kind !== 'habit') return h;
-      const completions = h.completions ?? [];
-      if (completions.includes(dateStr)) return h;
-      return {
-        ...h,
-        completions: [...completions, dateStr],
-        completedAt: Math.max(h.completedAt ?? 0, new Date(dateStr + 'T12:00').getTime()),
-      };
-    }));
-  };
-
   const lineage = (goalId: string) => {
     const g = goals.find((x) => x.id === goalId);
     if (!g) return '';
@@ -2082,16 +2069,6 @@ function Today({
             &nbsp;·&nbsp; serves <b>{lineage(h.goalId)}</b>
           </div>
         </div>
-        {h.kind === 'habit' && (
-          <div className="backdate-btn" title="Log a past date">
-            <span>+past</span>
-            <input
-              type="date"
-              max={toDateStr(new Date())}
-              onChange={(e) => { if (e.target.value) { logHabitDate(h.id, e.target.value); e.target.value = ''; } }}
-            />
-          </div>
-        )}
       </div>
     );
   };
