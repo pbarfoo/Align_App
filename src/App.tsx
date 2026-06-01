@@ -1904,6 +1904,9 @@ function Today({
   onReflect: () => void;
 }) {
   const [showDone, setShowDone] = useState(false);
+  const [collapsedDomains, setCollapsedDomains] = useState<Set<DomainId>>(new Set());
+  const toggleDomain = (id: DomainId) =>
+    setCollapsedDomains(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
   const today = toDateStr(new Date());
 
   // --- Classify what's relevant *today* ---
@@ -2099,16 +2102,31 @@ function Today({
       {domains.map((dom) => {
         const items = todayItemsByDomain(dom.id);
         if (items.length === 0 && !domainHasGoals(dom.id)) return null;
+        const collapsed = collapsedDomains.has(dom.id);
         return (
           <div className="today-section" key={dom.id}>
-            <div className="today-domain-head">{dom.name}</div>
-            {items.length > 0
-              ? items.map(renderRow)
-              : (
-                <div className="today-empty-domain">
-                  Nothing scheduled for {dom.name} today.
-                </div>
+            <button
+              className="today-domain-head"
+              onClick={() => toggleDomain(dom.id)}
+              aria-expanded={!collapsed}
+            >
+              {dom.name}
+              {items.length > 0 && (
+                <span className="today-count">{items.length}</span>
               )}
+              <span className={`today-domain-chev${collapsed ? ' collapsed' : ''}`}>
+                <Chevron up={false} />
+              </span>
+            </button>
+            {!collapsed && (
+              items.length > 0
+                ? items.map(renderRow)
+                : (
+                  <div className="today-empty-domain">
+                    Nothing scheduled for {dom.name} today.
+                  </div>
+                )
+            )}
           </div>
         );
       })}
