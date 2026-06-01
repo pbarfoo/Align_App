@@ -173,7 +173,7 @@ function valueFingerprint(domains: Domain[]): string {
 }
 
 function coachCacheKey(date: string, domains: Domain[]) {
-  return `gemini-coach-v4-${date}-${valueFingerprint(domains)}`;
+  return `gemini-coach-v5-${date}-${valueFingerprint(domains)}`;
 }
 
 export async function getGeminiCoachCard(
@@ -254,20 +254,13 @@ export async function getGeminiCoachCard(
       : ['- (no reflections yet)']),
   ];
 
-  const prompt = `You are a warm, insightful personal coach for someone using an alignment app to live with intention.
+  const prompt = `You are a direct personal coach. Write a daily coaching card based on the user's data below.
 
-Based on ALL of the user's goals, habits, and reflections below, write today's coaching card.
-
-Every card must do BOTH of the following:
-1. Acknowledge something specific they are doing well or making progress on — be genuine, not generic.
-2. Offer one clear, actionable piece of advice tied to a real gap, neglected habit, or opportunity in their data.
-
-Structure the blurb so encouragement comes first, then the advice — like a coach who opens with what's working before pointing to what's next.
-
-Tone: warm, direct, not preachy. Speak as "you" (second person). No fluff. Grounded in their actual data.
-
-Title: 3–7 words. Should feel relevant and worth reading immediately.
-Blurb: 2–4 sentences. Reference real goals, habits, values, or patterns — never generic advice.
+Rules:
+- Title: 4–6 words max.
+- Blurb: exactly 2 sentences. First sentence: one specific encouragement (name a real habit, goal, or streak). Second sentence: one concrete action or nudge tied to a real gap.
+- Only reference things that appear in the data. No invented values or themes.
+- Tone: warm but brief. No filler.
 
 ${contextLines.join('\n')}
 
