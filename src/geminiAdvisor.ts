@@ -173,7 +173,7 @@ function valueFingerprint(domains: Domain[]): string {
 }
 
 function coachCacheKey(date: string, domains: Domain[]) {
-  return `gemini-coach-v5-${date}-${valueFingerprint(domains)}`;
+  return `gemini-coach-v6-${date}-${valueFingerprint(domains)}`;
 }
 
 export async function getGeminiCoachCard(
@@ -259,7 +259,8 @@ export async function getGeminiCoachCard(
 Rules:
 - Title: 4–6 words max.
 - Blurb: exactly 2 sentences. First sentence: one specific encouragement (name a real habit, goal, or streak). Second sentence: one concrete action or nudge tied to a real gap.
-- Only reference things that appear in the data. No invented values or themes.
+- ONLY use value names exactly as they appear in the "Domains, values" section. Never paraphrase, reinterpret, or invent related concepts (e.g. if "honesty" is not listed as a value, do not mention it).
+- Only reference goals, habits, and values that appear verbatim in the data below.
 - Tone: warm but brief. No filler.
 
 ${contextLines.join('\n')}
