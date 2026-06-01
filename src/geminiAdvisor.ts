@@ -196,7 +196,7 @@ function valueFingerprint(domains: Domain[]): string {
 }
 
 function coachCacheKey(date: string, domains: Domain[]) {
-  return `gemini-coach-v7-${date}-${valueFingerprint(domains)}`;
+  return `gemini-coach-v8-${date}-${valueFingerprint(domains)}`;
 }
 
 export async function getGeminiCoachCard(
@@ -285,14 +285,21 @@ export async function getGeminiCoachCard(
     : '';
 
   const validValues = domains.flatMap((d) => d.values);
+  const validGoals = goals.filter((g) => !g.completedAt).map((g) => `"${g.title}"`).join(', ');
+  const validHabits = habits.map((h) => `"${h.title}"`).join(', ');
 
-  const prompt = `You are a direct personal coach. Write a daily coaching card based on the user's data below.
+  const prompt = `You are a direct personal coach. Write a daily coaching card based ONLY on the user's real data below.
 
-Rules:
-- Title: 4–6 words max.
-- Blurb: exactly 2 sentences. First sentence: one specific encouragement (name a real habit, goal, or streak from the data). Second sentence: one concrete action or nudge tied to a real gap.
-- The ONLY valid value names are: [${validValues.join(', ')}]. Do not use any other value names or invent new ones.
-- Only reference goal titles, habit titles, and value names that appear verbatim in the data below. Never invent items.
+CRITICAL — anti-fabrication rules:
+- The ONLY value names that exist are: [${validValues.join(', ')}].
+- The ONLY goals that exist are: [${validGoals || 'none'}].
+- The ONLY habits/tasks that exist are: [${validHabits || 'none'}].
+- You MUST NOT mention, quote, or reference any value, goal, habit, or streak that is not in those exact lists. If you are about to write a name, verify it appears verbatim above. Inventing names like "Craft over speed" or "Calm attention" is strictly forbidden.
+- If you have nothing specific and real to praise, give general encouragement without naming a fake item.
+
+Format:
+- Title: 4–6 words max. Do not put a value/habit name in quotes unless it is one of the real ones above.
+- Blurb: exactly 2 sentences. First: one specific encouragement grounded in real data. Second: one concrete, real action or nudge.
 - Tone: warm but brief. No filler.
 ${feedbackLines}
 ${contextLines.join('\n')}
@@ -311,7 +318,7 @@ Return JSON only: {"title": "...", "blurb": "..."}`;
         },
         required: ['title', 'blurb'],
       },
-      temperature: 0.7,
+      temperature: 0.25,
     },
   };
 
