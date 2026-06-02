@@ -246,8 +246,17 @@ function valueFingerprint(domains: Domain[]): string {
   return Math.abs(h).toString(36);
 }
 
+/** Picks one value to spotlight today by cycling through all values in order. */
+function dailyValue(date: string, domains: Domain[]): string | null {
+  const allValues = domains.flatMap((d) => d.values);
+  if (!allValues.length) return null;
+  const [y, m, d] = date.split('-').map(Number);
+  const dayOfYear = Math.floor((new Date(y, m - 1, d).getTime() - new Date(y, 0, 0).getTime()) / 86_400_000);
+  return allValues[dayOfYear % allValues.length];
+}
+
 function coachCacheKey(date: string, domains: Domain[]) {
-  return `gemini-coach-v11-${date}-${valueFingerprint(domains)}`;
+  return `gemini-coach-v12-${date}-${valueFingerprint(domains)}`;
 }
 
 export async function getGeminiCoachCard(
@@ -267,7 +276,7 @@ export async function getGeminiCoachCard(
 
   const now = new Date();
   const dayName = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][now.getDay()];
-  const weekValue = neglectedValue(domains, goals, habits);
+  const todayValue = dailyValue(today, domains);
 
   const goalMap = new Map(goals.map((g) => [g.id, g]));
 
@@ -296,7 +305,7 @@ export async function getGeminiCoachCard(
 
   const contextLines: string[] = [
     `Today is ${dayName}, ${today}.`,
-    weekValue ? `Recently underserved value (fewest habit completions in last 14 days): "${weekValue}". Weave this in lightly if natural — do not let it dominate.` : '',
+    todayValue ? `Today's value spotlight: "${todayValue}". Anchor the entire card to this value.` : '',
     '',
     '## Domains, values, and life visions',
     ...domains.map((d) =>
@@ -351,7 +360,7 @@ export async function getGeminiCoachCard(
 
   const prompt = `You are a direct personal coach. Write a daily coaching card based ONLY on the user's real data below.
 
-Balance rule: The user has goals and values across multiple life domains. Draw from the full picture — career, self, and relationships. Do not anchor the whole card to a single value or domain. One domain may be gently highlighted if the data clearly calls for it, but the card should feel whole-life, not narrow.
+Today's value is given above. Anchor the entire card — title and both sentences — to that one value. Reference the user's real goals and habits that connect to it.
 
 CRITICAL — anti-fabrication rules:
 - The ONLY value names that exist are: [${validValues.join(', ')}].
