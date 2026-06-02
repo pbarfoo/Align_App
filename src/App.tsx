@@ -2144,7 +2144,7 @@ function Today({
 
       <div className="progress-wrap">
         <div className="progress-num">
-          {done}
+          <span className="progress-sq">{done}</span>
           <span> / {totalCount} today</span>
         </div>
         <div className="bar">

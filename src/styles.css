@@ -874,14 +874,27 @@ h1 {
 }
 
 .progress-num {
-  font-size: 30px;
-  font-weight: 600;
-}
-
-.progress-num span {
-  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 10px;
   font-size: 16px;
   font-weight: 400;
+  color: var(--muted);
+}
+
+.progress-sq {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text);
+  flex-shrink: 0;
 }
 
 .bar {
