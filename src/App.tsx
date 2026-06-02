@@ -2339,15 +2339,6 @@ function Reflect({
   const worstEntry = scoreEntries.length
     ? [...scoreEntries].sort((a, b) => a[1] - b[1])[0]
     : null;
-  const atRisk = goals.filter((g) => {
-    const dom = domains.find((d) => d.id === g.domainId);
-    if (!dom) return false;
-    return g.valueIndexes.some((vi) => {
-      const vName = dom.values[vi];
-      if (!vName) return false;
-      return (scores[`${g.domainId}:${vName}`] ?? 3) < 2;
-    });
-  });
 
   if (step === 'insight') {
     return (
@@ -3023,19 +3014,6 @@ function ReviewPanel({
     });
 
   const latest = reflections[reflections.length - 1];
-
-  const atRiskGoals = latest
-    ? goals.filter(
-        (g) =>
-          g.horizon === 'long' &&
-          g.valueIndexes.some((vi) => {
-            const dom = domains.find((d) => d.id === g.domainId);
-            const vName = dom?.values[vi];
-            if (!vName) return false;
-            return (latest.scores[`${g.domainId}:${vName}`] ?? 3) < 2;
-          }),
-      )
-    : [];
 
   return (
     <div className="review-panel">
