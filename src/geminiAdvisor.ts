@@ -247,7 +247,7 @@ function valueFingerprint(domains: Domain[]): string {
 }
 
 function coachCacheKey(date: string, domains: Domain[]) {
-  return `gemini-coach-v10-${date}-${valueFingerprint(domains)}`;
+  return `gemini-coach-v11-${date}-${valueFingerprint(domains)}`;
 }
 
 export async function getGeminiCoachCard(
@@ -296,7 +296,7 @@ export async function getGeminiCoachCard(
 
   const contextLines: string[] = [
     `Today is ${dayName}, ${today}.`,
-    weekValue ? `Most neglected value right now (fewest recent habit completions): "${weekValue}". Consider addressing this gap.` : '',
+    weekValue ? `Recently underserved value (fewest habit completions in last 14 days): "${weekValue}". Weave this in lightly if natural — do not let it dominate.` : '',
     '',
     '## Domains, values, and life visions',
     ...domains.map((d) =>
@@ -351,7 +351,7 @@ export async function getGeminiCoachCard(
 
   const prompt = `You are a direct personal coach. Write a daily coaching card based ONLY on the user's real data below.
 
-When the user has a goal marked "IN FOCUS", anchor your coaching card to that goal — it is what they have declared their top commitment right now.
+Balance rule: The user has goals and values across multiple life domains. Draw from the full picture — career, self, and relationships. Do not anchor the whole card to a single value or domain. One domain may be gently highlighted if the data clearly calls for it, but the card should feel whole-life, not narrow.
 
 CRITICAL — anti-fabrication rules:
 - The ONLY value names that exist are: [${validValues.join(', ')}].
