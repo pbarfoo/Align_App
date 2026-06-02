@@ -16,7 +16,7 @@ export interface CoachFeedback {
   rating: 'up' | 'down';
 }
 
-const FEEDBACK_KEY = 'gemini-coach-feedback';
+const FEEDBACK_KEY = 'gemini-coach-feedback-v2';
 
 export function saveCoachFeedback(date: string, title: string, rating: 'up' | 'down' | null): void {
   const history = getCoachFeedbackHistory().filter((f) => f.date !== date);
