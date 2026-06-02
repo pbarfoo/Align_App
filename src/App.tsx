@@ -1004,6 +1004,7 @@ function Align({
           return (
           <SortableGoal key={lg.id} id={lg.id}>
           <div className="goal-thread" style={{ '--thread-color': THREAD_PALETTE[ltIdx % THREAD_PALETTE.length] } as React.CSSProperties}>
+            {ltIdx === 0 && <span className="focus-marker"><TargetIcon /></span>}
             <GoalNode
               goal={lg}
               values={lgValues}
@@ -3383,6 +3384,16 @@ function RepeatIcon() {
       <path d="M20 4v4h-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
       <path d="M20 15a8 8 0 0 1-13.7 3.3L4 16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
       <path d="M4 20v-4h4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function TargetIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2.2"/>
+      <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="2.2"/>
+      <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
     </svg>
   );
 }

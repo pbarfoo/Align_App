@@ -329,8 +329,26 @@ h1 {
 }
 
 .goal-thread {
+  position: relative;
   margin-bottom: 14px;
 }
+
+.focus-marker {
+  position: absolute;
+  left: 2px;
+  top: 14px;
+  width: 14px;
+  height: 14px;
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* suppress the connector line on the focus node — icon takes its place */
+.node.focus-goal::before { display: none; }
 
 .node-foot {
   display: flex;
