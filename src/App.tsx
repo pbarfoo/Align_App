@@ -425,6 +425,7 @@ export default function App() {
             domains={domains}
             reflections={reflections}
             onReflect={() => setReflectOpen(true)}
+            userId={session?.user.id}
           />
         )}
       </main>
@@ -1907,6 +1908,7 @@ function Today({
   domains,
   reflections,
   onReflect,
+  userId,
 }: {
   habits: Habit[];
   setHabits: React.Dispatch<React.SetStateAction<Habit[]>>;
@@ -1914,6 +1916,7 @@ function Today({
   domains: Domain[];
   reflections: ReflectionEntry[];
   onReflect: () => void;
+  userId?: string;
 }) {
   const [showDone, setShowDone] = useState(false);
   const [collapsedDomains, setCollapsedDomains] = useState<Set<DomainId>>(
@@ -2081,10 +2084,11 @@ function Today({
 
   useEffect(() => {
     setCoachLoading(true);
-    getGeminiCoachCard(domains, goals, habits, reflections)
-      .then((card) => {
+    getGeminiCoachCard(domains, goals, habits, reflections, userId)
+      .then(async (card) => {
         setCoachCard(card);
-        setCoachRating(getTodayCoachRating(today, card.title));
+        const rating = await getTodayCoachRating(today, card.title, userId);
+        setCoachRating(rating);
       })
       .catch((err) => {
         console.warn('Gemini coach unavailable:', err);
@@ -2170,7 +2174,7 @@ function Today({
                   onClick={() => {
                     if (coachRating === 'up') return;
                     setCoachRating('up');
-                    saveCoachFeedback(today, coachCard.title, 'up');
+                    saveCoachFeedback(today, coachCard.title, 'up', userId);
                   }}
                   aria-label="Helpful"
                 >👍</button>
@@ -2179,7 +2183,7 @@ function Today({
                   onClick={() => {
                     if (coachRating === 'down') return;
                     setCoachRating('down');
-                    saveCoachFeedback(today, coachCard.title, 'down');
+                    saveCoachFeedback(today, coachCard.title, 'down', userId);
                   }}
                   aria-label="Not helpful"
                 >👎</button>
