@@ -74,7 +74,6 @@ function goalToRow(g: Goal, userId: string): Row {
     title: g.title, parent_goal_id: g.parentGoalId ?? null,
     created_at: g.createdAt, timeframe: g.timeframe,
     completed_at: g.completedAt ?? null,
-    in_focus: g.inFocus ?? false,
   };
 }
 function goalFromRow(row: Row): Goal {
@@ -87,7 +86,6 @@ function goalFromRow(row: Row): Goal {
     createdAt: row.created_at,
     timeframe: row.timeframe,
     completedAt: row.completed_at ?? undefined,
-    inFocus: row.in_focus ?? false,
   };
 }
 
@@ -898,14 +896,6 @@ function Align({
   const updateGoalTimeframe = (id: string, timeframe: number) =>
     setGoals((prev) => prev.map((g) => (g.id === id ? { ...g, timeframe } : g)));
 
-  const setGoalFocus = (id: string, domainId: string) =>
-    setGoals((prev) => prev.map((g) =>
-      g.id === id
-        ? { ...g, inFocus: !g.inFocus }
-        : g.domainId === domainId && g.inFocus
-          ? { ...g, inFocus: false }
-          : g
-    ));
 
   const updateHabit = (id: string, updates: Partial<Habit>) =>
     setHabits((prev) => prev.map((h) => (h.id === id ? { ...h, ...updates } : h)));
@@ -1039,7 +1029,7 @@ function Align({
               onToggleComplete={() => toggleGoalComplete(lg.id)}
               isCollapsed={collapsedGoals.has(lg.id)}
               onToggleCollapse={ltHasChildren ? () => toggleCollapse(lg.id) : undefined}
-              onSetFocus={() => setGoalFocus(lg.id, lg.domainId)}
+              isFocus={ltIdx === 0}
               showDragHandle
             />
             {!collapsedGoals.has(lg.id) && habits
@@ -1174,7 +1164,7 @@ function Align({
               valueIndexes={sg.valueIndexes}
               isCollapsed={collapsedGoals.has(sg.id)}
               onToggleCollapse={habits.some((h) => h.goalId === sg.id) ? () => toggleCollapse(sg.id) : undefined}
-              onSetFocus={() => setGoalFocus(sg.id, sg.domainId)}
+              isFocus={longGoals.filter(lg => !(hideCompleted && !!lg.completedAt)).length === 0 && stIdx === 0}
               showDragHandle
             />
           </div>
@@ -1221,7 +1211,7 @@ function ShortWithActions({
   domainValues,
   isCollapsed,
   onToggleCollapse,
-  onSetFocus,
+  isFocus,
   showDragHandle,
   domainVision: _domainVision,
 }: {
@@ -1255,7 +1245,7 @@ function ShortWithActions({
   valueIndexes?: number[];
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
-  onSetFocus?: () => void;
+  isFocus?: boolean;
   showDragHandle?: boolean;
 }) {
   const [editingHabitId, setEditingHabitId] = useState<string | null>(null);
@@ -1286,7 +1276,7 @@ function ShortWithActions({
         domainValues={domainValues}
         isCollapsed={isCollapsed}
         onToggleCollapse={onToggleCollapse}
-        onSetFocus={onSetFocus}
+        isFocus={isFocus}
         showDragHandle={showDragHandle}
       />
       {!isCollapsed && habits
@@ -1706,7 +1696,7 @@ function GoalNode({
   onToggleComplete,
   isCollapsed,
   onToggleCollapse,
-  onSetFocus,
+  isFocus,
   showDragHandle,
 }: {
   goal: Goal;
@@ -1729,7 +1719,7 @@ function GoalNode({
   onToggleComplete?: () => void;
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
-  onSetFocus?: () => void;
+  isFocus?: boolean;
   showDragHandle?: boolean;
 }) {
   const canEditValues = !!onEditValues;
@@ -1753,7 +1743,7 @@ function GoalNode({
   };
 
   return (
-    <div className={`${className}${short ? ' short' : ''}${isComplete ? ' completed' : ''}${goal.inFocus ? ' focus-goal' : ''}`} onClick={onClick}>
+    <div className={`${className}${short ? ' short' : ''}${isComplete ? ' completed' : ''}${isFocus ? ' focus-goal' : ''}`} onClick={onClick}>
       {onToggleCollapse && (
         <button
           className={`node-collapse${isCollapsed ? ' collapsed' : ''}`}
@@ -1822,9 +1812,6 @@ function GoalNode({
             title={onRename ? 'Click to edit' : undefined}
             style={onRename ? { cursor: 'text' } : undefined}
           >
-            {goal.inFocus && (
-              <span className="focus-badge" title="In Focus" />
-            )}
             {goal.title}
           </div>
         )}
@@ -1892,15 +1879,6 @@ function GoalNode({
             }}
           >
             {addActive ? '×' : '+'}
-          </button>
-        )}
-        {onSetFocus && (
-          <button
-            className={`node-focus${goal.inFocus ? ' active' : ''}`}
-            title={goal.inFocus ? 'In focus (tap to remove)' : 'Set as focus goal'}
-            onClick={(e) => { e.stopPropagation(); onSetFocus(); }}
-          >
-            <TargetIcon />
           </button>
         )}
         {onDelete && (
@@ -3423,15 +3401,6 @@ function TrashIcon() {
   );
 }
 
-function TargetIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
-      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2"/>
-      <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="2"/>
-      <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
-    </svg>
-  );
-}
 
 function IconBase() {
   return (

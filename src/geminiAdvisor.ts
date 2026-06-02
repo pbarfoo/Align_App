@@ -98,6 +98,16 @@ export async function getGeminiFocusPicks(
       .join(', ');
   };
 
+  // First active goal per domain = the one the user has dragged to the top = in focus
+  const focusGoalIds = new Set<string>();
+  const seenDomains = new Set<string>();
+  for (const g of goals) {
+    if (!g.completedAt && !seenDomains.has(g.domainId)) {
+      focusGoalIds.add(g.id);
+      seenDomains.add(g.domainId);
+    }
+  }
+
   const contextLines: string[] = [
     `Today is ${dayName}, ${today}.`,
     weekValue ? `This week's focus theme: "${weekValue}".` : '',
@@ -112,7 +122,7 @@ export async function getGeminiFocusPicks(
       .filter((g) => !g.completedAt)
       .map((g) => {
         const vals = resolveGoalValues(g);
-        const focus = g.inFocus ? ' | IN FOCUS' : '';
+        const focus = focusGoalIds.has(g.id) ? ' | IN FOCUS' : '';
         return `- ${g.id} | "${g.title}" | ${g.horizon} | ${g.timeframe}${g.horizon === 'long' ? 'yr' : 'mo'} | [${vals}]${focus}`;
       }),
     '',
@@ -236,6 +246,16 @@ export async function getGeminiCoachCard(
       .join(', ');
   };
 
+  // First active goal per domain (array order = user's drag order) = in focus
+  const coachFocusIds = new Set<string>();
+  const coachSeenDomains = new Set<string>();
+  for (const g of goals) {
+    if (!g.completedAt && !coachSeenDomains.has(g.domainId)) {
+      coachFocusIds.add(g.id);
+      coachSeenDomains.add(g.domainId);
+    }
+  }
+
   const contextLines: string[] = [
     `Today is ${dayName}, ${today}.`,
     weekValue ? `This week's focus theme: "${weekValue}".` : '',
@@ -250,7 +270,7 @@ export async function getGeminiCoachCard(
       const dom = domains.find((d) => d.id === g.domainId);
       const vals = resolveGoalValues(g);
       const status = g.completedAt ? 'completed' : 'active';
-      const focus = g.inFocus ? 'IN FOCUS' : '-';
+      const focus = coachFocusIds.has(g.id) ? 'IN FOCUS' : '-';
       return `- ${g.id} | "${g.title}" | ${g.horizon} | ${g.timeframe}${g.horizon === 'long' ? 'yr' : 'mo'} | ${dom?.name ?? '?'} | [${vals}] | ${focus} | ${status}`;
     }),
     '',

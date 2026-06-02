@@ -717,45 +717,11 @@ h1 {
 .node-drag:active { cursor: grabbing; }
 
 
-/* ---------- Focus target button ---------- */
-.node-focus {
-  flex-shrink: 0;
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  color: var(--muted);
-  background: transparent;
-  border: 1px solid var(--line);
-  transition: color 0.18s, border-color 0.18s, background 0.18s;
-}
-.node-focus:hover { color: var(--accent); border-color: var(--accent); }
-.node-focus.active {
-  color: var(--accent);
-  border-color: var(--accent);
-  background: rgba(200,169,106,0.15);
-  box-shadow: 0 0 0 2px rgba(200,169,106,0.2);
-}
-
-/* Focus dot in title */
-.focus-badge {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--accent);
-  margin-right: 7px;
-  vertical-align: middle;
-  flex-shrink: 0;
-  box-shadow: 0 0 4px var(--accent);
-}
-
-/* Goal card glow when in focus */
+/* Top goal in the list is automatically "in focus" — shown with accent border */
 .goal-thread > .node.focus-goal,
 .node.short.focus-goal {
   border-color: var(--accent);
-  box-shadow: 0 0 0 1px rgba(200,169,106,0.3);
+  box-shadow: 0 0 0 1px rgba(200,169,106,0.25);
 }
 
 .node-del {
