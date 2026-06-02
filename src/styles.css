@@ -348,7 +348,7 @@ h1 {
 }
 
 /* suppress the connector line on the focus node — icon takes its place */
-.node.focus-goal::before { display: none; }
+.node.focus-goal::before { background: rgba(255, 255, 255, 0.7); width: 2px; }
 
 .node-foot {
   display: flex;
