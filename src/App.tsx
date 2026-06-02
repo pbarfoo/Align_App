@@ -1032,47 +1032,6 @@ function Align({
               isFocus={ltIdx === 0}
               showDragHandle
             />
-            {!collapsedGoals.has(lg.id) && habits
-              .filter((h) => {
-                if (h.goalId !== lg.id) return false;
-                if (!hideCompleted) return true;
-                if (h.kind === 'task') return !h.completed;
-                return !isHabitDoneThisPeriod(h);
-              })
-              .map((h) => {
-                const done = h.kind === 'task' ? !!h.completed : isHabitDoneThisPeriod(h);
-                return (
-                  <div
-                    key={h.id}
-                    className={`${cls(`h:${h.id}`)} node short${done ? ' completed' : ''}`}
-                    onClick={() => setLit(lit === `h:${h.id}` ? null : `h:${h.id}`)}
-                  >
-                    <button
-                      className={`node-check${done ? ' on' : ''}`}
-                      title={done ? 'Mark incomplete' : 'Mark complete'}
-                      onClick={(e) => { e.stopPropagation(); toggleHabit(h.id); }}
-                    />
-                    <div className="node-main">
-                      <div className="node-tag">{h.kind === 'task' ? 'Task' : 'Habit'}</div>
-                      <div className="node-title">{h.title}</div>
-                      <div className="node-foot">
-                        <span className="goal-date">
-                          {h.kind === 'task' ? getTaskCountdown(h) : getRecurrenceString(h)}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="node-ctrls">
-                      <button
-                        className="node-del"
-                        title="Delete"
-                        onClick={(e) => { e.stopPropagation(); deleteHabit(h.id); }}
-                      >
-                        <TrashIcon />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
             {!collapsedGoals.has(lg.id) && domainGoals
               .filter((s) => s.parentGoalId === lg.id)
               .map((sg) => (
@@ -1099,6 +1058,49 @@ function Align({
                   domainVision={domain.vision}
                 />
               ))}
+            {!collapsedGoals.has(lg.id) && habits
+              .filter((h) => {
+                if (h.goalId !== lg.id) return false;
+                if (!hideCompleted) return true;
+                if (h.kind === 'task') return !h.completed;
+                return !isHabitDoneThisPeriod(h);
+              })
+              .map((h) => {
+                const done = h.kind === 'task' ? !!h.completed : isHabitDoneThisPeriod(h);
+                return (
+                  <div
+                    key={h.id}
+                    className={`${cls(`h:${h.id}`)} node short action-row${done ? ' completed' : ''}`}
+                    onClick={() => setLit(lit === `h:${h.id}` ? null : `h:${h.id}`)}
+                  >
+                    <button
+                      className={`node-check${done ? ' on' : ''}`}
+                      title={done ? 'Mark incomplete' : 'Mark complete'}
+                      onClick={(e) => { e.stopPropagation(); toggleHabit(h.id); }}
+                    />
+                    <div className="node-main">
+                      <div className="action-title-row">
+                        <span className="node-tag">{h.kind === 'task' ? 'Task' : 'Habit'}</span>
+                        <span className="node-title">{h.title}</span>
+                      </div>
+                      <div className="node-foot">
+                        <span className="goal-date">
+                          {h.kind === 'task' ? getTaskCountdown(h) : getRecurrenceString(h)}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="node-ctrls">
+                      <button
+                        className="node-del"
+                        title="Delete"
+                        onClick={(e) => { e.stopPropagation(); deleteHabit(h.id); }}
+                      >
+                        <TrashIcon />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             {!collapsedGoals.has(lg.id) && addingFor === lg.id && (
               addingForKind === null ? (
                 <div className="inline-add short add-form">
@@ -1291,7 +1293,7 @@ function ShortWithActions({
           return (
           <React.Fragment key={h.id}>
           <div
-            className={`${cls(`h:${h.id}`)} habit${done ? ' completed' : ''}`}
+            className={`${cls(`h:${h.id}`)} habit action-row${done ? ' completed' : ''}`}
             onClick={() => setLit(lit === `h:${h.id}` ? null : `h:${h.id}`)}
           >
             <button
@@ -1300,16 +1302,16 @@ function ShortWithActions({
               onClick={(e) => { e.stopPropagation(); onToggleHabit(h.id); }}
             />
             <div className="node-main">
-              <div className="node-tag">
-                {h.kind === 'task' ? 'Task' : 'Habit'}
-              </div>
-              <div
-                className="node-title"
-                onClick={(e) => { e.stopPropagation(); setEditingHabitId(editingHabitId === h.id ? null : h.id); }}
-                title="Click to edit"
-                style={{ cursor: 'text' }}
-              >
-                {h.title}
+              <div className="action-title-row">
+                <span className="node-tag">{h.kind === 'task' ? 'Task' : 'Habit'}</span>
+                <span
+                  className="node-title"
+                  onClick={(e) => { e.stopPropagation(); setEditingHabitId(editingHabitId === h.id ? null : h.id); }}
+                  title="Click to edit"
+                  style={{ cursor: 'text' }}
+                >
+                  {h.title}
+                </span>
               </div>
               <div className="node-foot">
                 <span className="goal-date">

@@ -841,6 +841,22 @@ h1 {
   background: color-mix(in srgb, var(--thread-color, var(--line)) 8%, var(--surface));
 }
 
+/* Compact action rows (habits/tasks nested under goals) */
+.action-row {
+  padding: 8px 12px;
+  border-radius: 8px;
+}
+.action-row .node-left-col { gap: 3px; }
+
+.action-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.action-title-row .node-tag { flex-shrink: 0; }
+.action-title-row .node-title { margin-top: 0; font-size: 13px; }
+.action-row .node-foot { margin-top: 3px; }
+
 .unaligned {
   border: 1px dashed #6e5b46;
   border-radius: 12px;
