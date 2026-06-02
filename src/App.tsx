@@ -1756,6 +1756,7 @@ function GoalNode({
           </svg>
         </button>
       )}
+      {showDragHandle && <DragHandle />}
       {onToggleComplete && (
         <button
           className={`node-check${isComplete ? ' on' : ''}`}
@@ -1869,7 +1870,6 @@ function GoalNode({
         )}
       </div>
       <div className="node-ctrls">
-        {showDragHandle && <DragHandle />}
         {canAddChild && (
           <button
             className={`node-add${addActive ? ' on' : ''}`}
