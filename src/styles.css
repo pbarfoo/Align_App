@@ -612,7 +612,8 @@ h1 {
 }
 /* Dim completed nodes */
 .node.completed .node-title,
-.habit.completed .node-title {
+.habit.completed .node-title,
+.habit-item.completed .node-title {
   color: var(--muted);
   text-decoration: line-through;
 }
@@ -650,6 +651,29 @@ h1 {
   gap: 6px;
 }
 
+/* Left control strip (collapse → moves → complete) */
+.node-left-col {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  padding: 1px 0;
+}
+
+.node-moves {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Push the complete checkbox to vertical center of the left strip */
+.node-left-col .node-check {
+  margin-top: auto;
+  margin-bottom: auto;
+}
+
 .node-collapse {
   flex-shrink: 0;
   width: 16px;
@@ -662,7 +686,6 @@ h1 {
   border: none;
   padding: 0;
   cursor: pointer;
-  margin-top: 3px;
   transition: color 0.18s, transform 0.2s;
 }
 .node-collapse:hover { color: var(--accent); }
@@ -769,15 +792,67 @@ h1 {
   margin-top: 3px;
 }
 
+/* ---------- LT goal card — thread-color left strip ---------- */
 .goal-thread > .node {
   background: color-mix(in srgb, var(--thread-color, var(--line)) 8%, var(--surface));
+  border-left: 4px solid var(--thread-color, var(--line));
+  border-top-color: transparent;
+  border-right-color: transparent;
+  border-bottom-color: transparent;
+  border-radius: 0 10px 10px 0;
+  padding-bottom: 16px; /* room for time bar */
+  margin-bottom: 2px;
 }
 
+.goal-thread > .node::before { display: none; }
+
+/* Type pill on LT goal cards */
+.goal-thread > .node .node-tag {
+  display: inline-flex;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: 999px;
+  padding: 2px 8px;
+  margin-bottom: 4px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+/* Hover on LT: keep thread-color left strip, add subtle border on other sides */
+.goal-thread > .node:hover {
+  border-left-color: var(--thread-color, var(--line)); /* don't let .node:hover overwrite it */
+  border-top-color: color-mix(in srgb, var(--muted) 30%, transparent);
+  border-right-color: color-mix(in srgb, var(--muted) 30%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--muted) 30%, transparent);
+}
+
+/* ---------- ST goal card — compact, surface-2 ---------- */
 .node.short {
-  margin-left: 38px;
-  background: color-mix(in srgb, var(--thread-color, var(--line)) 8%, var(--surface));
+  margin-left: 20px;
+  background: var(--surface-2);
+  border: none;
+  border-left: 2px solid var(--thread-color, var(--line));
+  border-radius: 0 8px 8px 0;
+  padding: 9px 12px;
+  margin-bottom: 2px;
 }
 
+.node.short::before { display: none; }
+
+.node.short:hover {
+  background: color-mix(in srgb, var(--thread-color, var(--line)) 6%, var(--surface-2));
+  border-left-color: var(--thread-color, var(--muted));
+}
+
+.node.short .node-title { font-size: 13px; }
+
+.node.short .node-tag {
+  background: transparent;
+  padding: 0;
+  font-size: 9px;
+}
+
+/* Kept for any legacy references; habits now use .habit-item */
 .node.habit {
   margin-left: 58px;
   background: color-mix(in srgb, var(--thread-color, var(--line)) 8%, var(--surface));
@@ -792,6 +867,103 @@ h1 {
 
 .unaligned .node-tag {
   color: var(--accent);
+}
+
+/* ---------- Habit / task single-line row ---------- */
+.habit-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 4px;
+  background: transparent;
+  border-radius: 0;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.habit-item:hover {
+  background: color-mix(in srgb, var(--thread-color, var(--line)) 4%, transparent);
+}
+
+/* indent under LT card */
+.habit-lt-direct { margin: 0 0 0 20px; }
+/* indent under ST card */
+.habit-st        { margin: 0 0 0 36px; }
+
+/* collapse tag label — implicit in recurrence/due text */
+.habit-item .node-tag { display: none; }
+
+/* make node-main a flex row */
+.habit-item .node-main {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  gap: 8px;
+}
+
+.habit-item .node-title {
+  font-size: 13px;
+  margin-top: 0;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.habit-item .node-foot {
+  margin-top: 0;
+  flex-shrink: 0;
+}
+
+.habit-item .goal-date {
+  font-size: 10px;
+  padding: 2px 6px;
+  white-space: nowrap;
+}
+
+.habit-item .node-check { margin-top: 0; }
+
+/* hide delete until hover */
+.habit-item .node-ctrls {
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.18s;
+}
+.habit-item:hover .node-ctrls { opacity: 1; }
+
+.habit-item.dim { opacity: 0.38; }
+.habit-item.lit {
+  background: color-mix(in srgb, var(--thread-color, var(--accent)) 8%, transparent);
+}
+
+/* ---------- LT goal time-remaining bar ---------- */
+.node-time-bar-wrap {
+  position: absolute;
+  bottom: 0;
+  left: 4px; /* sits flush with thread-color left strip */
+  right: 0;
+  height: 2px;
+  background: color-mix(in srgb, var(--thread-color, var(--line)) 18%, var(--line));
+  border-radius: 0 0 10px 0;
+  overflow: hidden;
+}
+
+.node-time-bar-fill {
+  height: 100%;
+  background: var(--thread-color, var(--accent));
+  opacity: 0.75;
+}
+
+/* value chip overflow indicator */
+.goal-value-overflow {
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--line);
+  font-weight: 500;
 }
 
 /* ---------- Today ---------- */

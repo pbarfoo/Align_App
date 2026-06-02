@@ -989,7 +989,7 @@ function Align({
                 return (
                   <div
                     key={h.id}
-                    className={`${cls(`h:${h.id}`)} node short${done ? ' completed' : ''}`}
+                    className={`${cls(`h:${h.id}`, 'habit-item')} habit-lt-direct${done ? ' completed' : ''}`}
                     onClick={() => setLit(lit === `h:${h.id}` ? null : `h:${h.id}`)}
                   >
                     <button
@@ -1234,7 +1234,7 @@ function ShortWithActions({
           return (
           <React.Fragment key={h.id}>
           <div
-            className={`${cls(`h:${h.id}`)} habit${done ? ' completed' : ''}`}
+            className={`${cls(`h:${h.id}`, 'habit-item')} habit-st${done ? ' completed' : ''}`}
             onClick={() => setLit(lit === `h:${h.id}` ? null : `h:${h.id}`)}
           >
             <button
@@ -1645,24 +1645,37 @@ function GoalNode({
 
   return (
     <div className={`${className}${short ? ' short' : ''}${isComplete ? ' completed' : ''}`} onClick={onClick}>
-      {onToggleCollapse && (
-        <button
-          className={`node-collapse${isCollapsed ? ' collapsed' : ''}`}
-          title={isCollapsed ? 'Expand' : 'Collapse'}
-          onClick={(e) => { e.stopPropagation(); onToggleCollapse(); }}
-        >
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-            <path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-        </button>
-      )}
-      {onToggleComplete && (
-        <button
-          className={`node-check${isComplete ? ' on' : ''}`}
-          title={isComplete ? 'Mark incomplete' : 'Mark complete'}
-          onClick={(e) => { e.stopPropagation(); onToggleComplete(); }}
-        />
-      )}
+      {/* Left strip: collapse → moves → complete (vertically stacked) */}
+      <div className="node-left-col">
+        {onToggleCollapse && (
+          <button
+            className={`node-collapse${isCollapsed ? ' collapsed' : ''}`}
+            title={isCollapsed ? 'Expand' : 'Collapse'}
+            onClick={(e) => { e.stopPropagation(); onToggleCollapse(); }}
+          >
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+              <path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </button>
+        )}
+        {(canMoveUp || canMoveDown) && (
+          <div className="node-moves">
+            {canMoveUp && (
+              <button className="node-move" title="Move up" onClick={(e) => { e.stopPropagation(); onMoveUp?.(); }}>↑</button>
+            )}
+            {canMoveDown && (
+              <button className="node-move" title="Move down" onClick={(e) => { e.stopPropagation(); onMoveDown?.(); }}>↓</button>
+            )}
+          </div>
+        )}
+        {onToggleComplete && (
+          <button
+            className={`node-check${isComplete ? ' on' : ''}`}
+            title={isComplete ? 'Mark incomplete' : 'Mark complete'}
+            onClick={(e) => { e.stopPropagation(); onToggleComplete(); }}
+          />
+        )}
+      </div>
       <div className="node-main">
         <div className="node-tag">
           {goal.horizon === 'long' ? 'Long-term · ' : 'Short-term · '}
@@ -1717,11 +1730,12 @@ function GoalNode({
           </div>
         )}
         <div className="node-foot">
-          {values.map((v) => (
-            <span key={v} className="goal-value">
-              {v}
-            </span>
+          {values.slice(0, 2).map((v) => (
+            <span key={v} className="goal-value">{v}</span>
           ))}
+          {values.length > 2 && (
+            <span className="goal-value goal-value-overflow">+{values.length - 2}</span>
+          )}
           {canEditValues && (
             <button
               className="goal-value-tag"
@@ -1769,12 +1783,6 @@ function GoalNode({
         )}
       </div>
       <div className="node-ctrls">
-        {canMoveUp && (
-          <button className="node-move" title="Move up" onClick={(e) => { e.stopPropagation(); onMoveUp?.(); }}>↑</button>
-        )}
-        {canMoveDown && (
-          <button className="node-move" title="Move down" onClick={(e) => { e.stopPropagation(); onMoveDown?.(); }}>↓</button>
-        )}
         {canAddChild && (
           <button
             className={`node-add${addActive ? ' on' : ''}`}
@@ -1800,6 +1808,19 @@ function GoalNode({
           </button>
         )}
       </div>
+      {/* Time bar shows elapsed portion of the long-term goal window */}
+      {!short && (
+        <div className="node-time-bar-wrap">
+          <div
+            className="node-time-bar-fill"
+            style={{
+              width: `${Math.min(100, Math.max(0,
+                (Date.now() - goal.createdAt) / (goal.timeframe * 365.25 * 86_400_000) * 100
+              ))}%`,
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }
