@@ -247,7 +247,7 @@ function valueFingerprint(domains: Domain[]): string {
 }
 
 function coachCacheKey(date: string, domains: Domain[]) {
-  return `gemini-coach-v9-${date}-${valueFingerprint(domains)}`;
+  return `gemini-coach-v10-${date}-${valueFingerprint(domains)}`;
 }
 
 export async function getGeminiCoachCard(
