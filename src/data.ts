@@ -22,8 +22,8 @@ export interface Goal {
   timeframe: number;
   /** unix ms when this short-term goal was marked complete */
   completedAt?: number;
-  /** user-set importance level */
-  priority?: 'high' | 'medium' | 'low';
+  /** at most one goal per domain is in focus at a time */
+  inFocus?: boolean;
 }
 
 export type ActionKind = 'habit' | 'task';

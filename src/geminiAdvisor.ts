@@ -107,13 +107,13 @@ export async function getGeminiFocusPicks(
       `- ${d.name}: values=[${d.values.join(', ')}] | vision="${d.vision}"`
     ),
     '',
-    '## Goals (id | title | horizon | timeframe | values | priority)',
+    '## Goals (id | title | horizon | timeframe | values | focus)',
     ...goals
       .filter((g) => !g.completedAt)
       .map((g) => {
         const vals = resolveGoalValues(g);
-        const prio = g.priority ? ` | priority:${g.priority.toUpperCase()}` : '';
-        return `- ${g.id} | "${g.title}" | ${g.horizon} | ${g.timeframe}${g.horizon === 'long' ? 'yr' : 'mo'} | [${vals}]${prio}`;
+        const focus = g.inFocus ? ' | IN FOCUS' : '';
+        return `- ${g.id} | "${g.title}" | ${g.horizon} | ${g.timeframe}${g.horizon === 'long' ? 'yr' : 'mo'} | [${vals}]${focus}`;
       }),
     '',
     '## Actionable items today (id | kind | title | goal | recurrence/due | streak | days since last done)',
@@ -137,7 +137,7 @@ Selection criteria (weigh all of these):
 3. Balance: try not to pick 3 items from the same domain unless there are no alternatives.
 4. Momentum: protecting an active streak matters.
 5. Short-term goals are the active push; long-term goal items need periodic attention to avoid neglect.
-6. Priority: items tied to goals marked priority:HIGH should be strongly favored; priority:MEDIUM given moderate preference; priority:LOW slight preference over unranked.
+6. Focus: if any goal is marked "IN FOCUS", strongly favor items tied to that goal — the user has declared it their top commitment right now.
 
 For each pick, write a reason that is: 5–10 words, specific (reference the goal or value), and motivating.
 
@@ -245,13 +245,13 @@ export async function getGeminiCoachCard(
       `- ${d.name}: values=[${d.values.join(', ')}] | vision="${d.vision}"`
     ),
     '',
-    '## All goals (id | title | horizon | timeframe | domain | values | priority | status)',
+    '## All goals (id | title | horizon | timeframe | domain | values | focus | status)',
     ...goals.map((g) => {
       const dom = domains.find((d) => d.id === g.domainId);
       const vals = resolveGoalValues(g);
       const status = g.completedAt ? 'completed' : 'active';
-      const prio = g.priority ?? 'none';
-      return `- ${g.id} | "${g.title}" | ${g.horizon} | ${g.timeframe}${g.horizon === 'long' ? 'yr' : 'mo'} | ${dom?.name ?? '?'} | [${vals}] | priority:${prio} | ${status}`;
+      const focus = g.inFocus ? 'IN FOCUS' : '-';
+      return `- ${g.id} | "${g.title}" | ${g.horizon} | ${g.timeframe}${g.horizon === 'long' ? 'yr' : 'mo'} | ${dom?.name ?? '?'} | [${vals}] | ${focus} | ${status}`;
     }),
     '',
     '## All habits & tasks (id | kind | title | goal | recurrence/due | streak | completion history)',
@@ -293,7 +293,7 @@ export async function getGeminiCoachCard(
 
   const prompt = `You are a direct personal coach. Write a daily coaching card based ONLY on the user's real data below.
 
-When the user has goals marked priority:high, anchor your coaching card to one of those goals — it is what they have declared most important right now.
+When the user has a goal marked "IN FOCUS", anchor your coaching card to that goal — it is what they have declared their top commitment right now.
 
 CRITICAL — anti-fabrication rules:
 - The ONLY value names that exist are: [${validValues.join(', ')}].

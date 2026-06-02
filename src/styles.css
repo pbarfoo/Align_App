@@ -717,8 +717,8 @@ h1 {
 .node-drag:active { cursor: grabbing; }
 
 
-/* ---------- Priority flag button ---------- */
-.node-priority {
+/* ---------- Focus target button ---------- */
+.node-focus {
   flex-shrink: 0;
   width: 26px;
   height: 26px;
@@ -730,24 +730,33 @@ h1 {
   border: 1px solid var(--line);
   transition: color 0.18s, border-color 0.18s, background 0.18s;
 }
-.node-priority:hover { color: var(--accent); border-color: var(--accent); }
-.node-priority.prio-high  { color: #e5544b; border-color: #e5544b; background: rgba(229,84,75,0.12); }
-.node-priority.prio-medium { color: #e8a83c; border-color: #e8a83c; background: rgba(232,168,60,0.12); }
-.node-priority.prio-low   { color: #4eb8e8; border-color: #4eb8e8; background: rgba(78,184,232,0.12); }
+.node-focus:hover { color: var(--accent); border-color: var(--accent); }
+.node-focus.active {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: rgba(200,169,106,0.15);
+  box-shadow: 0 0 0 2px rgba(200,169,106,0.2);
+}
 
-/* Priority badge dot inside the title */
-.priority-badge {
+/* Focus dot in title */
+.focus-badge {
   display: inline-block;
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  margin-right: 6px;
+  background: var(--accent);
+  margin-right: 7px;
   vertical-align: middle;
   flex-shrink: 0;
+  box-shadow: 0 0 4px var(--accent);
 }
-.priority-badge.priority-high   { background: #e5544b; }
-.priority-badge.priority-medium { background: #e8a83c; }
-.priority-badge.priority-low    { background: #4eb8e8; }
+
+/* Goal card glow when in focus */
+.goal-thread > .node.focus-goal,
+.node.short.focus-goal {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(200,169,106,0.3);
+}
 
 .node-del {
   flex-shrink: 0;
