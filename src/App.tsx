@@ -432,7 +432,6 @@ export default function App() {
       {reflectOpen && (
         <Reflect
           domains={domains}
-          goals={goals}
           reflections={reflections}
           onClose={() => setReflectOpen(false)}
           onSave={(scores, note, weekNumber, date) => {
@@ -2287,13 +2286,11 @@ function Today({
 /* ---------------- Reflect ---------------- */
 function Reflect({
   domains,
-  goals,
   reflections,
   onClose,
   onSave,
 }: {
   domains: Domain[];
-  goals: Goal[];
   reflections: ReflectionEntry[];
   onClose: () => void;
   onSave: (scores: Record<string, number>, note: string, weekNumber: number, date: number) => void;
@@ -3012,8 +3009,6 @@ function ReviewPanel({
       next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
-
-  const latest = reflections[reflections.length - 1];
 
   return (
     <div className="review-panel">
