@@ -246,17 +246,17 @@ function valueFingerprint(domains: Domain[]): string {
   return Math.abs(h).toString(36);
 }
 
-/** Picks one value to spotlight today by cycling through all values in order. */
-function dailyValue(date: string, domains: Domain[]): string | null {
-  const allValues = domains.flatMap((d) => d.values);
-  if (!allValues.length) return null;
-  const [y, m, d] = date.split('-').map(Number);
-  const dayOfYear = Math.floor((new Date(y, m - 1, d).getTime() - new Date(y, 0, 0).getTime()) / 86_400_000);
-  return allValues[dayOfYear % allValues.length];
+function isoWeek(d: Date): number {
+  const t = new Date(d.valueOf());
+  const dayNr = (d.getDay() + 6) % 7;
+  t.setDate(t.getDate() - dayNr + 3);
+  const jan4 = new Date(t.getFullYear(), 0, 4);
+  const diff = t.getTime() - jan4.getTime();
+  return 1 + Math.round((diff / 86_400_000 - 3 + ((jan4.getDay() + 6) % 7)) / 7);
 }
 
 function coachCacheKey(date: string, domains: Domain[]) {
-  return `gemini-coach-v12-${date}-${valueFingerprint(domains)}`;
+  return `gemini-coach-v13-${date}-${valueFingerprint(domains)}`;
 }
 
 export async function getGeminiCoachCard(
@@ -276,11 +276,11 @@ export async function getGeminiCoachCard(
 
   const now = new Date();
   const dayName = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][now.getDay()];
-  const todayValue = dailyValue(today, domains);
+  const allValues = domains.flatMap((d) => d.values);
+  const weekValue = allValues.length ? allValues[isoWeek(now) % allValues.length] : null;
 
   const goalMap = new Map(goals.map((g) => [g.id, g]));
 
-  // Maps "domainId:valueIndex" -> "DomainName/ValueName" for current values only
   const valueLookup = new Map<string, string>();
   domains.forEach((d) => d.values.forEach((v) => valueLookup.set(`${d.id}:${v}`, `${d.name}/${v}`)));
 
@@ -293,32 +293,21 @@ export async function getGeminiCoachCard(
       .join(', ');
   };
 
-  // First active goal per domain (array order = user's drag order) = in focus
-  const coachFocusIds = new Set<string>();
-  const coachSeenDomains = new Set<string>();
-  for (const g of goals) {
-    if (!g.completedAt && !coachSeenDomains.has(g.domainId)) {
-      coachFocusIds.add(g.id);
-      coachSeenDomains.add(g.domainId);
-    }
-  }
-
   const contextLines: string[] = [
     `Today is ${dayName}, ${today}.`,
-    todayValue ? `Today's value spotlight: "${todayValue}". Anchor the entire card to this value.` : '',
+    weekValue ? `This week's focus theme: "${weekValue}".` : '',
     '',
     '## Domains, values, and life visions',
     ...domains.map((d) =>
       `- ${d.name}: values=[${d.values.join(', ')}] | vision="${d.vision}"`
     ),
     '',
-    '## All goals (id | title | horizon | timeframe | domain | values | focus | status)',
+    '## All goals (id | title | horizon | timeframe | domain | values | status)',
     ...goals.map((g) => {
       const dom = domains.find((d) => d.id === g.domainId);
       const vals = resolveGoalValues(g);
       const status = g.completedAt ? 'completed' : 'active';
-      const focus = coachFocusIds.has(g.id) ? 'IN FOCUS' : '-';
-      return `- ${g.id} | "${g.title}" | ${g.horizon} | ${g.timeframe}${g.horizon === 'long' ? 'yr' : 'mo'} | ${dom?.name ?? '?'} | [${vals}] | ${focus} | ${status}`;
+      return `- ${g.id} | "${g.title}" | ${g.horizon} | ${g.timeframe}${g.horizon === 'long' ? 'yr' : 'mo'} | ${dom?.name ?? '?'} | [${vals}] | ${status}`;
     }),
     '',
     '## All habits & tasks (id | kind | title | goal | recurrence/due | streak | completion history)',
@@ -351,27 +340,16 @@ export async function getGeminiCoachCard(
   const liked = feedback.filter((f) => f.rating === 'up').map((f) => `"${f.title}"`).join(', ');
   const disliked = feedback.filter((f) => f.rating === 'down').map((f) => `"${f.title}"`).join(', ');
   const feedbackLines = (liked || disliked)
-    ? `\n## Style feedback from user on past cards\nUse this ONLY to shape writing style, tone, and format — NOT to change which value, goal, or habit you spotlight (that is always determined by the user's real data above).\n- Liked (write in a similar style): ${liked || 'none'}\n- Disliked (avoid this style/tone): ${disliked || 'none'}\n`
+    ? `\n## User feedback on past cards\n- Liked: ${liked || 'none'}\n- Disliked: ${disliked || 'none'}\nWrite more cards like the liked ones and avoid the style/tone of the disliked ones.\n`
     : '';
 
-  const validValues = domains.flatMap((d) => d.values);
-  const validGoals = goals.filter((g) => !g.completedAt).map((g) => `"${g.title}"`).join(', ');
-  const validHabits = habits.map((h) => `"${h.title}"`).join(', ');
+  const prompt = `You are a direct personal coach. Write a daily coaching card based on the user's data below.
 
-  const prompt = `You are a direct personal coach. Write a daily coaching card based ONLY on the user's real data below.
-
-Today's value is given above. Anchor the entire card — title and both sentences — to that one value. Reference the user's real goals and habits that connect to it.
-
-CRITICAL — anti-fabrication rules:
-- The ONLY value names that exist are: [${validValues.join(', ')}].
-- The ONLY goals that exist are: [${validGoals || 'none'}].
-- The ONLY habits/tasks that exist are: [${validHabits || 'none'}].
-- You MUST NOT mention, quote, or reference any value, goal, habit, or streak that is not in those exact lists. If you are about to write a name, verify it appears verbatim above. Inventing names like "Craft over speed" or "Calm attention" is strictly forbidden.
-- If you have nothing specific and real to praise, give general encouragement without naming a fake item.
-
-Format:
-- Title: 4–6 words max. Do not put a value/habit name in quotes unless it is one of the real ones above.
-- Blurb: exactly 2 sentences. First: one specific encouragement grounded in real data. Second: one concrete, real action or nudge.
+Rules:
+- Title: 4–6 words max.
+- Blurb: exactly 2 sentences. First sentence: one specific encouragement (name a real habit, goal, or streak). Second sentence: one concrete action or nudge tied to a real gap.
+- ONLY use value names exactly as they appear in the "Domains, values" section. Never paraphrase, reinterpret, or invent related concepts.
+- Only reference goals, habits, and values that appear verbatim in the data below.
 - Tone: warm but brief. No filler.
 ${feedbackLines}
 ${contextLines.join('\n')}
@@ -390,7 +368,7 @@ Return JSON only: {"title": "...", "blurb": "..."}`;
         },
         required: ['title', 'blurb'],
       },
-      temperature: 0.25,
+      temperature: 0.7,
     },
   };
 
