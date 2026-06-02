@@ -717,6 +717,38 @@ h1 {
 .node-drag:active { cursor: grabbing; }
 
 
+/* ---------- Priority flag button ---------- */
+.node-priority {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--line);
+  transition: color 0.18s, border-color 0.18s, background 0.18s;
+}
+.node-priority:hover { color: var(--accent); border-color: var(--accent); }
+.node-priority.prio-high  { color: #e5544b; border-color: #e5544b; background: rgba(229,84,75,0.12); }
+.node-priority.prio-medium { color: #e8a83c; border-color: #e8a83c; background: rgba(232,168,60,0.12); }
+.node-priority.prio-low   { color: #4eb8e8; border-color: #4eb8e8; background: rgba(78,184,232,0.12); }
+
+/* Priority badge dot inside the title */
+.priority-badge {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+.priority-badge.priority-high   { background: #e5544b; }
+.priority-badge.priority-medium { background: #e8a83c; }
+.priority-badge.priority-low    { background: #4eb8e8; }
+
 .node-del {
   flex-shrink: 0;
   width: 26px;

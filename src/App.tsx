@@ -74,6 +74,7 @@ function goalToRow(g: Goal, userId: string): Row {
     title: g.title, parent_goal_id: g.parentGoalId ?? null,
     created_at: g.createdAt, timeframe: g.timeframe,
     completed_at: g.completedAt ?? null,
+    priority: g.priority ?? null,
   };
 }
 function goalFromRow(row: Row): Goal {
@@ -86,6 +87,7 @@ function goalFromRow(row: Row): Goal {
     createdAt: row.created_at,
     timeframe: row.timeframe,
     completedAt: row.completed_at ?? undefined,
+    priority: (row.priority as 'high' | 'medium' | 'low') ?? undefined,
   };
 }
 
@@ -896,6 +898,9 @@ function Align({
   const updateGoalTimeframe = (id: string, timeframe: number) =>
     setGoals((prev) => prev.map((g) => (g.id === id ? { ...g, timeframe } : g)));
 
+  const updateGoalPriority = (id: string, priority: 'high' | 'medium' | 'low' | undefined) =>
+    setGoals((prev) => prev.map((g) => (g.id === id ? { ...g, priority } : g)));
+
   const updateHabit = (id: string, updates: Partial<Habit>) =>
     setHabits((prev) => prev.map((h) => (h.id === id ? { ...h, ...updates } : h)));
 
@@ -1028,6 +1033,7 @@ function Align({
               onToggleComplete={() => toggleGoalComplete(lg.id)}
               isCollapsed={collapsedGoals.has(lg.id)}
               onToggleCollapse={ltHasChildren ? () => toggleCollapse(lg.id) : undefined}
+              onSetPriority={(p) => updateGoalPriority(lg.id, p)}
               showDragHandle
             />
             {!collapsedGoals.has(lg.id) && habits
@@ -1162,6 +1168,7 @@ function Align({
               valueIndexes={sg.valueIndexes}
               isCollapsed={collapsedGoals.has(sg.id)}
               onToggleCollapse={habits.some((h) => h.goalId === sg.id) ? () => toggleCollapse(sg.id) : undefined}
+              onSetPriority={(p) => updateGoalPriority(sg.id, p)}
               showDragHandle
             />
           </div>
@@ -1208,7 +1215,9 @@ function ShortWithActions({
   domainValues,
   isCollapsed,
   onToggleCollapse,
+  onSetPriority,
   showDragHandle,
+  domainVision: _domainVision,
 }: {
   goal: Goal;
   displayValues: string[];
@@ -1240,6 +1249,7 @@ function ShortWithActions({
   valueIndexes?: number[];
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
+  onSetPriority?: (p: 'high' | 'medium' | 'low' | undefined) => void;
   showDragHandle?: boolean;
 }) {
   const [editingHabitId, setEditingHabitId] = useState<string | null>(null);
@@ -1270,6 +1280,7 @@ function ShortWithActions({
         domainValues={domainValues}
         isCollapsed={isCollapsed}
         onToggleCollapse={onToggleCollapse}
+        onSetPriority={onSetPriority}
         showDragHandle={showDragHandle}
       />
       {!isCollapsed && habits
@@ -1689,6 +1700,7 @@ function GoalNode({
   onToggleComplete,
   isCollapsed,
   onToggleCollapse,
+  onSetPriority,
   showDragHandle,
 }: {
   goal: Goal;
@@ -1711,6 +1723,7 @@ function GoalNode({
   onToggleComplete?: () => void;
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
+  onSetPriority?: (p: 'high' | 'medium' | 'low' | undefined) => void;
   showDragHandle?: boolean;
 }) {
   const canEditValues = !!onEditValues;
@@ -1718,6 +1731,12 @@ function GoalNode({
   const [editingTitle, setEditingTitle] = useState(false);
   const [editingTimeframe, setEditingTimeframe] = useState(false);
   const [draft, setDraft] = useState(goal.title);
+
+  const cyclePriority = () => {
+    if (!onSetPriority) return;
+    const next = goal.priority === undefined ? 'high' : goal.priority === 'high' ? 'medium' : goal.priority === 'medium' ? 'low' : undefined;
+    onSetPriority(next);
+  };
 
   const commitRename = () => {
     if (draft.trim() && draft.trim() !== goal.title) onRename?.(draft.trim());
@@ -1802,6 +1821,9 @@ function GoalNode({
             title={onRename ? 'Click to edit' : undefined}
             style={onRename ? { cursor: 'text' } : undefined}
           >
+            {goal.priority && (
+              <span className={`priority-badge priority-${goal.priority}`} title={`Priority: ${goal.priority}`} />
+            )}
             {goal.title}
           </div>
         )}
@@ -1869,6 +1891,15 @@ function GoalNode({
             }}
           >
             {addActive ? '×' : '+'}
+          </button>
+        )}
+        {onSetPriority && (
+          <button
+            className={`node-priority${goal.priority ? ` prio-${goal.priority}` : ''}`}
+            title={goal.priority ? `Priority: ${goal.priority} (tap to change)` : 'Set priority'}
+            onClick={(e) => { e.stopPropagation(); cyclePriority(); }}
+          >
+            <FlagIcon />
           </button>
         )}
         {onDelete && (
@@ -3387,6 +3418,14 @@ function TrashIcon() {
         strokeLinecap="round"
         strokeLinejoin="round"
       />
+    </svg>
+  );
+}
+
+function FlagIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
+      <path d="M4 21V4m0 0h10l-3 5 3 5H4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="currentColor" fillOpacity="0.15"/>
     </svg>
   );
 }
