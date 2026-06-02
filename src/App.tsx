@@ -1743,25 +1743,27 @@ function GoalNode({
 
   return (
     <div className={`${className}${short ? ' short' : ''}${isComplete ? ' completed' : ''}${isFocus ? ' focus-goal' : ''}`} onClick={onClick}>
-      {onToggleCollapse && (
-        <button
-          className={`node-collapse${isCollapsed ? ' collapsed' : ''}`}
-          title={isCollapsed ? 'Expand' : 'Collapse'}
-          onClick={(e) => { e.stopPropagation(); onToggleCollapse(); }}
-        >
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-            <path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-        </button>
-      )}
-      {showDragHandle && <DragHandle />}
-      {onToggleComplete && (
-        <button
-          className={`node-check${isComplete ? ' on' : ''}`}
-          title={isComplete ? 'Mark incomplete' : 'Mark complete'}
-          onClick={(e) => { e.stopPropagation(); onToggleComplete(); }}
-        />
-      )}
+      <div className="node-left-col">
+        {onToggleCollapse && (
+          <button
+            className={`node-collapse${isCollapsed ? ' collapsed' : ''}`}
+            title={isCollapsed ? 'Expand' : 'Collapse'}
+            onClick={(e) => { e.stopPropagation(); onToggleCollapse(); }}
+          >
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+              <path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </button>
+        )}
+        {showDragHandle && <DragHandle />}
+        {onToggleComplete && (
+          <button
+            className={`node-check${isComplete ? ' on' : ''}`}
+            title={isComplete ? 'Mark incomplete' : 'Mark complete'}
+            onClick={(e) => { e.stopPropagation(); onToggleComplete(); }}
+          />
+        )}
+      </div>
       <div className="node-main">
         <div className="node-tag">
           {goal.horizon === 'long' ? 'Long-term · ' : 'Short-term · '}

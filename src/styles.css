@@ -611,6 +611,20 @@ h1 {
   min-width: 0;
 }
 
+.node-left-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  align-self: stretch;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 1px 0;
+}
+
+.node-left-col .node-check {
+  margin-top: auto;
+}
+
 /* Completion checkbox on goal/habit nodes */
 .node-check {
   flex-shrink: 0;
