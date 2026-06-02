@@ -256,7 +256,7 @@ function isoWeek(d: Date): number {
 }
 
 function coachCacheKey(date: string, domains: Domain[]) {
-  return `gemini-coach-v13-${date}-${valueFingerprint(domains)}`;
+  return `gemini-coach-v14-${date}-${valueFingerprint(domains)}`;
 }
 
 export async function getGeminiCoachCard(
@@ -293,64 +293,81 @@ export async function getGeminiCoachCard(
       .join(', ');
   };
 
+  // First active goal per domain = top priority (user's drag order)
+  const topGoalIds = new Set<string>();
+  const seenDomains = new Set<string>();
+  for (const g of goals) {
+    if (!g.completedAt && !seenDomains.has(g.domainId)) {
+      topGoalIds.add(g.id);
+      seenDomains.add(g.domainId);
+    }
+  }
+
+  const activeGoals = goals.filter((g) => !g.completedAt);
+  const ltGoals = activeGoals.filter((g) => g.horizon === 'long');
+  const stGoals = activeGoals.filter((g) => g.horizon === 'short');
+
+  const goalLine = (g: Goal) => {
+    const dom = domains.find((d) => d.id === g.domainId);
+    const vals = resolveGoalValues(g);
+    const priority = topGoalIds.has(g.id) ? ' [TOP PRIORITY]' : '';
+    return `- "${g.title}" | ${g.timeframe}${g.horizon === 'long' ? 'yr' : 'mo'} | ${dom?.name ?? '?'}${vals ? ` | values:[${vals}]` : ''}${priority}`;
+  };
+
   const contextLines: string[] = [
     `Today is ${dayName}, ${today}.`,
-    weekValue ? `This week's focus theme: "${weekValue}".` : '',
+    weekValue ? `This week's value thread: "${weekValue}".` : '',
     '',
-    '## Domains, values, and life visions',
-    ...domains.map((d) =>
-      `- ${d.name}: values=[${d.values.join(', ')}] | vision="${d.vision}"`
-    ),
+    '## Long-term goals',
+    ...(ltGoals.length ? ltGoals.map(goalLine) : ['- (none)']),
     '',
-    '## All goals (id | title | horizon | timeframe | domain | values | status)',
-    ...goals.map((g) => {
-      const dom = domains.find((d) => d.id === g.domainId);
-      const vals = resolveGoalValues(g);
-      const status = g.completedAt ? 'completed' : 'active';
-      return `- ${g.id} | "${g.title}" | ${g.horizon} | ${g.timeframe}${g.horizon === 'long' ? 'yr' : 'mo'} | ${dom?.name ?? '?'} | [${vals}] | ${status}`;
-    }),
+    '## Short-term goals',
+    ...(stGoals.length ? stGoals.map(goalLine) : ['- (none)']),
     '',
-    '## All habits & tasks (id | kind | title | goal | recurrence/due | streak | completion history)',
+    '## Habits & tasks (title | goal | cadence | streak | recent completions)',
     ...habits.map((h) => {
       const g = goalMap.get(h.goalId);
       const goalTitle = g?.title ?? '?';
       if (h.kind === 'task') {
-        const status = h.completed ? `completed ${h.completedAt ? toDateStr(new Date(h.completedAt)) : '?'}` : `open, due:${h.dueDate ?? 'none'}`;
-        return `- ${h.id} | task | "${h.title}" | goal:"${goalTitle}" | ${status}`;
+        const status = h.completed ? `done` : `due:${h.dueDate ?? 'none'}`;
+        return `- "${h.title}" | goal:"${goalTitle}" | task | ${status}`;
       }
-      const cadence = h.recurrence ?? 'daily';
       const streak = h.streak ?? 0;
-      const recent = (h.completions ?? []).slice(-14).join(', ') || 'none';
-      return `- ${h.id} | habit | "${h.title}" | goal:"${goalTitle}" | ${cadence} | streak:${streak} | recent completions:[${recent}]`;
+      const recent = (h.completions ?? []).slice(-7).join(', ') || 'none';
+      return `- "${h.title}" | goal:"${goalTitle}" | ${h.recurrence ?? 'daily'} | streak:${streak} | recent:[${recent}]`;
     }),
     '',
-    '## Weekly reflections (week | date | value scores | note)',
+    '## Weekly reflections (most recent first)',
     ...(reflections.length > 0
-      ? reflections.slice(-8).map((r) => {
+      ? reflections.slice(-4).reverse().map((r) => {
           const scores = Object.entries(r.scores)
             .filter(([k]) => valueLookup.has(k))
             .map(([k, v]) => `${valueLookup.get(k)}:${v}`)
             .join(', ');
-          return `- week ${r.weekNumber} | ${toDateStr(new Date(r.date))} | [${scores || 'no current values scored'}] | "${r.note}"`;
+          return `- week ${r.weekNumber} | [${scores || 'no scores'}] | "${r.note}"`;
         })
-      : ['- (no reflections yet)']),
+      : ['- (none yet)']),
   ];
 
   const feedback = getCoachFeedbackHistory().slice(-20);
   const liked = feedback.filter((f) => f.rating === 'up').map((f) => `"${f.title}"`).join(', ');
   const disliked = feedback.filter((f) => f.rating === 'down').map((f) => `"${f.title}"`).join(', ');
   const feedbackLines = (liked || disliked)
-    ? `\n## User feedback on past cards\n- Liked: ${liked || 'none'}\n- Disliked: ${disliked || 'none'}\nWrite more cards like the liked ones and avoid the style/tone of the disliked ones.\n`
+    ? `\n## Style feedback on past cards\n- Liked: ${liked || 'none'}\n- Disliked: ${disliked || 'none'}\nMatch the style of liked cards; avoid the tone of disliked ones.\n`
     : '';
 
-  const prompt = `You are a direct personal coach. Write a daily coaching card based on the user's data below.
+  const prompt = `You are a direct personal coach. Write one daily coaching card grounded in the user's goals.
 
-Rules:
-- Title: 4–6 words max.
-- Blurb: exactly 2 sentences. First sentence: one specific encouragement (name a real habit, goal, or streak). Second sentence: one concrete action or nudge tied to a real gap.
-- ONLY use value names exactly as they appear in the "Domains, values" section. Never paraphrase, reinterpret, or invent related concepts.
+Approach:
+- Lead with the user's most important active goal(s). TOP PRIORITY goals (first in their list per domain) carry the most weight.
+- Reference both a long-term goal (the deeper "why") and a short-term goal or habit (the concrete "what now") where possible.
+- The weekly value thread is context — let it colour the message naturally, not dominate it.
 - Only reference goals, habits, and values that appear verbatim in the data below.
-- Tone: warm but brief. No filler.
+- Tone: warm, direct, brief. No filler.
+
+Format:
+- Title: 4–6 words, grounded in a real goal or habit.
+- Blurb: exactly 2 sentences. First: encouragement tied to a specific goal, habit, or recent progress. Second: one concrete nudge for today.
 ${feedbackLines}
 ${contextLines.join('\n')}
 
