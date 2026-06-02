@@ -334,6 +334,7 @@ h1 {
 }
 
 .node.focus-goal::before { background: rgba(255, 255, 255, 0.9); width: 3px; }
+.goal-thread.focus-thread .node::before { background: rgba(255, 255, 255, 0.75); width: 3px; }
 
 .node-foot {
   display: flex;

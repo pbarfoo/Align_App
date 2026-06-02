@@ -1003,7 +1003,7 @@ function Align({
           const ltHasChildren = habits.some((h) => h.goalId === lg.id) || domainGoals.some((s) => s.parentGoalId === lg.id);
           return (
           <SortableGoal key={lg.id} id={lg.id}>
-          <div className="goal-thread" style={{ '--thread-color': THREAD_PALETTE[ltIdx % THREAD_PALETTE.length] } as React.CSSProperties}>
+          <div className={`goal-thread${ltIdx === 0 ? ' focus-thread' : ''}`} style={{ '--thread-color': THREAD_PALETTE[ltIdx % THREAD_PALETTE.length] } as React.CSSProperties}>
             <GoalNode
               goal={lg}
               values={lgValues}
