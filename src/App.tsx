@@ -2058,11 +2058,17 @@ function Today({
     }
     return s;
   };
-  const todaysFocus = [...openHabits, ...openTasks]
+  const topFocusHabits = openHabits
     .map((item) => ({ item, score: focusScore(item) }))
     .sort((a, b) => b.score - a.score)
     .slice(0, 3)
     .map((x) => x.item);
+  const topFocusTasks = openTasks
+    .map((item) => ({ item, score: focusScore(item) }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3)
+    .map((x) => x.item);
+  const todaysFocus = [...topFocusHabits, ...topFocusTasks];
 
   const allActionableIds = [...openHabits, ...openTasks].map((h) => h.id);
 
