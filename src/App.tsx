@@ -2168,18 +2168,18 @@ function Today({
                 <button
                   className={`coach-feedback-btn up${coachRating === 'up' ? ' active' : ''}`}
                   onClick={() => {
-                    const next = coachRating === 'up' ? null : 'up';
-                    setCoachRating(next);
-                    saveCoachFeedback(today, coachCard.title, next);
+                    if (coachRating === 'up') return;
+                    setCoachRating('up');
+                    saveCoachFeedback(today, coachCard.title, 'up');
                   }}
                   aria-label="Helpful"
                 >👍</button>
                 <button
                   className={`coach-feedback-btn down${coachRating === 'down' ? ' active' : ''}`}
                   onClick={() => {
-                    const next = coachRating === 'down' ? null : 'down';
-                    setCoachRating(next);
-                    saveCoachFeedback(today, coachCard.title, next);
+                    if (coachRating === 'down') return;
+                    setCoachRating('down');
+                    saveCoachFeedback(today, coachCard.title, 'down');
                   }}
                   aria-label="Not helpful"
                 >👎</button>

@@ -247,7 +247,7 @@ function valueFingerprint(domains: Domain[]): string {
 }
 
 function coachCacheKey(date: string, domains: Domain[]) {
-  return `gemini-coach-v8-${date}-${valueFingerprint(domains)}`;
+  return `gemini-coach-v9-${date}-${valueFingerprint(domains)}`;
 }
 
 export async function getGeminiCoachCard(
@@ -342,7 +342,7 @@ export async function getGeminiCoachCard(
   const liked = feedback.filter((f) => f.rating === 'up').map((f) => `"${f.title}"`).join(', ');
   const disliked = feedback.filter((f) => f.rating === 'down').map((f) => `"${f.title}"`).join(', ');
   const feedbackLines = (liked || disliked)
-    ? `\n## User feedback on past cards\n- Liked: ${liked || 'none'}\n- Disliked: ${disliked || 'none'}\nWrite more cards like the liked ones and avoid the style/tone of the disliked ones.\n`
+    ? `\n## Style feedback from user on past cards\nUse this ONLY to shape writing style, tone, and format — NOT to change which value, goal, or habit you spotlight (that is always determined by the user's real data above).\n- Liked (write in a similar style): ${liked || 'none'}\n- Disliked (avoid this style/tone): ${disliked || 'none'}\n`
     : '';
 
   const validValues = domains.flatMap((d) => d.values);
