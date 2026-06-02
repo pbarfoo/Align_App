@@ -846,6 +846,8 @@ h1 {
   padding: 8px 12px;
   border-radius: 8px;
 }
+.node.short.action-row { margin-left: 56px; }
+.node.habit.action-row { margin-left: 76px; }
 .action-row .node-left-col { gap: 3px; }
 
 .action-title-row {
