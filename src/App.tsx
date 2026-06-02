@@ -2141,12 +2141,6 @@ function Today({
         forward.
       </p>
 
-      {weekValue && (
-        <div className="week-value">
-          This week: leaning into <b>{weekValue}</b>
-        </div>
-      )}
-
       <div className="progress-wrap">
         <div className="progress-num">
           {done}
