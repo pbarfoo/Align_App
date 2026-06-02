@@ -39,13 +39,52 @@ function cacheKey(date: string) {
   return `gemini-focus-v2-${date}`;
 }
 
-function isoWeek(d: Date): number {
-  const t = new Date(d.valueOf());
-  const dayNr = (d.getDay() + 6) % 7;
-  t.setDate(t.getDate() - dayNr + 3);
-  const jan4 = new Date(t.getFullYear(), 0, 4);
-  const diff = t.getTime() - jan4.getTime();
-  return 1 + Math.round((diff / 86_400_000 - 3 + ((jan4.getDay() + 6) % 7)) / 7);
+/**
+ * Returns the value most starved of recent habit activity — the value
+ * whose associated goals have the lowest average habit completions in the
+ * last 14 days. Mirrors the logic used to surface neglected goals so the
+ * weekly nudge is always grounded in real behaviour gaps.
+ */
+function neglectedValue(domains: Domain[], goals: Goal[], habits: Habit[]): string | null {
+  const activeGoals = goals.filter((g) => !g.completedAt);
+  // score[domainId:valueName] = { completions, habitCount }
+  const score = new Map<string, { completions: number; habitCount: number }>();
+
+  domains.forEach((d) => {
+    d.values.forEach((v) => {
+      const tagged = activeGoals.filter(
+        (g) => g.domainId === d.id && g.valueIndexes.some((i) => d.values[i] === v),
+      );
+      tagged.forEach((g) => {
+        habits
+          .filter((h) => h.goalId === g.id && h.kind === 'habit' && !h.completed)
+          .forEach((h) => {
+            const recent = (h.completions ?? []).filter((dateStr) => {
+              return (Date.now() - new Date(dateStr + 'T12:00').getTime()) / 86_400_000 <= 14;
+            }).length;
+            const key = `${d.id}:${v}`;
+            const cur = score.get(key) ?? { completions: 0, habitCount: 0 };
+            score.set(key, { completions: cur.completions + recent, habitCount: cur.habitCount + 1 });
+          });
+      });
+    });
+  });
+
+  // Pick the value with the fewest recent completions relative to its habits
+  let worstKey: string | null = null;
+  let worstRate = Infinity;
+  for (const [key, { completions, habitCount }] of score) {
+    if (habitCount === 0) continue;
+    const rate = completions / habitCount;
+    if (rate < worstRate) { worstRate = rate; worstKey = key; }
+  }
+
+  if (!worstKey) {
+    // No habits linked to any value — fall back to the first value overall
+    const all = domains.flatMap((d) => d.values);
+    return all.length ? all[0] : null;
+  }
+  return worstKey.slice(worstKey.indexOf(':') + 1);
 }
 
 function toDateStr(d: Date) {
@@ -77,8 +116,7 @@ export async function getGeminiFocusPicks(
 
   const now = new Date();
   const dayName = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][now.getDay()];
-  const allValues = domains.flatMap((d) => d.values);
-  const weekValue = allValues.length ? allValues[isoWeek(now) % allValues.length] : null;
+  const weekValue = neglectedValue(domains, goals, habits);
 
   const actionableSet = new Set(actionableIds);
   const actionable = habits.filter((h) => actionableSet.has(h.id));
@@ -110,7 +148,7 @@ export async function getGeminiFocusPicks(
 
   const contextLines: string[] = [
     `Today is ${dayName}, ${today}.`,
-    weekValue ? `This week's focus theme: "${weekValue}".` : '',
+    weekValue ? `Most neglected value right now (fewest recent habit completions): "${weekValue}". Favour items that serve this value.` : '',
     '',
     '## Domains, values, and visions',
     ...domains.map((d) =>
@@ -148,6 +186,7 @@ Selection criteria (weigh all of these):
 4. Momentum: protecting an active streak matters.
 5. Short-term goals are the active push; long-term goal items need periodic attention to avoid neglect.
 6. Focus: if any goal is marked "IN FOCUS", strongly favor items tied to that goal — the user has declared it their top commitment right now.
+7. Neglected value: items that serve the most neglected value (listed above) should be favoured to rebalance attention.
 
 For each pick, write a reason that is: 5–10 words, specific (reference the goal or value), and motivating.
 
@@ -228,8 +267,7 @@ export async function getGeminiCoachCard(
 
   const now = new Date();
   const dayName = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][now.getDay()];
-  const allValues = domains.flatMap((d) => d.values);
-  const weekValue = allValues.length ? allValues[isoWeek(now) % allValues.length] : null;
+  const weekValue = neglectedValue(domains, goals, habits);
 
   const goalMap = new Map(goals.map((g) => [g.id, g]));
 
@@ -258,7 +296,7 @@ export async function getGeminiCoachCard(
 
   const contextLines: string[] = [
     `Today is ${dayName}, ${today}.`,
-    weekValue ? `This week's focus theme: "${weekValue}".` : '',
+    weekValue ? `Most neglected value right now (fewest recent habit completions): "${weekValue}". Consider addressing this gap.` : '',
     '',
     '## Domains, values, and life visions',
     ...domains.map((d) =>
