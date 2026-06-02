@@ -2366,14 +2366,6 @@ function Reflect({
               <span className="insight-value">{labelFor(worstEntry[0])}</span>
             </div>
           )}
-          {atRisk.length > 0 && (
-            <div className="insight-risk">
-              <div className="insight-risk-label">Goals that need attention</div>
-              {atRisk.map((g) => (
-                <div key={g.id} className="insight-goal-chip">{g.title}</div>
-              ))}
-            </div>
-          )}
           {scoreEntries.length === 0 && (
             <p style={{ color: 'var(--muted)', fontSize: 14 }}>
               No values were scored — nothing to summarise.
@@ -3105,22 +3097,6 @@ function ReviewPanel({
               Score 0–100%: reflection 70%, goal &amp; habit activity 30%
             </div>
           </div>
-
-          {/* Goals at risk */}
-          {atRiskGoals.length > 0 && (
-            <div className="review-risk-section">
-              <div className="review-section-label">Goals at risk this week</div>
-              {atRiskGoals.map((g) => {
-                const d = domains.find((x) => x.id === g.domainId);
-                return (
-                  <div key={g.id} className="review-risk-row">
-                    <span className="review-risk-domain">{d?.name}</span>
-                    <span className="review-risk-title">{g.title}</span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
 
           {/* Reflection log */}
           <div className="review-log-section">
