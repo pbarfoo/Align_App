@@ -980,32 +980,6 @@ function Align({
               isFocus={isFocus}
               showDragHandle
             />
-            {!collapsedGoals.has(goal.id) && domainGoals
-              .filter((s) => s.parentGoalId === goal.id)
-              .map((sg) => (
-                <ShortWithActions
-                  key={sg.id}
-                  goal={sg}
-                  displayValues={[]}
-                  habits={habits}
-                  cls={cls}
-                  lit={lit}
-                  setLit={setLit}
-                  addingFor={addingFor}
-                  setAddingFor={setAddingFor}
-                  onAddAction={addAction}
-                  onDeleteGoal={deleteGoal}
-                  onRenameGoal={updateGoalTitle}
-                  onChangeGoalTimeframe={updateGoalTimeframe}
-                  onDeleteHabit={deleteHabit}
-                  onEditHabit={updateHabit}
-                  onToggleGoalComplete={toggleGoalComplete}
-                  onToggleHabit={toggleHabit}
-                  hideCompleted={hideCompleted}
-                  domainValues={domain.values}
-                  domainVision={domain.vision}
-                />
-              ))}
             {!collapsedGoals.has(goal.id) && habits
               .filter((h) => {
                 if (h.goalId !== goal.id) return false;
@@ -1059,6 +1033,32 @@ function Align({
                   </React.Fragment>
                 );
               })}
+            {!collapsedGoals.has(goal.id) && domainGoals
+              .filter((s) => s.parentGoalId === goal.id)
+              .map((sg) => (
+                <ShortWithActions
+                  key={sg.id}
+                  goal={sg}
+                  displayValues={[]}
+                  habits={habits}
+                  cls={cls}
+                  lit={lit}
+                  setLit={setLit}
+                  addingFor={addingFor}
+                  setAddingFor={setAddingFor}
+                  onAddAction={addAction}
+                  onDeleteGoal={deleteGoal}
+                  onRenameGoal={updateGoalTitle}
+                  onChangeGoalTimeframe={updateGoalTimeframe}
+                  onDeleteHabit={deleteHabit}
+                  onEditHabit={updateHabit}
+                  onToggleGoalComplete={toggleGoalComplete}
+                  onToggleHabit={toggleHabit}
+                  hideCompleted={hideCompleted}
+                  domainValues={domain.values}
+                  domainVision={domain.vision}
+                />
+              ))}
             {!collapsedGoals.has(goal.id) && addingFor === goal.id && (
               addingForKind === null ? (
                 <div className="inline-add short add-form">
