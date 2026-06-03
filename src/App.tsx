@@ -776,10 +776,7 @@ function Align({
 
   const domain = domains.find((d) => d.id === domainId)!;
   const domainGoals = goals.filter((g) => g.domainId === domainId);
-  const longGoals = domainGoals.filter((g) => g.horizon === 'long');
-  const looseShort = domainGoals.filter(
-    (g) => g.horizon === 'short' && !g.parentGoalId,
-  );
+  const topGoals = domainGoals.filter((g) => !g.parentGoalId);
 
   const litChain = useMemo(() => {
     if (!lit) return null;
@@ -815,46 +812,26 @@ function Align({
   const cls = (id: string, base = 'node') =>
     `${base}${litChain ? (litChain.has(id) ? ' lit' : ' dim') : ''}`;
 
-  const addLongGoal = (valueIndexes: number[], title: string, years: number) => {
+  const addGoal = (
+    valueIndexes: number[],
+    title: string,
+    horizon: 'long' | 'short',
+    timeframe: number,
+    parentGoalId?: string,
+  ) => {
     setGoals((prev) => [...prev, {
       id: uid('g'),
       domainId,
       valueIndexes,
-      horizon: 'long' as const,
+      horizon,
       title,
+      ...(parentGoalId ? { parentGoalId } : {}),
       createdAt: Date.now(),
-      timeframe: years,
-    }]);
-    flash('Long-term goal added');
-  };
-
-  const addShortGoal = (parent: Goal, title: string, months: number, valueIndexes: number[] = []) => {
-    setGoals((prev) => [...prev, {
-      id: uid('g'),
-      domainId,
-      valueIndexes,
-      horizon: 'short' as const,
-      title,
-      parentGoalId: parent.id,
-      createdAt: Date.now(),
-      timeframe: months,
+      timeframe,
     }]);
     setAddingFor(null);
     setAddingForKind(null);
-    flash('Short-term goal added');
-  };
-
-  const addLooseShortGoal = (title: string, months: number, valueIndexes: number[] = []) => {
-    setGoals((prev) => [...prev, {
-      id: uid('g'),
-      domainId,
-      valueIndexes,
-      horizon: 'short' as const,
-      title,
-      createdAt: Date.now(),
-      timeframe: months,
-    }]);
-    flash('Short-term goal added');
+    flash('Goal added');
   };
 
   const addAction = (
@@ -893,8 +870,8 @@ function Align({
   const updateGoalTitle = (id: string, title: string) =>
     setGoals((prev) => prev.map((g) => (g.id === id ? { ...g, title } : g)));
 
-  const updateGoalTimeframe = (id: string, timeframe: number) =>
-    setGoals((prev) => prev.map((g) => (g.id === id ? { ...g, timeframe } : g)));
+  const updateGoalTimeframe = (id: string, horizon: 'long' | 'short', timeframe: number) =>
+    setGoals((prev) => prev.map((g) => (g.id === id ? { ...g, horizon, timeframe } : g)));
 
 
   const updateHabit = (id: string, updates: Partial<Habit>) =>
@@ -995,45 +972,44 @@ function Align({
 
       <div className="spine">
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-        <SortableContext items={longGoals.filter(lg => !(hideCompleted && !!lg.completedAt)).map(g => g.id)} strategy={verticalListSortingStrategy}>
-        {longGoals
-          .filter((lg) => !(hideCompleted && !!lg.completedAt))
-          .map((lg, ltIdx) => {
-          const lgValues = lg.valueIndexes.map((i) => domain.values[i]).filter(Boolean);
-          const ltHasChildren = habits.some((h) => h.goalId === lg.id) || domainGoals.some((s) => s.parentGoalId === lg.id);
+        <SortableContext items={topGoals.filter(g => !(hideCompleted && !!g.completedAt)).map(g => g.id)} strategy={verticalListSortingStrategy}>
+        {topGoals
+          .filter((g) => !(hideCompleted && !!g.completedAt))
+          .map((goal, goalIdx) => {
+          const goalValues = goal.valueIndexes.map((i) => domain.values[i]).filter(Boolean);
+          const hasChildren = habits.some((h) => h.goalId === goal.id) || domainGoals.some((s) => s.parentGoalId === goal.id);
+          const isFocus = goalIdx === 0;
           return (
-          <SortableGoal key={lg.id} id={lg.id}>
-          <div className={`goal-thread${ltIdx === 0 ? ' focus-thread' : ''}`} style={{ '--thread-color': THREAD_PALETTE[ltIdx % THREAD_PALETTE.length] } as React.CSSProperties}>
+          <SortableGoal key={goal.id} id={goal.id}>
+          <div className={`goal-thread${isFocus ? ' focus-thread' : ''}`} style={{ '--thread-color': THREAD_PALETTE[goalIdx % THREAD_PALETTE.length] } as React.CSSProperties}>
             <GoalNode
-              goal={lg}
-              values={lgValues}
+              goal={goal}
+              values={goalValues}
               domainValues={domain.values}
-              valueIndexes={lg.valueIndexes}
-              editValuesActive={editValuesFor === lg.id}
-              onEditValues={() =>
-                setEditValuesFor(editValuesFor === lg.id ? null : lg.id)
-              }
-              onChangeValues={(idxs) => updateGoalValues(lg.id, idxs)}
-              className={cls(`g:${lg.id}`)}
-              onClick={() => setLit(lit === `g:${lg.id}` ? null : `g:${lg.id}`)}
+              valueIndexes={goal.valueIndexes}
+              editValuesActive={editValuesFor === goal.id}
+              onEditValues={() => setEditValuesFor(editValuesFor === goal.id ? null : goal.id)}
+              onChangeValues={(idxs) => updateGoalValues(goal.id, idxs)}
+              className={cls(`g:${goal.id}`)}
+              onClick={() => setLit(lit === `g:${goal.id}` ? null : `g:${goal.id}`)}
               canAddChild
-              addActive={addingFor === lg.id}
+              addActive={addingFor === goal.id}
               onAddChild={() => {
-                if (addingFor === lg.id) { setAddingFor(null); setAddingForKind(null); }
-                else { setAddingFor(lg.id); setAddingForKind(null); }
+                if (addingFor === goal.id) { setAddingFor(null); setAddingForKind(null); }
+                else { setAddingFor(goal.id); setAddingForKind(null); }
               }}
-              onDelete={() => deleteGoal(lg.id)}
-              onRename={(title) => updateGoalTitle(lg.id, title)}
-              onChangeTimeframe={(t) => updateGoalTimeframe(lg.id, t)}
-              isComplete={!!lg.completedAt}
-              onToggleComplete={() => toggleGoalComplete(lg.id)}
-              isCollapsed={collapsedGoals.has(lg.id)}
-              onToggleCollapse={ltHasChildren ? () => toggleCollapse(lg.id) : undefined}
-              isFocus={ltIdx === 0}
+              onDelete={() => deleteGoal(goal.id)}
+              onRename={(title) => updateGoalTitle(goal.id, title)}
+              onChangeTimeframe={(horizon, t) => updateGoalTimeframe(goal.id, horizon, t)}
+              isComplete={!!goal.completedAt}
+              onToggleComplete={() => toggleGoalComplete(goal.id)}
+              isCollapsed={collapsedGoals.has(goal.id)}
+              onToggleCollapse={hasChildren ? () => toggleCollapse(goal.id) : undefined}
+              isFocus={isFocus}
               showDragHandle
             />
-            {!collapsedGoals.has(lg.id) && domainGoals
-              .filter((s) => s.parentGoalId === lg.id)
+            {!collapsedGoals.has(goal.id) && domainGoals
+              .filter((s) => s.parentGoalId === goal.id)
               .map((sg) => (
                 <ShortWithActions
                   key={sg.id}
@@ -1058,9 +1034,9 @@ function Align({
                   domainVision={domain.vision}
                 />
               ))}
-            {!collapsedGoals.has(lg.id) && habits
+            {!collapsedGoals.has(goal.id) && habits
               .filter((h) => {
-                if (h.goalId !== lg.id) return false;
+                if (h.goalId !== goal.id) return false;
                 if (!hideCompleted) return true;
                 if (h.kind === 'task') return !h.completed;
                 return !isHabitDoneThisPeriod(h);
@@ -1090,37 +1066,33 @@ function Align({
                       </div>
                     </div>
                     <div className="node-ctrls">
-                      <button
-                        className="node-del"
-                        title="Delete"
+                      <button className="node-del" title="Delete"
                         onClick={(e) => { e.stopPropagation(); deleteHabit(h.id); }}
-                      >
-                        <TrashIcon />
-                      </button>
+                      ><TrashIcon /></button>
                     </div>
                   </div>
                 );
               })}
-            {!collapsedGoals.has(lg.id) && addingFor === lg.id && (
+            {!collapsedGoals.has(goal.id) && addingFor === goal.id && (
               addingForKind === null ? (
                 <div className="inline-add short add-form">
                   <div className="seg">
-                    <button type="button" onClick={() => setAddingForKind('short')}>Sub-goal (1–12 mo)</button>
+                    <button type="button" onClick={() => setAddingForKind('short')}>Sub-goal</button>
                     <button type="button" onClick={() => setAddingForKind('action')}>Habit / Task</button>
                   </div>
                   <button className="mini-ghost" onClick={() => { setAddingFor(null); setAddingForKind(null); }}>Cancel</button>
                 </div>
               ) : addingForKind === 'short' ? (
-                <AddShortGoalForm
+                <AddGoalForm
                   domainValues={domain.values}
                   forceOpen
                   onClose={() => { setAddingFor(null); setAddingForKind(null); }}
                   indent="short"
-                  onAdd={(title, months, vi) => addShortGoal(lg, title, months, vi)}
+                  onAdd={(idxs, title, horizon, timeframe) => addGoal(idxs, title, horizon, timeframe, goal.id)}
                 />
               ) : (
                 <AddActionForm
-                  goalId={lg.id}
+                  goalId={goal.id}
                   onAdd={addAction}
                   onClose={() => { setAddingFor(null); setAddingForKind(null); }}
                 />
@@ -1133,58 +1105,9 @@ function Align({
         </SortableContext>
         </DndContext>
 
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-        <SortableContext items={looseShort.filter(sg => !(hideCompleted && !!sg.completedAt)).map(g => g.id)} strategy={verticalListSortingStrategy}>
-        {looseShort
-          .filter((sg) => !(hideCompleted && !!sg.completedAt))
-          .map((sg, stIdx) => {
-          const isSTFocus = longGoals.filter(lg => !(hideCompleted && !!lg.completedAt)).length === 0 && stIdx === 0;
-          return (
-          <SortableGoal key={sg.id} id={sg.id}>
-          <div className={isSTFocus ? 'focus-thread' : undefined} style={{ '--thread-color': THREAD_PALETTE[(longGoals.length + stIdx) % THREAD_PALETTE.length] } as React.CSSProperties}>
-            <ShortWithActions
-              goal={sg}
-              displayValues={sg.valueIndexes.map((i) => domain.values[i]).filter(Boolean)}
-              habits={habits}
-              cls={cls}
-              lit={lit}
-              setLit={setLit}
-              addingFor={addingFor}
-              setAddingFor={setAddingFor}
-              onAddAction={addAction}
-              onDeleteGoal={deleteGoal}
-              onRenameGoal={updateGoalTitle}
-              onChangeGoalTimeframe={updateGoalTimeframe}
-              onDeleteHabit={deleteHabit}
-              onEditHabit={updateHabit}
-              onToggleGoalComplete={toggleGoalComplete}
-              onToggleHabit={toggleHabit}
-              hideCompleted={hideCompleted}
-              domainValues={domain.values}
-              domainVision={domain.vision}
-              editValuesActive={editValuesFor === sg.id}
-              onEditValues={() => setEditValuesFor(editValuesFor === sg.id ? null : sg.id)}
-              onChangeValues={(idxs) => updateGoalValues(sg.id, idxs)}
-              valueIndexes={sg.valueIndexes}
-              isCollapsed={collapsedGoals.has(sg.id)}
-              onToggleCollapse={habits.some((h) => h.goalId === sg.id) ? () => toggleCollapse(sg.id) : undefined}
-              isFocus={longGoals.filter(lg => !(hideCompleted && !!lg.completedAt)).length === 0 && stIdx === 0}
-              showDragHandle
-            />
-          </div>
-          </SortableGoal>
-          );
-          })}
-        </SortableContext>
-        </DndContext>
-
-        <AddShortGoalForm
-          domainValues={domain.values}
-          onAdd={addLooseShortGoal}
-        />
         <AddGoalForm
           domainValues={domain.values}
-          onAdd={(idxs, title, years) => addLongGoal(idxs, title, years)}
+          onAdd={(idxs, title, horizon, timeframe) => addGoal(idxs, title, horizon, timeframe)}
         />
       </div>
     </div>
@@ -1238,7 +1161,7 @@ function ShortWithActions({
   ) => void;
   onDeleteGoal: (id: string) => void;
   onRenameGoal: (id: string, title: string) => void;
-  onChangeGoalTimeframe: (id: string, t: number) => void;
+  onChangeGoalTimeframe: (id: string, horizon: 'long' | 'short', t: number) => void;
   onDeleteHabit: (id: string) => void;
   onEditHabit: (id: string, updates: Partial<Habit>) => void;
   onToggleGoalComplete: (id: string) => void;
@@ -1271,7 +1194,7 @@ function ShortWithActions({
         }
         onDelete={() => onDeleteGoal(goal.id)}
         onRename={(title) => onRenameGoal(goal.id, title)}
-        onChangeTimeframe={(t) => onChangeGoalTimeframe(goal.id, t)}
+        onChangeTimeframe={(horizon, t) => onChangeGoalTimeframe(goal.id, horizon, t)}
         isComplete={!!goal.completedAt}
         onToggleComplete={() => onToggleGoalComplete(goal.id)}
         editValuesActive={editValuesActive}
@@ -1513,7 +1436,7 @@ function AddActionForm({
   );
 }
 
-function AddShortGoalForm({
+function AddGoalForm({
   domainValues,
   onAdd,
   forceOpen,
@@ -1521,25 +1444,26 @@ function AddShortGoalForm({
   indent,
 }: {
   domainValues: string[];
-  onAdd: (title: string, months: number, valueIndexes: number[]) => void;
+  onAdd: (valueIndexes: number[], title: string, horizon: 'long' | 'short', timeframe: number) => void;
   forceOpen?: boolean;
   onClose?: () => void;
   indent?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState('');
-  const [months, setMonths] = useState('1');
   const [picked, setPicked] = useState<number[]>([]);
+  const [timeKey, setTimeKey] = useState('short:1');
 
   const isOpen = forceOpen || open;
   const cls = `inline-add${indent ? ` ${indent}` : ''}`;
 
-  const reset = () => { setTitle(''); setMonths('1'); setPicked([]); };
+  const reset = () => { setTitle(''); setPicked([]); setTimeKey('short:1'); };
   const close = () => { reset(); forceOpen ? onClose?.() : setOpen(false); };
 
   const submit = () => {
     if (!title.trim()) return;
-    onAdd(title.trim(), Number(months), [...picked].sort((a, b) => a - b));
+    const [h, t] = timeKey.split(':');
+    onAdd([...picked].sort((a, b) => a - b), title.trim(), h as 'long' | 'short', Number(t));
     close();
   };
 
@@ -1548,7 +1472,7 @@ function AddShortGoalForm({
 
   if (!isOpen) return (
     <button className={`${cls} add-btn`} onClick={() => setOpen(true)}>
-      + Goal (1–12 mo)
+      + Add goal
     </button>
   );
 
@@ -1568,9 +1492,7 @@ function AddShortGoalForm({
           <div className="field-label">Values (optional)</div>
           <div className="value-check">
             {domainValues.map((v, i) => (
-              <button
-                key={v}
-                type="button"
+              <button key={v} type="button"
                 className={`value-chip small${picked.includes(i) ? ' on' : ''}`}
                 onClick={() => togglePick(i)}
               >{v}</button>
@@ -1578,103 +1500,19 @@ function AddShortGoalForm({
           </div>
         </>
       )}
-      <select value={months} onChange={(e) => setMonths(e.target.value)}>
-        {[1, 3, 6, 12].map((m) => (
-          <option key={m} value={m}>{m === 12 ? '1 Year' : `${m} Month${m > 1 ? 's' : ''}`}</option>
-        ))}
+      <select value={timeKey} onChange={(e) => setTimeKey(e.target.value)}>
+        <option value="short:1">1 month</option>
+        <option value="short:3">3 months</option>
+        <option value="short:6">6 months</option>
+        <option value="short:12">1 year</option>
+        <option value="long:2">2 years</option>
+        <option value="long:3">3 years</option>
+        <option value="long:4">4 years</option>
+        <option value="long:5">5 years</option>
       </select>
       <div className="add-actions">
         <button className="mini-primary" onClick={submit}>Add</button>
         <button className="mini-ghost" onClick={close}>Cancel</button>
-      </div>
-    </div>
-  );
-}
-
-function AddGoalForm({
-  domainValues,
-  onAdd,
-}: {
-  domainValues: string[];
-  onAdd: (valueIndexes: number[], title: string, years: number) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [title, setTitle] = useState('');
-  const [picked, setPicked] = useState<number[]>([]);
-  const [years, setYears] = useState('1');
-
-  const reset = () => {
-    setTitle('');
-    setPicked([]);
-    setYears('1');
-  };
-
-  const toggle = (i: number) =>
-    setPicked((p) => (p.includes(i) ? p.filter((x) => x !== i) : [...p, i]));
-
-  const submit = () => {
-    if (!title.trim()) return;
-    onAdd([...picked].sort((a, b) => a - b), title, Number(years));
-    reset();
-    setOpen(false);
-  };
-
-  if (!open) {
-    return (
-      <button className="inline-add add-btn" onClick={() => setOpen(true)}>
-        + Goal (1–5 yr)
-      </button>
-    );
-  }
-
-  return (
-    <div className="inline-add add-form">
-      <div className="ai-field">
-        <input
-          autoFocus
-          placeholder="e.g. Ship a product I fully own"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && submit()}
-        />
-      </div>
-      {domainValues.length > 0 && (
-        <>
-          <div className="field-label">Values (optional)</div>
-          <div className="value-check">
-            {domainValues.map((v, i) => (
-              <button
-                key={v}
-                type="button"
-                className={`value-chip small${picked.includes(i) ? ' on' : ''}`}
-                onClick={() => toggle(i)}
-              >
-                {v}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-      <select value={years} onChange={(e) => setYears(e.target.value)}>
-        {[1, 2, 3, 4, 5].map((y) => (
-          <option key={y} value={y}>
-            {y} Year{y > 1 ? 's' : ''}
-          </option>
-        ))}
-      </select>
-      <div className="add-actions">
-        <button className="mini-primary" onClick={submit}>
-          Add
-        </button>
-        <button
-          className="mini-ghost"
-          onClick={() => {
-            reset();
-            setOpen(false);
-          }}
-        >
-          Cancel
-        </button>
       </div>
     </div>
   );
@@ -1716,7 +1554,7 @@ function GoalNode({
   onAddChild?: () => void;
   onDelete?: () => void;
   onRename?: (title: string) => void;
-  onChangeTimeframe?: (t: number) => void;
+  onChangeTimeframe?: (horizon: 'long' | 'short', t: number) => void;
   editValuesActive?: boolean;
   onEditValues?: () => void;
   onChangeValues?: (idxs: number[]) => void;
@@ -1776,16 +1614,24 @@ function GoalNode({
           {editingTimeframe && onChangeTimeframe ? (
             <select
               className="timeframe-select"
-              value={goal.timeframe}
+              value={`${goal.horizon}:${goal.timeframe}`}
               autoFocus
               onClick={(e) => e.stopPropagation()}
-              onChange={(e) => { onChangeTimeframe(Number(e.target.value)); setEditingTimeframe(false); }}
+              onChange={(e) => {
+                const [h, t] = e.target.value.split(':');
+                onChangeTimeframe(h as 'long' | 'short', Number(t));
+                setEditingTimeframe(false);
+              }}
               onBlur={() => setEditingTimeframe(false)}
             >
-              {goal.horizon === 'long'
-                ? [1,2,3,4,5].map((y) => <option key={y} value={y}>{y} yr</option>)
-                : [1,3,6,12].map((m) => <option key={m} value={m}>{m === 12 ? '1 yr' : `${m} mo`}</option>)
-              }
+              <option value="short:1">1 mo</option>
+              <option value="short:3">3 mo</option>
+              <option value="short:6">6 mo</option>
+              <option value="short:12">1 yr</option>
+              <option value="long:2">2 yr</option>
+              <option value="long:3">3 yr</option>
+              <option value="long:4">4 yr</option>
+              <option value="long:5">5 yr</option>
             </select>
           ) : (
             <span
