@@ -1137,9 +1137,11 @@ function Align({
         <SortableContext items={looseShort.filter(sg => !(hideCompleted && !!sg.completedAt)).map(g => g.id)} strategy={verticalListSortingStrategy}>
         {looseShort
           .filter((sg) => !(hideCompleted && !!sg.completedAt))
-          .map((sg, stIdx) => (
+          .map((sg, stIdx) => {
+          const isSTFocus = longGoals.filter(lg => !(hideCompleted && !!lg.completedAt)).length === 0 && stIdx === 0;
+          return (
           <SortableGoal key={sg.id} id={sg.id}>
-          <div style={{ '--thread-color': THREAD_PALETTE[(longGoals.length + stIdx) % THREAD_PALETTE.length] } as React.CSSProperties}>
+          <div className={isSTFocus ? 'focus-thread' : undefined} style={{ '--thread-color': THREAD_PALETTE[(longGoals.length + stIdx) % THREAD_PALETTE.length] } as React.CSSProperties}>
             <ShortWithActions
               goal={sg}
               displayValues={sg.valueIndexes.map((i) => domain.values[i]).filter(Boolean)}
@@ -1171,7 +1173,8 @@ function Align({
             />
           </div>
           </SortableGoal>
-        ))}
+          );
+          })}
         </SortableContext>
         </DndContext>
 

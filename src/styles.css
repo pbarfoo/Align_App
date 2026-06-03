@@ -333,6 +333,13 @@ h1 {
   margin-bottom: 14px;
 }
 
+.focus-thread {
+  border: 1px solid color-mix(in srgb, var(--thread-color, var(--accent)) 40%, transparent);
+  border-radius: 14px;
+  padding: 6px 6px 2px;
+  margin-bottom: 14px;
+}
+
 .node.focus-goal::before { background: rgba(255, 255, 255, 0.9); width: 3px; }
 .goal-thread.focus-thread .node::before { background: rgba(255, 255, 255, 0.75); width: 3px; }
 
