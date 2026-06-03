@@ -723,6 +723,7 @@ function Align({
     try { return JSON.parse(localStorage.getItem('align-hide-completed-v1') ?? 'false'); } catch { return false; }
   });
   const [collapsedGoals, setCollapsedGoals] = useState<Set<string>>(new Set());
+  const [editingHabitId, setEditingHabitId] = useState<string | null>(null);
 
   const toggleCollapse = (id: string) =>
     setCollapsedGoals(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
@@ -1015,8 +1016,8 @@ function Align({
               .map((h) => {
                 const done = h.kind === 'task' ? !!h.completed : isHabitDoneThisPeriod(h);
                 return (
+                  <React.Fragment key={h.id}>
                   <div
-                    key={h.id}
                     className={`${cls(`h:${h.id}`)} node short action-row${done ? ' completed' : ''}`}
                     onClick={() => setLit(lit === `h:${h.id}` ? null : `h:${h.id}`)}
                   >
@@ -1028,7 +1029,12 @@ function Align({
                     <div className="node-main">
                       <div className="action-title-row">
                         <span className="node-tag">{h.kind === 'task' ? 'Task' : 'Habit'}</span>
-                        <span className="node-title">{h.title}</span>
+                        <span
+                          className="node-title"
+                          onClick={(e) => { e.stopPropagation(); setEditingHabitId(editingHabitId === h.id ? null : h.id); }}
+                          title="Click to edit"
+                          style={{ cursor: 'text' }}
+                        >{h.title}</span>
                       </div>
                       <div className="node-foot">
                         <span className="goal-date">
@@ -1042,6 +1048,15 @@ function Align({
                       ><TrashIcon /></button>
                     </div>
                   </div>
+                  {editingHabitId === h.id && (
+                    <AddActionForm
+                      goalId={h.goalId}
+                      initial={h}
+                      onSave={(updates) => { updateHabit(h.id, updates); setEditingHabitId(null); }}
+                      onClose={() => setEditingHabitId(null)}
+                    />
+                  )}
+                  </React.Fragment>
                 );
               })}
             {!collapsedGoals.has(goal.id) && addingFor === goal.id && (
