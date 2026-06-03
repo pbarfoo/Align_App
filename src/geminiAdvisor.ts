@@ -294,7 +294,7 @@ function isoWeek(d: Date): number {
 }
 
 function coachCacheKey(date: string, domains: Domain[]) {
-  return `gemini-coach-v15-${date}-${valueFingerprint(domains)}`;
+  return `gemini-coach-v16-${date}-${valueFingerprint(domains)}`;
 }
 
 export async function getGeminiCoachCard(
@@ -395,17 +395,17 @@ export async function getGeminiCoachCard(
     ? `\n## Style feedback on past cards\n- Liked: ${liked || 'none'}\n- Disliked: ${disliked || 'none'}\nMatch the style of liked cards; avoid the tone of disliked ones.\n`
     : '';
 
-  const prompt = `You are a direct personal coach. Write one daily coaching card strictly grounded in the user's actual data.
+  const prompt = `You are a direct personal coach. Write one daily coaching card grounded in the user's goals.
 
-Rules (non-negotiable):
-- ONLY use goal titles, habit names, domain names, and values that appear WORD-FOR-WORD in the data section below. Do not invent, paraphrase, or generalise — if it's not in the data, do not write it.
+Approach:
 - Lead with the user's most important active goal(s). TOP PRIORITY goals carry the most weight.
-- The weekly value thread may colour the tone, but every noun in the card must trace back to the data.
-- Tone: warm, direct, brief. No filler, no motivational clichés not tied to a real goal.
+- Reference a real goal or habit from the data — do not invent topics not present in the data.
+- The weekly value thread is context — let it colour the message naturally, not dominate it.
+- Tone: warm, direct, brief. No filler.
 
 Format:
-- Title: 4–6 words, taken from or directly referencing a real goal title or habit name below.
-- Blurb: exactly 2 sentences. First: encouragement tied to a specific goal or habit name from the data. Second: one concrete nudge for today referencing a real habit or goal.
+- Title: 4–6 words, grounded in a real goal or habit.
+- Blurb: exactly 2 sentences. First: encouragement tied to a specific goal, habit, or recent progress. Second: one concrete nudge for today.
 ${feedbackLines}
 ${contextLines.join('\n')}
 
@@ -423,7 +423,7 @@ Return JSON only: {"title": "...", "blurb": "..."}`;
         },
         required: ['title', 'blurb'],
       },
-      temperature: 0.3,
+      temperature: 0.5,
     },
   };
 
