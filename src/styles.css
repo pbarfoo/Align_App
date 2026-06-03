@@ -334,9 +334,6 @@ h1 {
 }
 
 .focus-thread {
-  border: 1px solid color-mix(in srgb, var(--thread-color, var(--accent)) 40%, transparent);
-  border-radius: 14px;
-  padding: 6px 6px 2px;
   margin-bottom: 14px;
 }
 

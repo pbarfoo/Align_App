@@ -1105,7 +1105,7 @@ function Align({
               addingForKind === null ? (
                 <div className="inline-add short add-form">
                   <div className="seg">
-                    <button type="button" onClick={() => setAddingForKind('short')}>Short-term goal</button>
+                    <button type="button" onClick={() => setAddingForKind('short')}>Sub-goal (1–12 mo)</button>
                     <button type="button" onClick={() => setAddingForKind('action')}>Habit / Task</button>
                   </div>
                   <button className="mini-ghost" onClick={() => { setAddingFor(null); setAddingForKind(null); }}>Cancel</button>
@@ -1548,7 +1548,7 @@ function AddShortGoalForm({
 
   if (!isOpen) return (
     <button className={`${cls} add-btn`} onClick={() => setOpen(true)}>
-      + Short-term goal
+      + Goal (1–12 mo)
     </button>
   );
 
@@ -1622,7 +1622,7 @@ function AddGoalForm({
   if (!open) {
     return (
       <button className="inline-add add-btn" onClick={() => setOpen(true)}>
-        + Long-term goal
+        + Goal (1–5 yr)
       </button>
     );
   }
@@ -1772,7 +1772,7 @@ function GoalNode({
       </div>
       <div className="node-main">
         <div className="node-tag">
-          {goal.horizon === 'long' ? 'Long-term · ' : 'Short-term · '}
+          {'Goal · '}
           {editingTimeframe && onChangeTimeframe ? (
             <select
               className="timeframe-select"
@@ -2834,8 +2834,8 @@ function GoalsDashboard({
       </div>
 
       <div className="spider-pills">
-        <button className={`spider-pill${activeSlide === 0 ? ' active' : ''}`} onClick={() => scrollToSlide(0)}>Short-term</button>
-        <button className={`spider-pill${activeSlide === 1 ? ' active' : ''}`} onClick={() => scrollToSlide(1)}>Long-term</button>
+        <button className={`spider-pill${activeSlide === 0 ? ' active' : ''}`} onClick={() => scrollToSlide(0)}>1–12 mo</button>
+        <button className={`spider-pill${activeSlide === 1 ? ' active' : ''}`} onClick={() => scrollToSlide(1)}>1–5 yr</button>
       </div>
 
       <div className="spider-track" ref={trackRef} role="region" aria-label="Goal charts">
