@@ -26,7 +26,7 @@ import {
   type CustomUnit,
   type ReflectionEntry,
 } from './data';
-import { supabase, localMode } from './supabase';
+import { supabase } from './supabase';
 import type { Session } from '@supabase/supabase-js';
 
 type Tab = 'foundation' | 'align' | 'today';
@@ -42,19 +42,6 @@ interface ActionInput {
 }
 
 const TAB_KEY = 'align-tab-v1';
-const LS_DOMAINS = 'align-domains-v1';
-const LS_GOALS = 'align-goals-v1';
-const LS_HABITS = 'align-habits-v1';
-const LS_REFLECTIONS = 'align-reflections-v1';
-
-function loadOr<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
-  } catch {
-    return fallback;
-  }
-}
 
 /* ---- Supabase row mappers ---- */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -215,7 +202,6 @@ export default function App() {
   const [dataLoaded, setDataLoaded] = useState(false);
 
   useEffect(() => {
-    if (localMode) { setAuthLoading(false); return; }
     // Hard timeout so a paused/unreachable Supabase project can't hang the app forever.
     const authTimeout = setTimeout(() => setAuthLoading(false), 8000);
     supabase.auth.getSession().then(({ data }) => {
@@ -251,15 +237,6 @@ export default function App() {
   // tab-focus auth event, which would otherwise re-read stale data and clobber
   // in-progress local edits.
   useEffect(() => {
-    if (localMode) {
-      hydrating.current = true;
-      setDomains(loadOr<Domain[]>(LS_DOMAINS, seedDomains));
-      setGoals(loadOr<Goal[]>(LS_GOALS, initialGoals));
-      setHabits(loadOr<Habit[]>(LS_HABITS, initialHabits));
-      setReflections(loadOr<ReflectionEntry[]>(LS_REFLECTIONS, []));
-      setDataLoaded(true);
-      return;
-    }
     if (!session) { setDataLoaded(true); return; }
     const userId = session.user.id;
     const timeout = setTimeout(() => {
@@ -321,36 +298,28 @@ export default function App() {
 
   // Sync domains
   useEffect(() => {
-    if (!dataLoaded || hydrating.current) return;
-    if (localMode) { localStorage.setItem(LS_DOMAINS, JSON.stringify(domains)); return; }
-    if (!session) return;
+    if (!dataLoaded || hydrating.current || !session) return;
     supabase.from('domains').upsert(domains.map((x) => domainToRow(x, session.user.id)), { onConflict: 'id,user_id' })
       .then(({ error }) => { if (error) { console.error('sync domains:', error); setToast(`⚠ Save failed: ${error.message}`); } });
   }, [domains]);
 
   // Sync goals
   useEffect(() => {
-    if (!dataLoaded || hydrating.current) return;
-    if (localMode) { localStorage.setItem(LS_GOALS, JSON.stringify(goals)); return; }
-    if (!session || !goals.length) return;
+    if (!dataLoaded || hydrating.current || !session || !goals.length) return;
     supabase.from('goals').upsert(goals.map((x) => goalToRow(x, session.user.id)))
       .then(({ error }) => { if (error) { console.error('sync goals:', error); setToast(`⚠ Save failed: ${error.message}`); } });
   }, [goals]);
 
   // Sync habits
   useEffect(() => {
-    if (!dataLoaded || hydrating.current) return;
-    if (localMode) { localStorage.setItem(LS_HABITS, JSON.stringify(habits)); return; }
-    if (!session || !habits.length) return;
+    if (!dataLoaded || hydrating.current || !session || !habits.length) return;
     supabase.from('habits').upsert(habits.map((x) => habitToRow(x, session.user.id)))
       .then(({ error }) => { if (error) { console.error('sync habits:', error); setToast(`⚠ Save failed: ${error.message}`); } });
   }, [habits]);
 
   // Sync reflections
   useEffect(() => {
-    if (!dataLoaded || hydrating.current) return;
-    if (localMode) { localStorage.setItem(LS_REFLECTIONS, JSON.stringify(reflections)); return; }
-    if (!session || !reflections.length) return;
+    if (!dataLoaded || hydrating.current || !session || !reflections.length) return;
     supabase.from('reflections').upsert(reflections.map((x) => reflToRow(x, session.user.id)))
       .then(({ error }) => { if (error) { console.error('sync reflections:', error); setToast(`⚠ Save failed: ${error.message}`); } });
   }, [reflections]);
@@ -366,16 +335,16 @@ export default function App() {
     localStorage.setItem(TAB_KEY, JSON.stringify(tab));
   }, [tab]);
 
-  // Explicit delete helpers (upsert doesn't remove rows; no-op in localMode since state sync handles it)
+  // Explicit delete helpers (upsert doesn't remove rows)
   const deleteGoalFromDb = (ids: string[]) => {
-    if (localMode || !session) return;
+    if (!session) return;
     supabase.from('habits').delete().in('goal_id', ids)
       .then(({ error }) => { if (error) console.error('delete habits for goal:', error); });
     supabase.from('goals').delete().in('id', ids)
       .then(({ error }) => { if (error) { console.error('delete goals:', error); flash('Delete failed: ' + error.message, true); } });
   };
   const deleteHabitFromDb = (id: string) => {
-    if (localMode || !session) return;
+    if (!session) return;
     supabase.from('habits').delete().eq('id', id)
       .then(({ error }) => { if (error) { console.error('delete habit:', error); flash('Delete failed: ' + error.message, true); } });
   };
@@ -397,7 +366,7 @@ export default function App() {
       </div>
     );
   }
-  if (!localMode && !session) return <LoginScreen />;
+  if (!session) return <LoginScreen />;
 
   return (
     <div className="app">
@@ -472,7 +441,7 @@ export default function App() {
       <button className="profile-btn" onClick={() => setReviewOpen(true)} aria-label="Review">
         <IconCompass />
       </button>
-      {!localMode && session && (
+      {session && (
         <div className="user-menu">
           <button
             className="user-btn"
@@ -750,7 +719,9 @@ function Align({
   const [addingFor, setAddingFor] = useState<string | null>(null);
   const [addingForKind, setAddingForKind] = useState<'short' | 'action' | null>(null);
   const [editValuesFor, setEditValuesFor] = useState<string | null>(null);
-  const [hideCompleted, setHideCompleted] = useState(() => loadOr('align-hide-completed-v1', false));
+  const [hideCompleted, setHideCompleted] = useState<boolean>(() => {
+    try { return JSON.parse(localStorage.getItem('align-hide-completed-v1') ?? 'false'); } catch { return false; }
+  });
   const [collapsedGoals, setCollapsedGoals] = useState<Set<string>>(new Set());
 
   const toggleCollapse = (id: string) =>

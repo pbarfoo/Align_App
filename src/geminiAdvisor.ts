@@ -1,5 +1,5 @@
 import type { Domain, Goal, Habit, ReflectionEntry } from './data';
-import { supabase, localMode } from './supabase';
+import { supabase } from './supabase';
 
 export interface FocusPick {
   id: string;
@@ -17,57 +17,42 @@ export interface CoachFeedback {
   rating: 'up' | 'down';
 }
 
-const FEEDBACK_KEY = 'gemini-coach-feedback-v2';
-
 export async function saveCoachFeedback(
   date: string,
   title: string,
   rating: 'up' | 'down',
   userId?: string,
 ): Promise<void> {
-  if (!localMode && userId) {
-    await supabase
-      .from('coach_feedback')
-      .upsert({ user_id: userId, date, title, rating }, { onConflict: 'user_id,date' });
-  } else {
-    const history = getLocalFeedbackHistory().filter((f) => f.date !== date);
-    localStorage.setItem(FEEDBACK_KEY, JSON.stringify([...history, { date, title, rating }].slice(-30)));
-  }
+  if (!userId) return;
+  await supabase
+    .from('coach_feedback')
+    .upsert({ user_id: userId, date, title, rating }, { onConflict: 'user_id,date' });
 }
 
 export async function getCoachFeedbackHistory(userId?: string): Promise<CoachFeedback[]> {
-  if (!localMode && userId) {
-    const { data } = await supabase
-      .from('coach_feedback')
-      .select('date, title, rating')
-      .eq('user_id', userId)
-      .order('date', { ascending: false })
-      .limit(30);
-    return (data ?? []) as CoachFeedback[];
-  }
-  return getLocalFeedbackHistory();
+  if (!userId) return [];
+  const { data } = await supabase
+    .from('coach_feedback')
+    .select('date, title, rating')
+    .eq('user_id', userId)
+    .order('date', { ascending: false })
+    .limit(30);
+  return (data ?? []) as CoachFeedback[];
 }
 
 export async function getTodayCoachRating(
   date: string,
-  title: string,
+  _title: string,
   userId?: string,
 ): Promise<'up' | 'down' | null> {
-  if (!localMode && userId) {
-    const { data } = await supabase
-      .from('coach_feedback')
-      .select('rating')
-      .eq('user_id', userId)
-      .eq('date', date)
-      .maybeSingle();
-    return (data?.rating as 'up' | 'down' | null) ?? null;
-  }
-  return getLocalFeedbackHistory().find((f) => f.date === date && f.title === title)?.rating ?? null;
-}
-
-function getLocalFeedbackHistory(): CoachFeedback[] {
-  try { return JSON.parse(localStorage.getItem(FEEDBACK_KEY) ?? '[]') as CoachFeedback[]; }
-  catch { return []; }
+  if (!userId) return null;
+  const { data } = await supabase
+    .from('coach_feedback')
+    .select('rating')
+    .eq('user_id', userId)
+    .eq('date', date)
+    .maybeSingle();
+  return (data?.rating as 'up' | 'down' | null) ?? null;
 }
 
 const API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent';
