@@ -2299,7 +2299,7 @@ function valueAlignmentScore(
   for (const g of allTagged) {
     const h = g.horizon === 'long'
       ? vitalityFor(g, goals, habits).health
-      : stGoalMetrics(g, habits).health;
+      : stGoalMetrics(g, goals, habits).health;
     actSum += h; actCount++;
   }
   for (const h of habits.filter((h) => h.goalId && taggedIds.has(h.goalId))) {
@@ -2402,10 +2402,12 @@ const THREAD_PALETTE = [
 ];
 
 
-function stGoalMetrics(sg: Goal, habits: Habit[]): { time: number; completion: number; health: number; completionRate: number; recencyScore: number; momentum: number } {
+function stGoalMetrics(sg: Goal, goals: Goal[], habits: Habit[]): { time: number; completion: number; health: number; completionRate: number; recencyScore: number; momentum: number } {
   const totalMs = (sg.timeframe || 1) * 30.44 * 86_400_000;
   const elapsed = Math.min(1, Math.max(0, (Date.now() - sg.createdAt) / totalMs));
-  const sgHabits = habits.filter((h) => h.goalId === sg.id);
+  const subGoals     = goals.filter((g) => g.parentGoalId === sg.id);
+  const subtree      = new Set<string>([sg.id, ...subGoals.map((g) => g.id)]);
+  const sgHabits     = habits.filter((h) => subtree.has(h.goalId));
 
   const habitWeight = (h: Habit) => Math.min(1 + (h.streak || 0) * 0.2, 4.0);
   const FOUR_WEEKS = 28 * 86_400_000;
@@ -2420,13 +2422,14 @@ function stGoalMetrics(sg: Goal, habits: Habit[]): { time: number; completion: n
   type Item = { w: number; done: boolean; r: number };
   const taskItems: Item[]  = sgHabits.filter((h) => h.kind === 'task').map((h) => ({ w: 2, done: !!h.completed, r: recency(h.completedAt) }));
   const habitItems: Item[] = sgHabits.filter((h) => h.kind === 'habit').map((h) => ({ w: habitWeight(h), done: isHabitDoneThisPeriod(h), r: habitRecency(h, h.completedAt) }));
-  const allItems: Item[]   = [{ w: 10, done: !!sg.completedAt, r: recency(sg.completedAt) }, ...taskItems, ...habitItems];
+  const subGoalItems: Item[] = subGoals.map((g): Item => ({ w: 10, done: !!g.completedAt, r: recency(g.completedAt) }));
+  const allItems: Item[]   = [{ w: 10, done: !!sg.completedAt, r: recency(sg.completedAt) }, ...subGoalItems, ...taskItems, ...habitItems];
 
   const totalW    = allItems.reduce((s, x) => s + x.w, 0);
   const doneW     = allItems.filter((x) => x.done).reduce((s, x) => s + x.w, 0);
   const completion = totalW > 0 ? doneW / totalW : 0;
 
-  const activeItems     = [...taskItems, ...habitItems];
+  const activeItems     = [...subGoalItems, ...taskItems, ...habitItems];
   const activeTotalW    = activeItems.reduce((s, x) => s + x.w, 0);
   const activeDoneItems = activeItems.filter((x) => x.done);
   const activeDoneW     = activeDoneItems.reduce((s, x) => s + x.w, 0);
@@ -2600,10 +2603,10 @@ function GoalsDashboard({
   habits: Habit[];
   onClose: () => void;
 }) {
-  const longGoals  = goals.filter((g) => g.horizon === 'long');
-  const allShort   = goals.filter((g) => g.horizon === 'short');
+  const longGoals  = goals.filter((g) => g.horizon === 'long'  && !g.parentGoalId);
+  const allShort   = goals.filter((g) => g.horizon === 'short' && !g.parentGoalId);
   const ltMetrics  = new Map(longGoals.map((g) => [g.id, vitalityFor(g, goals, habits)] as const));
-  const stMetrics  = new Map(allShort.map((g) => [g.id, stGoalMetrics(g, habits)] as const));
+  const stMetrics  = new Map(allShort.map((g) => [g.id, stGoalMetrics(g, goals, habits)] as const));
 
   const ltSpiderValues = longGoals.map((g) => ltMetrics.get(g.id)!.health);
   const stSpiderValues = allShort.map((g) => stMetrics.get(g.id)!.health);
@@ -2684,7 +2687,7 @@ function GoalsDashboard({
               <div key={d.id} className="dash-domain-section">
                 <div className="dash-domain-label" style={{ color: domainColor }}>{d.name}</div>
                 {dShort.map((sg) => {
-                  const parent = sg.parentGoalId ? longGoals.find((lg) => lg.id === sg.parentGoalId) : null;
+                  const parent = sg.parentGoalId ? goals.find((g) => g.id === sg.parentGoalId) : null;
                   return (
                     <div key={sg.id}>
                       {parent && (
