@@ -2366,7 +2366,7 @@ function computeHealth(subGoals: Goal[], treeHabits: Habit[], now: number): numb
   subGoals.forEach((g) => {
     if (g.completedAt) {
       const score = Math.max(0, 1 - (now - g.completedAt) / EIGHT_WEEKS);
-      if (score > 0) items.push({ score, w: 10 });
+      if (score > 0) items.push({ score, w: 4 });
     }
   });
 
