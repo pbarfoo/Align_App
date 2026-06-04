@@ -1,4 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { getGeminiFocusPicks, getGeminiCoachCard, saveCoachFeedback, getTodayCoachRating, type FocusPick, type CoachCard } from './geminiAdvisor';
+import {
+  DndContext, type DragEndEvent, MouseSensor, TouchSensor,
+  useSensor, useSensors, closestCenter,
+} from '@dnd-kit/core';
+import {
+  SortableContext, useSortable, arrayMove,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import {
   domains as seedDomains,
   initialGoals,
@@ -16,7 +26,7 @@ import {
   type CustomUnit,
   type ReflectionEntry,
 } from './data';
-import { supabase, localMode } from './supabase';
+import { supabase } from './supabase';
 import type { Session } from '@supabase/supabase-js';
 
 type Tab = 'foundation' | 'align' | 'today';
@@ -26,24 +36,12 @@ interface ActionInput {
   recurrence?: Recurrence;
   customInterval?: number;
   customUnit?: CustomUnit;
+  specificDays?: number[];
   dueDate?: string;
   dueTime?: string;
 }
 
 const TAB_KEY = 'align-tab-v1';
-const LS_DOMAINS = 'align-domains-v1';
-const LS_GOALS = 'align-goals-v1';
-const LS_HABITS = 'align-habits-v1';
-const LS_REFLECTIONS = 'align-reflections-v1';
-
-function loadOr<T>(key: string, fallback: T): T {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
-  } catch {
-    return fallback;
-  }
-}
 
 /* ---- Supabase row mappers ---- */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -84,6 +82,7 @@ function habitToRow(h: Habit, userId: string): Row {
     title: h.title, kind: h.kind, done_today: h.doneToday,
     start_date: h.startDate ?? null, recurrence: h.recurrence ?? null,
     custom_interval: h.customInterval ?? null, custom_unit: h.customUnit ?? null,
+    specific_days: h.specificDays ?? null,
     due_date: h.dueDate ?? null, due_time: h.dueTime ?? null,
     completed: h.completed ?? null, completed_at: h.completedAt ?? null,
     streak: h.streak ?? 0,
@@ -99,6 +98,7 @@ function habitFromRow(row: Row): Habit {
     recurrence: (row.recurrence as Recurrence) ?? undefined,
     customInterval: row.custom_interval ?? undefined,
     customUnit: (row.custom_unit as CustomUnit) ?? undefined,
+    specificDays: row.specific_days ?? undefined,
     dueDate: row.due_date ?? undefined,
     dueTime: row.due_time ?? undefined,
     completed: row.completed ?? undefined,
@@ -202,7 +202,6 @@ export default function App() {
   const [dataLoaded, setDataLoaded] = useState(false);
 
   useEffect(() => {
-    if (localMode) { setAuthLoading(false); return; }
     // Hard timeout so a paused/unreachable Supabase project can't hang the app forever.
     const authTimeout = setTimeout(() => setAuthLoading(false), 8000);
     supabase.auth.getSession().then(({ data }) => {
@@ -238,15 +237,6 @@ export default function App() {
   // tab-focus auth event, which would otherwise re-read stale data and clobber
   // in-progress local edits.
   useEffect(() => {
-    if (localMode) {
-      hydrating.current = true;
-      setDomains(loadOr<Domain[]>(LS_DOMAINS, seedDomains));
-      setGoals(loadOr<Goal[]>(LS_GOALS, initialGoals));
-      setHabits(loadOr<Habit[]>(LS_HABITS, initialHabits));
-      setReflections(loadOr<ReflectionEntry[]>(LS_REFLECTIONS, []));
-      setDataLoaded(true);
-      return;
-    }
     if (!session) { setDataLoaded(true); return; }
     const userId = session.user.id;
     const timeout = setTimeout(() => {
@@ -308,36 +298,28 @@ export default function App() {
 
   // Sync domains
   useEffect(() => {
-    if (!dataLoaded || hydrating.current) return;
-    if (localMode) { localStorage.setItem(LS_DOMAINS, JSON.stringify(domains)); return; }
-    if (!session) return;
+    if (!dataLoaded || hydrating.current || !session) return;
     supabase.from('domains').upsert(domains.map((x) => domainToRow(x, session.user.id)), { onConflict: 'id,user_id' })
       .then(({ error }) => { if (error) { console.error('sync domains:', error); setToast(`⚠ Save failed: ${error.message}`); } });
   }, [domains]);
 
   // Sync goals
   useEffect(() => {
-    if (!dataLoaded || hydrating.current) return;
-    if (localMode) { localStorage.setItem(LS_GOALS, JSON.stringify(goals)); return; }
-    if (!session || !goals.length) return;
+    if (!dataLoaded || hydrating.current || !session || !goals.length) return;
     supabase.from('goals').upsert(goals.map((x) => goalToRow(x, session.user.id)))
       .then(({ error }) => { if (error) { console.error('sync goals:', error); setToast(`⚠ Save failed: ${error.message}`); } });
   }, [goals]);
 
   // Sync habits
   useEffect(() => {
-    if (!dataLoaded || hydrating.current) return;
-    if (localMode) { localStorage.setItem(LS_HABITS, JSON.stringify(habits)); return; }
-    if (!session || !habits.length) return;
+    if (!dataLoaded || hydrating.current || !session || !habits.length) return;
     supabase.from('habits').upsert(habits.map((x) => habitToRow(x, session.user.id)))
       .then(({ error }) => { if (error) { console.error('sync habits:', error); setToast(`⚠ Save failed: ${error.message}`); } });
   }, [habits]);
 
   // Sync reflections
   useEffect(() => {
-    if (!dataLoaded || hydrating.current) return;
-    if (localMode) { localStorage.setItem(LS_REFLECTIONS, JSON.stringify(reflections)); return; }
-    if (!session || !reflections.length) return;
+    if (!dataLoaded || hydrating.current || !session || !reflections.length) return;
     supabase.from('reflections').upsert(reflections.map((x) => reflToRow(x, session.user.id)))
       .then(({ error }) => { if (error) { console.error('sync reflections:', error); setToast(`⚠ Save failed: ${error.message}`); } });
   }, [reflections]);
@@ -353,16 +335,16 @@ export default function App() {
     localStorage.setItem(TAB_KEY, JSON.stringify(tab));
   }, [tab]);
 
-  // Explicit delete helpers (upsert doesn't remove rows; no-op in localMode since state sync handles it)
+  // Explicit delete helpers (upsert doesn't remove rows)
   const deleteGoalFromDb = (ids: string[]) => {
-    if (localMode || !session) return;
+    if (!session) return;
     supabase.from('habits').delete().in('goal_id', ids)
       .then(({ error }) => { if (error) console.error('delete habits for goal:', error); });
     supabase.from('goals').delete().in('id', ids)
       .then(({ error }) => { if (error) { console.error('delete goals:', error); flash('Delete failed: ' + error.message, true); } });
   };
   const deleteHabitFromDb = (id: string) => {
-    if (localMode || !session) return;
+    if (!session) return;
     supabase.from('habits').delete().eq('id', id)
       .then(({ error }) => { if (error) { console.error('delete habit:', error); flash('Delete failed: ' + error.message, true); } });
   };
@@ -384,7 +366,7 @@ export default function App() {
       </div>
     );
   }
-  if (!localMode && !session) return <LoginScreen />;
+  if (!session) return <LoginScreen />;
 
   return (
     <div className="app">
@@ -412,6 +394,7 @@ export default function App() {
             domains={domains}
             reflections={reflections}
             onReflect={() => setReflectOpen(true)}
+            userId={session?.user.id}
           />
         )}
       </main>
@@ -419,7 +402,6 @@ export default function App() {
       {reflectOpen && (
         <Reflect
           domains={domains}
-          goals={goals}
           reflections={reflections}
           onClose={() => setReflectOpen(false)}
           onSave={(scores, note, weekNumber, date) => {
@@ -459,7 +441,7 @@ export default function App() {
       <button className="profile-btn" onClick={() => setReviewOpen(true)} aria-label="Review">
         <IconCompass />
       </button>
-      {!localMode && session && (
+      {session && (
         <div className="user-menu">
           <button
             className="user-btn"
@@ -671,6 +653,47 @@ function EditableValues({
   );
 }
 
+/* Context so GoalNode can render a grip handle that holds the drag listeners */
+type DragListeners = Record<string, (...args: unknown[]) => unknown>;
+const DragHandleCtx = React.createContext<DragListeners | null>(null);
+
+/* Grip icon button — only renders when inside a SortableGoal */
+function DragHandle() {
+  const listeners = React.useContext(DragHandleCtx);
+  if (!listeners) return null;
+  return (
+    <button
+      className="node-drag"
+      aria-label="Drag to reorder"
+      title="Hold to drag"
+      {...(listeners as React.HTMLAttributes<HTMLButtonElement>)}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <svg width="8" height="12" viewBox="0 0 8 12" fill="currentColor" aria-hidden="true">
+        <circle cx="2" cy="1.5" r="1.5"/><circle cx="6" cy="1.5" r="1.5"/>
+        <circle cx="2" cy="6" r="1.5"/><circle cx="6" cy="6" r="1.5"/>
+        <circle cx="2" cy="10.5" r="1.5"/><circle cx="6" cy="10.5" r="1.5"/>
+      </svg>
+    </button>
+  );
+}
+
+/* ---------------- SortableGoal (drag-to-reorder wrapper) ---------------- */
+function SortableGoal({ id, children }: { id: string; children: React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  return (
+    <DragHandleCtx.Provider value={(listeners ?? null) as DragListeners | null}>
+      <div
+        ref={setNodeRef}
+        style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.45 : 1 }}
+        {...attributes}
+      >
+        {children}
+      </div>
+    </DragHandleCtx.Provider>
+  );
+}
+
 /* ---------------- Align ---------------- */
 function Align({
   domains,
@@ -696,39 +719,36 @@ function Align({
   const [addingFor, setAddingFor] = useState<string | null>(null);
   const [addingForKind, setAddingForKind] = useState<'short' | 'action' | null>(null);
   const [editValuesFor, setEditValuesFor] = useState<string | null>(null);
-  const [hideCompleted, setHideCompleted] = useState(() => loadOr('align-hide-completed-v1', false));
+  const [hideCompleted, setHideCompleted] = useState<boolean>(() => {
+    try { return JSON.parse(localStorage.getItem('align-hide-completed-v1') ?? 'false'); } catch { return false; }
+  });
   const [collapsedGoals, setCollapsedGoals] = useState<Set<string>>(new Set());
+  const [editingHabitId, setEditingHabitId] = useState<string | null>(null);
 
   const toggleCollapse = (id: string) =>
     setCollapsedGoals(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
 
-  const moveLtGoal = (id: string, dir: -1 | 1) =>
-    setGoals(prev => {
-      const vis = prev.filter(g => g.domainId === domainId && g.horizon === 'long' && !(hideCompleted && !!g.completedAt));
-      const i = vis.findIndex(g => g.id === id); const j = i + dir;
-      if (j < 0 || j >= vis.length) return prev;
-      const ai = prev.findIndex(g => g.id === vis[i].id), bi = prev.findIndex(g => g.id === vis[j].id);
-      const next = [...prev]; [next[ai], next[bi]] = [next[bi], next[ai]]; return next;
-    });
+  const sensors = useSensors(
+    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 8 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 3 } }),
+  );
 
-  const moveLooseSt = (id: string, dir: -1 | 1) =>
+  const handleDragEnd = ({ active, over }: DragEndEvent) => {
+    if (!over || active.id === over.id) return;
     setGoals(prev => {
-      const vis = prev.filter(g => g.domainId === domainId && g.horizon === 'short' && !g.parentGoalId && !(hideCompleted && !!g.completedAt));
-      const i = vis.findIndex(g => g.id === id); const j = i + dir;
-      if (j < 0 || j >= vis.length) return prev;
-      const ai = prev.findIndex(g => g.id === vis[i].id), bi = prev.findIndex(g => g.id === vis[j].id);
-      const next = [...prev]; [next[ai], next[bi]] = [next[bi], next[ai]]; return next;
+      const oi = prev.findIndex(g => g.id === active.id);
+      const ni = prev.findIndex(g => g.id === over.id);
+      return arrayMove(prev, oi, ni);
     });
+  };
+
   useEffect(() => {
     localStorage.setItem('align-hide-completed-v1', JSON.stringify(hideCompleted));
   }, [hideCompleted]);
 
   const domain = domains.find((d) => d.id === domainId)!;
   const domainGoals = goals.filter((g) => g.domainId === domainId);
-  const longGoals = domainGoals.filter((g) => g.horizon === 'long');
-  const looseShort = domainGoals.filter(
-    (g) => g.horizon === 'short' && !g.parentGoalId,
-  );
+  const topGoals = domainGoals.filter((g) => !g.parentGoalId);
 
   const litChain = useMemo(() => {
     if (!lit) return null;
@@ -764,46 +784,26 @@ function Align({
   const cls = (id: string, base = 'node') =>
     `${base}${litChain ? (litChain.has(id) ? ' lit' : ' dim') : ''}`;
 
-  const addLongGoal = (valueIndexes: number[], title: string, years: number) => {
+  const addGoal = (
+    valueIndexes: number[],
+    title: string,
+    horizon: 'long' | 'short',
+    timeframe: number,
+    parentGoalId?: string,
+  ) => {
     setGoals((prev) => [...prev, {
       id: uid('g'),
       domainId,
       valueIndexes,
-      horizon: 'long' as const,
+      horizon,
       title,
+      ...(parentGoalId ? { parentGoalId } : {}),
       createdAt: Date.now(),
-      timeframe: years,
-    }]);
-    flash('Long-term goal added');
-  };
-
-  const addShortGoal = (parent: Goal, title: string, months: number, valueIndexes: number[] = []) => {
-    setGoals((prev) => [...prev, {
-      id: uid('g'),
-      domainId,
-      valueIndexes,
-      horizon: 'short' as const,
-      title,
-      parentGoalId: parent.id,
-      createdAt: Date.now(),
-      timeframe: months,
+      timeframe,
     }]);
     setAddingFor(null);
     setAddingForKind(null);
-    flash('Short-term goal added');
-  };
-
-  const addLooseShortGoal = (title: string, months: number, valueIndexes: number[] = []) => {
-    setGoals((prev) => [...prev, {
-      id: uid('g'),
-      domainId,
-      valueIndexes,
-      horizon: 'short' as const,
-      title,
-      createdAt: Date.now(),
-      timeframe: months,
-    }]);
-    flash('Short-term goal added');
+    flash('Goal added');
   };
 
   const addAction = (
@@ -824,6 +824,7 @@ function Align({
             recurrence: input.recurrence ?? 'daily',
             customInterval: input.customInterval ?? 1,
             customUnit: input.customUnit ?? 'weeks',
+            specificDays: input.specificDays ?? undefined,
           }
         : {
             dueDate: input.dueDate || undefined,
@@ -841,8 +842,9 @@ function Align({
   const updateGoalTitle = (id: string, title: string) =>
     setGoals((prev) => prev.map((g) => (g.id === id ? { ...g, title } : g)));
 
-  const updateGoalTimeframe = (id: string, timeframe: number) =>
-    setGoals((prev) => prev.map((g) => (g.id === id ? { ...g, timeframe } : g)));
+  const updateGoalTimeframe = (id: string, horizon: 'long' | 'short', timeframe: number) =>
+    setGoals((prev) => prev.map((g) => (g.id === id ? { ...g, horizon, timeframe } : g)));
+
 
   const updateHabit = (id: string, updates: Partial<Habit>) =>
     setHabits((prev) => prev.map((h) => (h.id === id ? { ...h, ...updates } : h)));
@@ -941,45 +943,46 @@ function Align({
       </button>
 
       <div className="spine">
-        {longGoals
-          .filter((lg) => !(hideCompleted && !!lg.completedAt))
-          .map((lg, ltIdx, ltArr) => {
-          const lgValues = lg.valueIndexes.map((i) => domain.values[i]).filter(Boolean);
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={topGoals.filter(g => !(hideCompleted && !!g.completedAt)).map(g => g.id)} strategy={verticalListSortingStrategy}>
+        {topGoals
+          .filter((g) => !(hideCompleted && !!g.completedAt))
+          .map((goal, goalIdx) => {
+          const goalValues = goal.valueIndexes.map((i) => domain.values[i]).filter(Boolean);
+          const hasChildren = habits.some((h) => h.goalId === goal.id) || domainGoals.some((s) => s.parentGoalId === goal.id);
+          const isFocus = goalIdx === 0;
           return (
-          <div key={lg.id} className="goal-thread" style={{ '--thread-color': threadColor(lg.id) } as React.CSSProperties}>
+          <SortableGoal key={goal.id} id={goal.id}>
+          <div className={`goal-thread${isFocus ? ' focus-thread' : ''}`} style={{ '--thread-color': THREAD_PALETTE[goalIdx % THREAD_PALETTE.length] } as React.CSSProperties}>
             <GoalNode
-              goal={lg}
-              values={lgValues}
+              goal={goal}
+              values={goalValues}
               domainValues={domain.values}
-              valueIndexes={lg.valueIndexes}
-              editValuesActive={editValuesFor === lg.id}
-              onEditValues={() =>
-                setEditValuesFor(editValuesFor === lg.id ? null : lg.id)
-              }
-              onChangeValues={(idxs) => updateGoalValues(lg.id, idxs)}
-              className={cls(`g:${lg.id}`)}
-              onClick={() => setLit(lit === `g:${lg.id}` ? null : `g:${lg.id}`)}
+              valueIndexes={goal.valueIndexes}
+              editValuesActive={editValuesFor === goal.id}
+              onEditValues={() => setEditValuesFor(editValuesFor === goal.id ? null : goal.id)}
+              onChangeValues={(idxs) => updateGoalValues(goal.id, idxs)}
+              className={cls(`g:${goal.id}`)}
+              onClick={() => setLit(lit === `g:${goal.id}` ? null : `g:${goal.id}`)}
               canAddChild
-              addActive={addingFor === lg.id}
+              addActive={addingFor === goal.id}
               onAddChild={() => {
-                if (addingFor === lg.id) { setAddingFor(null); setAddingForKind(null); }
-                else { setAddingFor(lg.id); setAddingForKind(null); }
+                if (addingFor === goal.id) { setAddingFor(null); setAddingForKind(null); }
+                else { setAddingFor(goal.id); setAddingForKind(null); }
               }}
-              onDelete={() => deleteGoal(lg.id)}
-              onRename={(title) => updateGoalTitle(lg.id, title)}
-              onChangeTimeframe={(t) => updateGoalTimeframe(lg.id, t)}
-              isComplete={!!lg.completedAt}
-              onToggleComplete={() => toggleGoalComplete(lg.id)}
-              isCollapsed={collapsedGoals.has(lg.id)}
-              onToggleCollapse={() => toggleCollapse(lg.id)}
-              canMoveUp={ltIdx > 0}
-              canMoveDown={ltIdx < ltArr.length - 1}
-              onMoveUp={() => moveLtGoal(lg.id, -1)}
-              onMoveDown={() => moveLtGoal(lg.id, 1)}
+              onDelete={() => deleteGoal(goal.id)}
+              onRename={(title) => updateGoalTitle(goal.id, title)}
+              onChangeTimeframe={(horizon, t) => updateGoalTimeframe(goal.id, horizon, t)}
+              isComplete={!!goal.completedAt}
+              onToggleComplete={() => toggleGoalComplete(goal.id)}
+              isCollapsed={collapsedGoals.has(goal.id)}
+              onToggleCollapse={hasChildren ? () => toggleCollapse(goal.id) : undefined}
+              isFocus={isFocus}
+              showDragHandle
             />
-            {!collapsedGoals.has(lg.id) && habits
+            {!collapsedGoals.has(goal.id) && habits
               .filter((h) => {
-                if (h.goalId !== lg.id) return false;
+                if (h.goalId !== goal.id) return false;
                 if (!hideCompleted) return true;
                 if (h.kind === 'task') return !h.completed;
                 return !isHabitDoneThisPeriod(h);
@@ -987,9 +990,9 @@ function Align({
               .map((h) => {
                 const done = h.kind === 'task' ? !!h.completed : isHabitDoneThisPeriod(h);
                 return (
+                  <React.Fragment key={h.id}>
                   <div
-                    key={h.id}
-                    className={`${cls(`h:${h.id}`, 'habit-item')} habit-lt-direct${done ? ' completed' : ''}`}
+                    className={`${cls(`h:${h.id}`)} node short action-row${done ? ' completed' : ''}`}
                     onClick={() => setLit(lit === `h:${h.id}` ? null : `h:${h.id}`)}
                   >
                     <button
@@ -998,8 +1001,15 @@ function Align({
                       onClick={(e) => { e.stopPropagation(); toggleHabit(h.id); }}
                     />
                     <div className="node-main">
-                      <div className="node-tag">{h.kind === 'task' ? 'Task' : 'Habit'}</div>
-                      <div className="node-title">{h.title}</div>
+                      <div className="action-title-row">
+                        <span className="node-tag">{h.kind === 'task' ? 'Task' : 'Habit'}</span>
+                        <span
+                          className="node-title"
+                          onClick={(e) => { e.stopPropagation(); setEditingHabitId(editingHabitId === h.id ? null : h.id); }}
+                          title="Click to edit"
+                          style={{ cursor: 'text' }}
+                        >{h.title}</span>
+                      </div>
                       <div className="node-foot">
                         <span className="goal-date">
                           {h.kind === 'task' ? getTaskCountdown(h) : getRecurrenceString(h)}
@@ -1007,19 +1017,24 @@ function Align({
                       </div>
                     </div>
                     <div className="node-ctrls">
-                      <button
-                        className="node-del"
-                        title="Delete"
+                      <button className="node-del" title="Delete"
                         onClick={(e) => { e.stopPropagation(); deleteHabit(h.id); }}
-                      >
-                        <TrashIcon />
-                      </button>
+                      ><TrashIcon /></button>
                     </div>
                   </div>
+                  {editingHabitId === h.id && (
+                    <AddActionForm
+                      goalId={h.goalId}
+                      initial={h}
+                      onSave={(updates) => { updateHabit(h.id, updates); setEditingHabitId(null); }}
+                      onClose={() => setEditingHabitId(null)}
+                    />
+                  )}
+                  </React.Fragment>
                 );
               })}
-            {!collapsedGoals.has(lg.id) && domainGoals
-              .filter((s) => s.parentGoalId === lg.id)
+            {!collapsedGoals.has(goal.id) && domainGoals
+              .filter((s) => s.parentGoalId === goal.id)
               .map((sg) => (
                 <ShortWithActions
                   key={sg.id}
@@ -1044,80 +1059,41 @@ function Align({
                   domainVision={domain.vision}
                 />
               ))}
-            {!collapsedGoals.has(lg.id) && addingFor === lg.id && (
+            {!collapsedGoals.has(goal.id) && addingFor === goal.id && (
               addingForKind === null ? (
                 <div className="inline-add short add-form">
                   <div className="seg">
-                    <button type="button" onClick={() => setAddingForKind('short')}>Short-term goal</button>
+                    <button type="button" onClick={() => setAddingForKind('short')}>Sub-goal</button>
                     <button type="button" onClick={() => setAddingForKind('action')}>Habit / Task</button>
                   </div>
                   <button className="mini-ghost" onClick={() => { setAddingFor(null); setAddingForKind(null); }}>Cancel</button>
                 </div>
               ) : addingForKind === 'short' ? (
-                <AddShortGoalForm
+                <AddGoalForm
                   domainValues={domain.values}
                   forceOpen
                   onClose={() => { setAddingFor(null); setAddingForKind(null); }}
                   indent="short"
-                  onAdd={(title, months, vi) => addShortGoal(lg, title, months, vi)}
+                  onAdd={(idxs, title, horizon, timeframe) => addGoal(idxs, title, horizon, timeframe, goal.id)}
                 />
               ) : (
                 <AddActionForm
-                  goalId={lg.id}
+                  goalId={goal.id}
                   onAdd={addAction}
                   onClose={() => { setAddingFor(null); setAddingForKind(null); }}
                 />
               )
             )}
           </div>
+          </SortableGoal>
           );
         })}
+        </SortableContext>
+        </DndContext>
 
-        {looseShort
-          .filter((sg) => !(hideCompleted && !!sg.completedAt))
-          .map((sg, sgIdx, sgArr) => (
-          <div key={sg.id} style={{ '--thread-color': threadColor(sg.id) } as React.CSSProperties}>
-            <ShortWithActions
-              goal={sg}
-              displayValues={sg.valueIndexes.map((i) => domain.values[i]).filter(Boolean)}
-              habits={habits}
-              cls={cls}
-              lit={lit}
-              setLit={setLit}
-              addingFor={addingFor}
-              setAddingFor={setAddingFor}
-              onAddAction={addAction}
-              onDeleteGoal={deleteGoal}
-              onRenameGoal={updateGoalTitle}
-              onChangeGoalTimeframe={updateGoalTimeframe}
-              onDeleteHabit={deleteHabit}
-              onEditHabit={updateHabit}
-              onToggleGoalComplete={toggleGoalComplete}
-              onToggleHabit={toggleHabit}
-              hideCompleted={hideCompleted}
-              domainValues={domain.values}
-              domainVision={domain.vision}
-              editValuesActive={editValuesFor === sg.id}
-              onEditValues={() => setEditValuesFor(editValuesFor === sg.id ? null : sg.id)}
-              onChangeValues={(idxs) => updateGoalValues(sg.id, idxs)}
-              valueIndexes={sg.valueIndexes}
-              isCollapsed={collapsedGoals.has(sg.id)}
-              onToggleCollapse={() => toggleCollapse(sg.id)}
-              canMoveUp={sgIdx > 0}
-              canMoveDown={sgIdx < sgArr.length - 1}
-              onMoveUp={() => moveLooseSt(sg.id, -1)}
-              onMoveDown={() => moveLooseSt(sg.id, 1)}
-            />
-          </div>
-        ))}
-
-        <AddShortGoalForm
-          domainValues={domain.values}
-          onAdd={addLooseShortGoal}
-        />
         <AddGoalForm
           domainValues={domain.values}
-          onAdd={(idxs, title, years) => addLongGoal(idxs, title, years)}
+          onAdd={(idxs, title, horizon, timeframe) => addGoal(idxs, title, horizon, timeframe)}
         />
       </div>
     </div>
@@ -1149,10 +1125,9 @@ function ShortWithActions({
   domainValues,
   isCollapsed,
   onToggleCollapse,
-  canMoveUp,
-  canMoveDown,
-  onMoveUp,
-  onMoveDown,
+  isFocus,
+  showDragHandle,
+  domainVision: _domainVision,
 }: {
   goal: Goal;
   displayValues: string[];
@@ -1172,7 +1147,7 @@ function ShortWithActions({
   ) => void;
   onDeleteGoal: (id: string) => void;
   onRenameGoal: (id: string, title: string) => void;
-  onChangeGoalTimeframe: (id: string, t: number) => void;
+  onChangeGoalTimeframe: (id: string, horizon: 'long' | 'short', t: number) => void;
   onDeleteHabit: (id: string) => void;
   onEditHabit: (id: string, updates: Partial<Habit>) => void;
   onToggleGoalComplete: (id: string) => void;
@@ -1184,10 +1159,8 @@ function ShortWithActions({
   valueIndexes?: number[];
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
-  canMoveUp?: boolean;
-  canMoveDown?: boolean;
-  onMoveUp?: () => void;
-  onMoveDown?: () => void;
+  isFocus?: boolean;
+  showDragHandle?: boolean;
 }) {
   const [editingHabitId, setEditingHabitId] = useState<string | null>(null);
   if (hideCompleted && !!goal.completedAt) return null;
@@ -1207,7 +1180,7 @@ function ShortWithActions({
         }
         onDelete={() => onDeleteGoal(goal.id)}
         onRename={(title) => onRenameGoal(goal.id, title)}
-        onChangeTimeframe={(t) => onChangeGoalTimeframe(goal.id, t)}
+        onChangeTimeframe={(horizon, t) => onChangeGoalTimeframe(goal.id, horizon, t)}
         isComplete={!!goal.completedAt}
         onToggleComplete={() => onToggleGoalComplete(goal.id)}
         editValuesActive={editValuesActive}
@@ -1217,10 +1190,8 @@ function ShortWithActions({
         domainValues={domainValues}
         isCollapsed={isCollapsed}
         onToggleCollapse={onToggleCollapse}
-        canMoveUp={canMoveUp}
-        canMoveDown={canMoveDown}
-        onMoveUp={onMoveUp}
-        onMoveDown={onMoveDown}
+        isFocus={isFocus}
+        showDragHandle={showDragHandle}
       />
       {!isCollapsed && habits
         .filter((h) => {
@@ -1234,7 +1205,7 @@ function ShortWithActions({
           return (
           <React.Fragment key={h.id}>
           <div
-            className={`${cls(`h:${h.id}`, 'habit-item')} habit-st${done ? ' completed' : ''}`}
+            className={`${cls(`h:${h.id}`)} habit action-row${done ? ' completed' : ''}`}
             onClick={() => setLit(lit === `h:${h.id}` ? null : `h:${h.id}`)}
           >
             <button
@@ -1243,16 +1214,16 @@ function ShortWithActions({
               onClick={(e) => { e.stopPropagation(); onToggleHabit(h.id); }}
             />
             <div className="node-main">
-              <div className="node-tag">
-                {h.kind === 'task' ? 'Task' : 'Habit'}
-              </div>
-              <div
-                className="node-title"
-                onClick={(e) => { e.stopPropagation(); setEditingHabitId(editingHabitId === h.id ? null : h.id); }}
-                title="Click to edit"
-                style={{ cursor: 'text' }}
-              >
-                {h.title}
+              <div className="action-title-row">
+                <span className="node-tag">{h.kind === 'task' ? 'Task' : 'Habit'}</span>
+                <span
+                  className="node-title"
+                  onClick={(e) => { e.stopPropagation(); setEditingHabitId(editingHabitId === h.id ? null : h.id); }}
+                  title="Click to edit"
+                  style={{ cursor: 'text' }}
+                >
+                  {h.title}
+                </span>
               </div>
               <div className="node-foot">
                 <span className="goal-date">
@@ -1315,8 +1286,12 @@ function AddActionForm({
   const [recurrence, setRecurrence] = useState<Recurrence>(initial?.recurrence ?? 'daily');
   const [customInterval, setCustomInterval] = useState(String(initial?.customInterval ?? 1));
   const [customUnit, setCustomUnit] = useState<CustomUnit>(initial?.customUnit ?? 'weeks');
+  const [specificDays, setSpecificDays] = useState<number[]>(initial?.specificDays ?? []);
   const [dueDate, setDueDate] = useState(initial?.dueDate ?? '');
   const [dueTime, setDueTime] = useState(initial?.dueTime ?? '');
+
+  const toggleDay = (d: number) =>
+    setSpecificDays((prev) => prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d].sort((a, b) => a - b));
 
   const submit = () => {
     if (!title.trim()) return;
@@ -1324,6 +1299,7 @@ function AddActionForm({
       if (kind === 'habit') {
         onSave({ title: title.trim(), kind, recurrence,
           customInterval: Number(customInterval) || 1, customUnit,
+          specificDays: recurrence === 'specific-days' ? specificDays : undefined,
           dueDate: undefined, dueTime: undefined, startDate: undefined });
       } else {
         onSave({ title: title.trim(), kind, dueDate: dueDate || undefined,
@@ -1332,7 +1308,8 @@ function AddActionForm({
     } else if (onAdd) {
       if (kind === 'habit') {
         onAdd(goalId, title, 'habit', { recurrence,
-          customInterval: Number(customInterval) || 1, customUnit });
+          customInterval: Number(customInterval) || 1, customUnit,
+          specificDays: recurrence === 'specific-days' ? specificDays : undefined });
       } else {
         onAdd(goalId, title, 'task', { dueDate, dueTime });
       }
@@ -1364,7 +1341,13 @@ function AddActionForm({
       {kind === 'habit' ? (
         <>
           <div className="field-row">
-            <select value={recurrence} onChange={(e) => setRecurrence(e.target.value as Recurrence)}>
+            <select
+              value={recurrence === 'specific-days' ? 'custom' : recurrence}
+              onChange={(e) => {
+                const v = e.target.value as Recurrence;
+                setRecurrence(v);
+              }}
+            >
               <option value="daily">Daily</option>
               <option value="weekdays">Every weekday</option>
               <option value="weekly">Weekly</option>
@@ -1373,18 +1356,51 @@ function AddActionForm({
               <option value="custom">Custom…</option>
             </select>
           </div>
-          {recurrence === 'custom' && (
-            <div className="field-row">
-              <span className="field-label">Every</span>
-              <input type="number" min="1" max="99" value={customInterval}
-                onChange={(e) => setCustomInterval(e.target.value)} style={{ width: '64px' }} />
-              <select value={customUnit} onChange={(e) => setCustomUnit(e.target.value as CustomUnit)}>
-                <option value="days">days</option>
-                <option value="weeks">weeks</option>
-                <option value="months">months</option>
-                <option value="years">years</option>
-              </select>
-            </div>
+          {(recurrence === 'custom' || recurrence === 'specific-days') && (
+            <>
+              <div className="seg">
+                <button
+                  type="button"
+                  className={recurrence === 'custom' ? 'on' : ''}
+                  onClick={() => setRecurrence('custom')}
+                >
+                  Interval
+                </button>
+                <button
+                  type="button"
+                  className={recurrence === 'specific-days' ? 'on' : ''}
+                  onClick={() => setRecurrence('specific-days')}
+                >
+                  Specific days
+                </button>
+              </div>
+              {recurrence === 'custom' ? (
+                <div className="field-row">
+                  <span className="field-label">Every</span>
+                  <input type="number" min="1" max="99" value={customInterval}
+                    onChange={(e) => setCustomInterval(e.target.value)} style={{ width: '64px' }} />
+                  <select value={customUnit} onChange={(e) => setCustomUnit(e.target.value as CustomUnit)}>
+                    <option value="days">days</option>
+                    <option value="weeks">weeks</option>
+                    <option value="months">months</option>
+                    <option value="years">years</option>
+                  </select>
+                </div>
+              ) : (
+                <div className="day-picker">
+                  {['Su','Mo','Tu','We','Th','Fr','Sa'].map((label, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      className={`day-btn${specificDays.includes(i) ? ' on' : ''}`}
+                      onClick={() => toggleDay(i)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </>
       ) : (
@@ -1406,7 +1422,7 @@ function AddActionForm({
   );
 }
 
-function AddShortGoalForm({
+function AddGoalForm({
   domainValues,
   onAdd,
   forceOpen,
@@ -1414,25 +1430,26 @@ function AddShortGoalForm({
   indent,
 }: {
   domainValues: string[];
-  onAdd: (title: string, months: number, valueIndexes: number[]) => void;
+  onAdd: (valueIndexes: number[], title: string, horizon: 'long' | 'short', timeframe: number) => void;
   forceOpen?: boolean;
   onClose?: () => void;
   indent?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState('');
-  const [months, setMonths] = useState('1');
   const [picked, setPicked] = useState<number[]>([]);
+  const [timeKey, setTimeKey] = useState('short:1');
 
   const isOpen = forceOpen || open;
   const cls = `inline-add${indent ? ` ${indent}` : ''}`;
 
-  const reset = () => { setTitle(''); setMonths('1'); setPicked([]); };
+  const reset = () => { setTitle(''); setPicked([]); setTimeKey('short:1'); };
   const close = () => { reset(); forceOpen ? onClose?.() : setOpen(false); };
 
   const submit = () => {
     if (!title.trim()) return;
-    onAdd(title.trim(), Number(months), [...picked].sort((a, b) => a - b));
+    const [h, t] = timeKey.split(':');
+    onAdd([...picked].sort((a, b) => a - b), title.trim(), h as 'long' | 'short', Number(t));
     close();
   };
 
@@ -1441,7 +1458,7 @@ function AddShortGoalForm({
 
   if (!isOpen) return (
     <button className={`${cls} add-btn`} onClick={() => setOpen(true)}>
-      + Short-term goal
+      + Add goal
     </button>
   );
 
@@ -1461,9 +1478,7 @@ function AddShortGoalForm({
           <div className="field-label">Values (optional)</div>
           <div className="value-check">
             {domainValues.map((v, i) => (
-              <button
-                key={v}
-                type="button"
+              <button key={v} type="button"
                 className={`value-chip small${picked.includes(i) ? ' on' : ''}`}
                 onClick={() => togglePick(i)}
               >{v}</button>
@@ -1471,103 +1486,19 @@ function AddShortGoalForm({
           </div>
         </>
       )}
-      <select value={months} onChange={(e) => setMonths(e.target.value)}>
-        {[1, 3, 6, 12].map((m) => (
-          <option key={m} value={m}>{m === 12 ? '1 Year' : `${m} Month${m > 1 ? 's' : ''}`}</option>
-        ))}
+      <select value={timeKey} onChange={(e) => setTimeKey(e.target.value)}>
+        <option value="short:1">1 month</option>
+        <option value="short:3">3 months</option>
+        <option value="short:6">6 months</option>
+        <option value="short:12">1 year</option>
+        <option value="long:2">2 years</option>
+        <option value="long:3">3 years</option>
+        <option value="long:4">4 years</option>
+        <option value="long:5">5 years</option>
       </select>
       <div className="add-actions">
         <button className="mini-primary" onClick={submit}>Add</button>
         <button className="mini-ghost" onClick={close}>Cancel</button>
-      </div>
-    </div>
-  );
-}
-
-function AddGoalForm({
-  domainValues,
-  onAdd,
-}: {
-  domainValues: string[];
-  onAdd: (valueIndexes: number[], title: string, years: number) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [title, setTitle] = useState('');
-  const [picked, setPicked] = useState<number[]>([]);
-  const [years, setYears] = useState('1');
-
-  const reset = () => {
-    setTitle('');
-    setPicked([]);
-    setYears('1');
-  };
-
-  const toggle = (i: number) =>
-    setPicked((p) => (p.includes(i) ? p.filter((x) => x !== i) : [...p, i]));
-
-  const submit = () => {
-    if (!title.trim()) return;
-    onAdd([...picked].sort((a, b) => a - b), title, Number(years));
-    reset();
-    setOpen(false);
-  };
-
-  if (!open) {
-    return (
-      <button className="inline-add add-btn" onClick={() => setOpen(true)}>
-        + Long-term goal
-      </button>
-    );
-  }
-
-  return (
-    <div className="inline-add add-form">
-      <div className="ai-field">
-        <input
-          autoFocus
-          placeholder="e.g. Ship a product I fully own"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && submit()}
-        />
-      </div>
-      {domainValues.length > 0 && (
-        <>
-          <div className="field-label">Values (optional)</div>
-          <div className="value-check">
-            {domainValues.map((v, i) => (
-              <button
-                key={v}
-                type="button"
-                className={`value-chip small${picked.includes(i) ? ' on' : ''}`}
-                onClick={() => toggle(i)}
-              >
-                {v}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-      <select value={years} onChange={(e) => setYears(e.target.value)}>
-        {[1, 2, 3, 4, 5].map((y) => (
-          <option key={y} value={y}>
-            {y} Year{y > 1 ? 's' : ''}
-          </option>
-        ))}
-      </select>
-      <div className="add-actions">
-        <button className="mini-primary" onClick={submit}>
-          Add
-        </button>
-        <button
-          className="mini-ghost"
-          onClick={() => {
-            reset();
-            setOpen(false);
-          }}
-        >
-          Cancel
-        </button>
       </div>
     </div>
   );
@@ -1594,10 +1525,8 @@ function GoalNode({
   onToggleComplete,
   isCollapsed,
   onToggleCollapse,
-  canMoveUp,
-  canMoveDown,
-  onMoveUp,
-  onMoveDown,
+  isFocus,
+  showDragHandle,
 }: {
   goal: Goal;
   values?: string[];
@@ -1611,7 +1540,7 @@ function GoalNode({
   onAddChild?: () => void;
   onDelete?: () => void;
   onRename?: (title: string) => void;
-  onChangeTimeframe?: (t: number) => void;
+  onChangeTimeframe?: (horizon: 'long' | 'short', t: number) => void;
   editValuesActive?: boolean;
   onEditValues?: () => void;
   onChangeValues?: (idxs: number[]) => void;
@@ -1619,16 +1548,15 @@ function GoalNode({
   onToggleComplete?: () => void;
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
-  canMoveUp?: boolean;
-  canMoveDown?: boolean;
-  onMoveUp?: () => void;
-  onMoveDown?: () => void;
+  isFocus?: boolean;
+  showDragHandle?: boolean;
 }) {
   const canEditValues = !!onEditValues;
   const idxs = valueIndexes ?? [];
   const [editingTitle, setEditingTitle] = useState(false);
   const [editingTimeframe, setEditingTimeframe] = useState(false);
   const [draft, setDraft] = useState(goal.title);
+
 
   const commitRename = () => {
     if (draft.trim() && draft.trim() !== goal.title) onRename?.(draft.trim());
@@ -1644,8 +1572,7 @@ function GoalNode({
   };
 
   return (
-    <div className={`${className}${short ? ' short' : ''}${isComplete ? ' completed' : ''}`} onClick={onClick}>
-      {/* Left strip: collapse → moves → complete (vertically stacked) */}
+    <div className={`${className}${short ? ' short' : ''}${isComplete ? ' completed' : ''}${isFocus ? ' focus-goal' : ''}`} onClick={onClick}>
       <div className="node-left-col">
         {onToggleCollapse && (
           <button
@@ -1658,16 +1585,7 @@ function GoalNode({
             </svg>
           </button>
         )}
-        {(canMoveUp || canMoveDown) && (
-          <div className="node-moves">
-            {canMoveUp && (
-              <button className="node-move" title="Move up" onClick={(e) => { e.stopPropagation(); onMoveUp?.(); }}>↑</button>
-            )}
-            {canMoveDown && (
-              <button className="node-move" title="Move down" onClick={(e) => { e.stopPropagation(); onMoveDown?.(); }}>↓</button>
-            )}
-          </div>
-        )}
+        {showDragHandle && <DragHandle />}
         {onToggleComplete && (
           <button
             className={`node-check${isComplete ? ' on' : ''}`}
@@ -1678,20 +1596,28 @@ function GoalNode({
       </div>
       <div className="node-main">
         <div className="node-tag">
-          {goal.horizon === 'long' ? 'Long-term · ' : 'Short-term · '}
+          {'Goal · '}
           {editingTimeframe && onChangeTimeframe ? (
             <select
               className="timeframe-select"
-              value={goal.timeframe}
+              value={`${goal.horizon}:${goal.timeframe}`}
               autoFocus
               onClick={(e) => e.stopPropagation()}
-              onChange={(e) => { onChangeTimeframe(Number(e.target.value)); setEditingTimeframe(false); }}
+              onChange={(e) => {
+                const [h, t] = e.target.value.split(':');
+                onChangeTimeframe(h as 'long' | 'short', Number(t));
+                setEditingTimeframe(false);
+              }}
               onBlur={() => setEditingTimeframe(false)}
             >
-              {goal.horizon === 'long'
-                ? [1,2,3,4,5].map((y) => <option key={y} value={y}>{y} yr</option>)
-                : [1,3,6,12].map((m) => <option key={m} value={m}>{m === 12 ? '1 yr' : `${m} mo`}</option>)
-              }
+              <option value="short:1">1 mo</option>
+              <option value="short:3">3 mo</option>
+              <option value="short:6">6 mo</option>
+              <option value="short:12">1 yr</option>
+              <option value="long:2">2 yr</option>
+              <option value="long:3">3 yr</option>
+              <option value="long:4">4 yr</option>
+              <option value="long:5">5 yr</option>
             </select>
           ) : (
             <span
@@ -1730,12 +1656,11 @@ function GoalNode({
           </div>
         )}
         <div className="node-foot">
-          {values.slice(0, 2).map((v) => (
-            <span key={v} className="goal-value">{v}</span>
+          {values.map((v) => (
+            <span key={v} className="goal-value">
+              {v}
+            </span>
           ))}
-          {values.length > 2 && (
-            <span className="goal-value goal-value-overflow">+{values.length - 2}</span>
-          )}
           {canEditValues && (
             <button
               className="goal-value-tag"
@@ -1808,19 +1733,6 @@ function GoalNode({
           </button>
         )}
       </div>
-      {/* Time bar shows elapsed portion of the long-term goal window */}
-      {!short && (
-        <div className="node-time-bar-wrap">
-          <div
-            className="node-time-bar-fill"
-            style={{
-              width: `${Math.min(100, Math.max(0,
-                (Date.now() - goal.createdAt) / (goal.timeframe * 365.25 * 86_400_000) * 100
-              ))}%`,
-            }}
-          />
-        </div>
-      )}
     </div>
   );
 }
@@ -1833,6 +1745,7 @@ function Today({
   domains,
   reflections,
   onReflect,
+  userId,
 }: {
   habits: Habit[];
   setHabits: React.Dispatch<React.SetStateAction<Habit[]>>;
@@ -1840,9 +1753,82 @@ function Today({
   domains: Domain[];
   reflections: ReflectionEntry[];
   onReflect: () => void;
+  userId?: string;
 }) {
-  const done = habits.filter((h) => h.kind === 'task' ? !!h.completed : isHabitDoneThisPeriod(h)).length;
-  const pct = habits.length ? Math.round((done / habits.length) * 100) : 0;
+  const [showDone, setShowDone] = useState(false);
+  const [collapsedDomains, setCollapsedDomains] = useState<Set<DomainId>>(
+    () => new Set(domains.map((d) => d.id)),
+  );
+  const toggleDomain = (id: DomainId) =>
+    setCollapsedDomains(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+
+  const [geminiFocus, setGeminiFocus] = useState<FocusPick[] | null>(null);
+  const [geminiLoading, setGeminiLoading] = useState(false);
+  const [coachCard, setCoachCard] = useState<CoachCard | null>(null);
+  const [coachLoading, setCoachLoading] = useState(false);
+  const [coachRating, setCoachRating] = useState<'up' | 'down' | null>(null);
+  const today = toDateStr(new Date());
+
+  // --- Classify what's relevant *today* ---
+  const scheduledHabits = habits.filter(
+    (h) => h.kind === 'habit' && isHabitScheduledToday(h),
+  );
+  const openHabits = scheduledHabits.filter((h) => !isHabitDoneThisPeriod(h));
+  const doneHabits = scheduledHabits.filter((h) => isHabitDoneThisPeriod(h));
+
+  const tasks = habits.filter((h) => h.kind === 'task');
+  const openTasks = tasks.filter((h) => !h.completed);
+  const overdueTasks = openTasks.filter((t) => t.dueDate && t.dueDate < today);
+  const dueTodayTasks = openTasks.filter((t) => t.dueDate === today);
+  const completedToday = tasks.filter(
+    (t) => t.completed && t.completedAt && toDateStr(new Date(t.completedAt)) === today,
+  );
+
+  const doneItems = [...doneHabits, ...completedToday];
+
+  // Progress: today's habits + urgent tasks + tasks finished today
+  const totalCount =
+    scheduledHabits.length + overdueTasks.length + dueTodayTasks.length + completedToday.length;
+  const done = doneHabits.length + completedToday.length;
+  const pct = totalCount ? Math.round((done / totalCount) * 100) : 0;
+
+  // Group today's open items (habits + upcoming tasks) by domain for the
+  // main list, so balance across life areas is visible.
+  const domainOf = (goalId: string) =>
+    goals.find((g) => g.id === goalId)?.domainId;
+  const horizonOf = (goalId: string) =>
+    goals.find((g) => g.id === goalId)?.horizon;
+
+  // Priority tier (lower = higher up). Short-term goals are the active push,
+  // so they rank above long-term — but a long-term item that's been neglected
+  // escalates to the top so it doesn't quietly rot at the bottom.
+  const tierOf = (item: Habit): number => {
+    if (horizonOf(item.goalId) === 'long') {
+      return isNeglected(item) ? 0 : 2;
+    }
+    return 1; // short-term (and items on goals with no horizon)
+  };
+  // Within a tier: habits that have been waiting longest first, then tasks by
+  // due date. Habits sort ahead of upcoming tasks within the same tier.
+  const subKey = (item: Habit): number => {
+    if (item.kind === 'habit') {
+      const since = daysSinceLastDone(item);
+      return -(since === Infinity ? 1e9 : since);
+    }
+    return item.dueDate ? new Date(item.dueDate + 'T12:00').getTime() : Number.MAX_SAFE_INTEGER;
+  };
+  const byPriority = (a: Habit, b: Habit) =>
+    tierOf(a) - tierOf(b) || subKey(a) - subKey(b);
+
+  const todayItemsByDomain = (domainId: DomainId) =>
+    [
+      ...openHabits.filter((h) => domainOf(h.goalId) === domainId),
+      ...openTasks.filter((t) => domainOf(t.goalId) === domainId),
+    ].sort(byPriority);
+  // Domains that have at least one active (non-completed) goal — used to
+  // surface neglect when such a domain has nothing scheduled today.
+  const domainHasGoals = (domainId: DomainId) =>
+    goals.some((g) => g.domainId === domainId && !g.completedAt);
 
   const toggle = (id: string) => {
     setHabits((prev) => prev.map((h) => {
@@ -1864,19 +1850,6 @@ function Today({
     }));
   };
 
-  const logHabitDate = (id: string, dateStr: string) => {
-    setHabits((prev) => prev.map((h) => {
-      if (h.id !== id || h.kind !== 'habit') return h;
-      const completions = h.completions ?? [];
-      if (completions.includes(dateStr)) return h;
-      return {
-        ...h,
-        completions: [...completions, dateStr],
-        completedAt: Math.max(h.completedAt ?? 0, new Date(dateStr + 'T12:00').getTime()),
-      };
-    }));
-  };
-
   const lineage = (goalId: string) => {
     const g = goals.find((x) => x.id === goalId);
     if (!g) return '';
@@ -1888,6 +1861,125 @@ function Today({
     ? allValues[getISOWeek(new Date()) % allValues.length]
     : null;
 
+  // --- Today's focus: pick the 3 most important, theme-aligned items ---
+  const goalAlignsWithTheme = (goalId: string): boolean => {
+    if (!weekValue) return false;
+    const g = goals.find((x) => x.id === goalId);
+    if (!g) return false;
+    const dom = domains.find((d) => d.id === g.domainId);
+    if (!dom) return false;
+    return g.valueIndexes.some((i) => dom.values[i] === weekValue);
+  };
+  const focusScore = (item: Habit): number => {
+    let s = 0;
+    if (goalAlignsWithTheme(item.goalId)) s += 50; // this week's theme
+    if (horizonOf(item.goalId) === 'short') s += 12; // active push
+    if (item.kind === 'task') {
+      if (item.dueDate) {
+        if (item.dueDate < today) s += 45; // overdue
+        else if (item.dueDate === today) s += 35; // due today
+        else {
+          const dLeft = Math.round(
+            (new Date(item.dueDate + 'T12:00').getTime() - Date.now()) / 86_400_000,
+          );
+          if (dLeft <= 3) s += 20;
+          else if (dLeft <= 7) s += 10;
+        }
+      }
+    } else {
+      if (isNeglected(item)) s += 25;
+      const since = daysSinceLastDone(item);
+      const interval = naturalIntervalDays(item);
+      s += since === Infinity ? 12 : Math.min(20, (since / interval) * 8);
+      if ((item.streak ?? 0) >= 3) s += 6; // protect a streak
+    }
+    return s;
+  };
+  const topFocusHabits = openHabits
+    .map((item) => ({ item, score: focusScore(item) }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3)
+    .map((x) => x.item);
+  const topFocusTasks = openTasks
+    .map((item) => ({ item, score: focusScore(item) }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3)
+    .map((x) => x.item);
+  const todaysFocus = [...topFocusHabits, ...topFocusTasks];
+
+  const allActionableIds = [...openHabits, ...openTasks].map((h) => h.id);
+
+  useEffect(() => {
+    if (!allActionableIds.length) return;
+    setGeminiLoading(true);
+    getGeminiFocusPicks(domains, goals, habits, allActionableIds)
+      .then((picks) => {
+        // Keep only IDs that are still actionable (in case of stale cache)
+        const live = new Set(allActionableIds);
+        setGeminiFocus(picks.filter((p) => live.has(p.id)));
+      })
+      .catch((err) => {
+        console.warn('Gemini focus unavailable, using heuristic:', err);
+        setGeminiFocus(null);
+      })
+      .finally(() => setGeminiLoading(false));
+  }, []); // once per mount (cache handles per-day freshness)
+
+  useEffect(() => {
+    setCoachLoading(true);
+    getGeminiCoachCard(domains, goals, habits, reflections, userId)
+      .then(async (card) => {
+        setCoachCard(card);
+        const rating = await getTodayCoachRating(today, card.title, userId);
+        setCoachRating(rating);
+      })
+      .catch((err) => {
+        console.warn('Gemini coach unavailable:', err);
+        setCoachCard(null);
+      })
+      .finally(() => setCoachLoading(false));
+  }, []); // once per mount (cache handles per-day freshness)
+
+  // Resolve the display focus: Gemini picks if available, else heuristic
+  const habitMap = new Map(habits.map((h) => [h.id, h]));
+  const focusDisplay: Array<{ item: Habit; reason?: string }> = geminiFocus
+    ? geminiFocus
+        .map((p) => ({ item: habitMap.get(p.id)!, reason: p.reason }))
+        .filter((x) => !!x.item)
+    : todaysFocus.map((item) => ({ item }));
+
+  const renderRow = (h: Habit) => {
+    const isDone = h.kind === 'task' ? !!h.completed : isHabitDoneThisPeriod(h);
+    return (
+      <div className="habit-row" key={h.id}>
+        <button
+          className={`check${isDone ? ' on' : ''}`}
+          onClick={() => toggle(h.id)}
+          aria-label="toggle"
+        >
+          <Tick />
+        </button>
+        <div style={{ flex: 1 }}>
+          <div className={`habit-title${isDone ? ' done' : ''}`}>
+            <span
+              className={`kind-icon ${h.kind}`}
+              title={h.kind === 'task' ? 'One-off task' : 'Repeatable habit'}
+            >
+              {h.kind === 'task' ? <TaskArrow /> : <RepeatIcon />}
+            </span>
+            {h.title}
+          </div>
+          <div className="habit-meta">
+            {h.kind === 'task' ? `Task · ${getTaskCountdown(h)}` : getRecurrenceString(h)}
+            &nbsp;·&nbsp; serves <b>{lineage(h.goalId)}</b>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const hasAnythingToday = openHabits.length > 0 || openTasks.length > 0;
+
   return (
     <div className="screen">
       <div className="eyebrow">Today</div>
@@ -1897,16 +1989,10 @@ function Today({
         forward.
       </p>
 
-      {weekValue && (
-        <div className="week-value">
-          This week: leaning into <b>{weekValue}</b>
-        </div>
-      )}
-
       <div className="progress-wrap">
         <div className="progress-num">
-          {done}
-          <span> / {habits.length} done</span>
+          <span className="progress-sq">{done}</span>
+          <span> / {totalCount} today</span>
         </div>
         <div className="bar">
           <i style={{ width: `${pct}%` }} />
@@ -1914,48 +2000,126 @@ function Today({
         <button className="reflect-mini-btn" onClick={onReflect} title="Weekly reflection">✦ Reflect</button>
       </div>
 
-      {habits.map((h) => {
-        const isDone = h.kind === 'task' ? !!h.completed : isHabitDoneThisPeriod(h);
+      {/* Daily coaching card */}
+      {(coachCard || coachLoading) && (
+        <div className="today-section coach-card">
+          <div className="today-section-head">
+            ✦ Coach
+            {coachLoading && <span className="focus-loading">thinking…</span>}
+          </div>
+          {coachCard && (
+            <>
+              <div className="coach-title">{coachCard.title}</div>
+              <div className="coach-blurb">{coachCard.blurb}</div>
+              <div className="coach-feedback">
+                <button
+                  className={`coach-feedback-btn up${coachRating === 'up' ? ' active' : ''}`}
+                  onClick={() => {
+                    if (coachRating === 'up') return;
+                    setCoachRating('up');
+                    saveCoachFeedback(today, coachCard.title, 'up', userId);
+                  }}
+                  aria-label="Helpful"
+                >👍</button>
+                <button
+                  className={`coach-feedback-btn down${coachRating === 'down' ? ' active' : ''}`}
+                  onClick={() => {
+                    if (coachRating === 'down') return;
+                    setCoachRating('down');
+                    saveCoachFeedback(today, coachCard.title, 'down', userId);
+                  }}
+                  aria-label="Not helpful"
+                >👎</button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Today's focus: Gemini-powered top-3, heuristic fallback */}
+      {(focusDisplay.length > 0 || geminiLoading) && (
+        <div className="today-section focus">
+          <div className="today-section-head">
+            ✦ Today's focus
+            {geminiLoading && <span className="focus-loading">thinking…</span>}
+          </div>
+          {focusDisplay.map(({ item, reason }) => (
+            <React.Fragment key={item.id}>
+              {renderRow(item)}
+              {reason && <div className="focus-reason">{reason}</div>}
+            </React.Fragment>
+          ))}
+        </div>
+      )}
+
+      {/* Today, grouped by domain */}
+      {domains.map((dom) => {
+        const items = todayItemsByDomain(dom.id);
+        if (items.length === 0 && !domainHasGoals(dom.id)) return null;
+        const collapsed = collapsedDomains.has(dom.id);
         return (
-          <div className="habit-row" key={h.id}>
+          <div className="today-section" key={dom.id}>
             <button
-              className={`check${isDone ? ' on' : ''}`}
-              onClick={() => toggle(h.id)}
-              aria-label="toggle"
+              className="today-domain-head"
+              onClick={() => toggleDomain(dom.id)}
+              aria-expanded={!collapsed}
             >
-              <Tick />
+              {dom.name}
+              {items.length > 0 && (
+                <span className="today-count">{items.length}</span>
+              )}
+              <span className={`today-domain-chev${collapsed ? ' collapsed' : ''}`}>
+                <Chevron up={false} />
+              </span>
             </button>
-            <div style={{ flex: 1 }}>
-              <div className={`habit-title${isDone ? ' done' : ''}`}>{h.title}</div>
-              <div className="habit-meta">
-                {h.kind === 'task' ? `Task · ${getTaskCountdown(h)}` : getRecurrenceString(h)}
-                &nbsp;·&nbsp; serves <b>{lineage(h.goalId)}</b>
-              </div>
-            </div>
-            {h.kind === 'habit' && (
-              <div className="backdate-btn" title="Log a past date">
-                <span>+past</span>
-                <input
-                  type="date"
-                  max={toDateStr(new Date())}
-                  onChange={(e) => { if (e.target.value) { logHabitDate(h.id, e.target.value); e.target.value = ''; } }}
-                />
-              </div>
+            {!collapsed && (
+              items.length > 0
+                ? items.map(renderRow)
+                : (
+                  <div className="today-empty-domain">
+                    Nothing scheduled for {dom.name} today.
+                  </div>
+                )
             )}
           </div>
         );
       })}
+
+      {!hasAnythingToday && doneItems.length === 0 && (
+        <div className="today-allclear">Nothing on the list today.</div>
+      )}
+      {!hasAnythingToday && doneItems.length > 0 && (
+        <div className="today-allclear">✦ All done for today. Nice.</div>
+      )}
+
+      {/* Done — collapsed by default */}
+      {doneItems.length > 0 && (
+        <div className="today-section done">
+          <button
+            className="today-done-toggle"
+            onClick={() => setShowDone((v) => !v)}
+          >
+            <Chevron up={showDone} />
+            Done today
+            <span className="today-count">{doneItems.length}</span>
+          </button>
+          {showDone && doneItems.map(renderRow)}
+        </div>
+      )}
 
       {(() => {
         const now = new Date();
         const day = now.getDay(); // 0=Sun, 1=Mon … 6=Sat
         const week = getISOWeek(now);
         const year = now.getFullYear();
+        // Mon–Wed: the "pending" reflection is from the ISO week that just ended Sunday
+        const inGrace = day >= 1 && day <= 3;
+        const checkWeek = inGrace ? (week > 1 ? week - 1 : 52) : week;
+        const checkYear = (inGrace && week === 1) ? year - 1 : year;
         const thisWeekDone = reflections.some(
-          (r) => r.weekNumber === week && new Date(r.date).getFullYear() === year
+          (r) => r.weekNumber === checkWeek && new Date(r.date).getFullYear() === checkYear
         );
-        // Show on Sunday, or Mon–Wed as a grace window, if this week isn't reflected yet
-        const inWindow = day === 0 || (day >= 1 && day <= 3);
+        const inWindow = day === 0 || inGrace;
         if (thisWeekDone || !inWindow) return null;
         const label = day === 0
           ? "It's Sunday — take two minutes to reflect on the week →"
@@ -1971,13 +2135,11 @@ function Today({
 /* ---------------- Reflect ---------------- */
 function Reflect({
   domains,
-  goals,
   reflections,
   onClose,
   onSave,
 }: {
   domains: Domain[];
-  goals: Goal[];
   reflections: ReflectionEntry[];
   onClose: () => void;
   onSave: (scores: Record<string, number>, note: string, weekNumber: number, date: number) => void;
@@ -2000,7 +2162,7 @@ function Reflect({
   }, [weekOffset]);
 
   const rows = domains.flatMap((d) =>
-    d.values.map((v, i) => ({ d, v, i, key: `${d.id}:${i}` })),
+    d.values.map((v) => ({ d, v, key: `${d.id}:${v}` })),
   );
 
   const labelFor = (key: string) => {
@@ -2023,12 +2185,6 @@ function Reflect({
   const worstEntry = scoreEntries.length
     ? [...scoreEntries].sort((a, b) => a[1] - b[1])[0]
     : null;
-  const atRisk = goals.filter((g) =>
-    g.valueIndexes.some((vi) => {
-      const key = `${g.domainId}:${vi}`;
-      return (scores[key] ?? 3) < 2;
-    }),
-  );
 
   if (step === 'insight') {
     return (
@@ -2045,14 +2201,6 @@ function Reflect({
             <div className="insight-card drift">
               <span className="insight-label">Drifted from</span>
               <span className="insight-value">{labelFor(worstEntry[0])}</span>
-            </div>
-          )}
-          {atRisk.length > 0 && (
-            <div className="insight-risk">
-              <div className="insight-risk-label">Goals that need attention</div>
-              {atRisk.map((g) => (
-                <div key={g.id} className="insight-goal-chip">{g.title}</div>
-              ))}
             </div>
           )}
           {scoreEntries.length === 0 && (
@@ -2125,13 +2273,17 @@ function valueAlignmentScore(
   goals: Goal[],
   habits: Habit[],
   reflections: ReflectionEntry[],
+  domains: Domain[],
 ): number {
-  const [domainId, viStr] = key.split(':');
-  const vi = Number(viStr);
+  const colonIdx = key.indexOf(':');
+  const domainId = key.slice(0, colonIdx);
+  const valueName = key.slice(colonIdx + 1);
+  const dom = domains.find((d) => d.id === domainId);
+  const vi = dom ? dom.values.indexOf(valueName) : -1;
 
   // Goals directly tagged with this value
   const tagged = goals.filter(
-    (g) => g.domainId === domainId && g.valueIndexes.includes(vi),
+    (g) => g.domainId === domainId && vi >= 0 && g.valueIndexes.includes(vi),
   );
   // Sub-goals of tagged long-term goals (inherit the value)
   const taggedLtIds = new Set(tagged.filter((g) => g.horizon === 'long').map((g) => g.id));
@@ -2147,7 +2299,7 @@ function valueAlignmentScore(
   for (const g of allTagged) {
     const h = g.horizon === 'long'
       ? vitalityFor(g, goals, habits).health
-      : stGoalMetrics(g, habits).health;
+      : stGoalMetrics(g, goals, habits).health;
     actSum += h; actCount++;
   }
   for (const h of habits.filter((h) => h.goalId && taggedIds.has(h.goalId))) {
@@ -2177,64 +2329,100 @@ function valueAlignmentScore(
 
 /* ---------------- GoalsDashboard ---------------- */
 
+/**
+ * Two-factor health:
+ *   health = 0.6 × pace + 0.4 × habit_consistency   (when habits exist)
+ *   health = pace                                     (no habits — tasks/sub-goals only)
+ *
+ * pace = done_fraction / time_elapsed_fraction (capped 0–1)
+ *   done_fraction  = (completed tasks×1 + completed sub-goals×5 + active habits×streak_weight)
+ *                    / (total tasks×1 + total sub-goals×5 + total habit weights)
+ *   time_elapsed   = how far through the goal's total duration (0–1), floored at 0.05
+ *
+ * habit_consistency = 28-day fidelity per habit, averaged weighted by streak (1–4×)
+ */
+function computeHealth(
+  subGoals: Goal[],
+  treeHabits: Habit[],
+  now: number,
+  timeElapsed: number,
+): number {
+  const SUB_W = 5;
+  const habitW     = (h: Habit) => Math.min(1 + (h.streak || 0) * 0.2, 4.0);
+  const lookback   = toDateStr(new Date(now - 28 * 86_400_000));
+  const tasks      = treeHabits.filter((h) => h.kind === 'task');
+  const habits     = treeHabits.filter((h) => h.kind === 'habit');
+
+  // Pace
+  const habitTotalW  = habits.reduce((s, h) => s + habitW(h), 0);
+  const totalWeight  = tasks.length + subGoals.length * SUB_W + habitTotalW;
+  let pace = 0;
+  if (totalWeight > 0) {
+    const taskDone    = tasks.filter((h) => !!h.completed).length;
+    const subDone     = subGoals.filter((g) => !!g.completedAt).length * SUB_W;
+    const habitDoneW  = habits
+      .filter((h) => (h.completions ?? []).some((d) => d >= lookback))
+      .reduce((s, h) => s + habitW(h), 0);
+    const doneFraction = (taskDone + subDone + habitDoneW) / totalWeight;
+    pace = timeElapsed < 0.1
+      ? Math.min(doneFraction, 1.0)
+      : Math.min(doneFraction / timeElapsed, 1.0);
+  }
+
+  // Habit consistency
+  if (habits.length === 0) return pace;
+  let totalW = 0, scoreW = 0;
+  habits.forEach((h) => {
+    const expected = Math.max(1, 28 / naturalIntervalDays(h));
+    const actual   = (h.completions ?? []).filter((d) => d >= lookback).length;
+    const w        = habitW(h);
+    scoreW += Math.min(actual / expected, 1) * w;
+    totalW += w;
+  });
+  const habitConsistency = totalW > 0 ? scoreW / totalW : 0;
+
+  return 0.6 * pace + 0.4 * habitConsistency;
+}
+
+/**
+ * Done = simple count ratio across sub-goals, habits, and tasks.
+ * Sub-goals: completed (completedAt set) — weight 3 each.
+ * Habits: done at least once in the last 28 days — weight 1 each.
+ * Tasks: completed (h.completed true) — weight 1 each.
+ */
+function computeDone(subGoals: Goal[], treeHabits: Habit[], now: number): number {
+  const SUB_W = 5;
+  const habitW = (h: Habit) => Math.min(1 + (h.streak || 0) * 0.2, 4.0);
+  const lookbackDate = toDateStr(new Date(now - 28 * 86_400_000));
+  const tasks  = treeHabits.filter((h) => h.kind === 'task');
+  const habits = treeHabits.filter((h) => h.kind === 'habit');
+  const total  = subGoals.length * SUB_W + tasks.length + habits.reduce((s, h) => s + habitW(h), 0);
+  if (total === 0) return 0;
+  const done =
+    subGoals.filter((g) => !!g.completedAt).length * SUB_W +
+    tasks.filter((h) => !!h.completed).length +
+    habits.filter((h) => (h.completions ?? []).some((d) => d >= lookbackDate)).reduce((s, h) => s + habitW(h), 0);
+  return done / total;
+}
+
 function vitalityFor(
   lg: Goal,
   goals: Goal[],
   habits: Habit[],
 ): { time: number; completion: number; health: number; completionRate: number; recencyScore: number; momentum: number } {
+  const now     = Date.now();
   const totalMs = (lg.timeframe || 1) * 365.25 * 86_400_000;
-  const elapsed = Math.min(1, Math.max(0, (Date.now() - lg.createdAt) / totalMs));
+  const elapsed = Math.min(1, Math.max(0, (now - lg.createdAt) / totalMs));
 
-  const shortGoals    = goals.filter((g) => g.parentGoalId === lg.id);
-  const subtree       = new Set<string>([lg.id, ...shortGoals.map((g) => g.id)]);
+  const subGoals      = goals.filter((g) => g.parentGoalId === lg.id);
+  const subtree       = new Set<string>([lg.id, ...subGoals.map((g) => g.id)]);
   const subtreeHabits = habits.filter((h) => subtree.has(h.goalId));
 
-  // Habit base weight 1, +0.2 per streak level, capped at 4.0
-  const habitWeight = (h: Habit) => Math.min(1 + (h.streak || 0) * 0.2, 4.0);
-
-  const FOUR_WEEKS = 28 * 86_400_000;
-  const now = Date.now();
-  // Standard recency: linear decay 1→0 over 4 weeks (ST goals, tasks)
-  const recency = (ts?: number) =>
-    ts ? Math.max(0, 1 - (now - ts) / FOUR_WEEKS) : 0;
-  // Streak-extended recency for habits: window grows 4→8 weeks as streak 0→14+
-  // Continuous habits stay "fresh" longer — rewarding sustained effort
-  const habitRecency = (h: Habit, ts?: number): number => {
-    const ext    = Math.min((h.streak || 0) / 14, 1); // 0.0–1.0
-    const window = FOUR_WEEKS * (1 + ext);              // 4–8 weeks
-    return ts ? Math.max(0, 1 - (now - ts) / window) : 0;
-  };
-
-  type Item = { w: number; done: boolean; r: number };
-
-  // ALL items — includes LT goal (weight 50) for the Done bar
-  const allItems: Item[] = [
-    { w: 50, done: !!lg.completedAt,             r: recency(lg.completedAt) },
-    ...shortGoals.map((g): Item =>
-      ({ w: 10, done: !!g.completedAt,           r: recency(g.completedAt) })),
-    ...subtreeHabits.filter((h) => h.kind === 'task').map((h): Item =>
-      ({ w: 2,  done: !!h.completed,             r: recency(h.completedAt) })),
-    ...subtreeHabits.filter((h) => h.kind === 'habit').map((h): Item =>
-      ({ w: habitWeight(h), done: isHabitDoneThisPeriod(h), r: habitRecency(h, h.completedAt) })),
-  ];
-
-  // Done bar: weighted fraction of the entire tree (including LT goal)
-  const totalW    = allItems.reduce((s, x) => s + x.w, 0);
-  const doneW     = allItems.filter((x) => x.done).reduce((s, x) => s + x.w, 0);
-  const completion = totalW > 0 ? doneW / totalW : 0;
-
-  // Health bar: completionRate × recencyScore over active sub-items only
-  // (ST goals, tasks, habits). LT goal completion lives in the Done bar.
-  const activeItems     = allItems.slice(1);
-  const activeTotalW    = activeItems.reduce((s, x) => s + x.w, 0);
-  const activeDoneItems = activeItems.filter((x) => x.done);
-  const activeDoneW     = activeDoneItems.reduce((s, x) => s + x.w, 0);
-  const completionRate  = activeTotalW > 0 ? activeDoneW / activeTotalW : 0;
-  const recencyScore    = activeDoneW > 0
-    ? activeDoneItems.reduce((s, x) => s + x.r * x.w, 0) / activeDoneW : 0;
-  const health = completionRate * recencyScore;
-
-  const momentum = (completion + health) / 2;
+  const completion     = computeDone(subGoals, subtreeHabits, now);
+  const health         = computeHealth(subGoals, subtreeHabits, now, elapsed);
+  const completionRate = completion;
+  const recencyScore   = health;
+  const momentum       = (completion + health) / 2;
   return { time: elapsed, completion, health, completionRate, recencyScore, momentum };
 }
 
@@ -2249,45 +2437,21 @@ const THREAD_PALETTE = [
   '#a78be8', '#e87a8b', '#4ed8c8', '#e8d44e',
 ];
 
-function threadColor(id: string): string {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) & 0xffffff;
-  return THREAD_PALETTE[h % THREAD_PALETTE.length];
-}
 
-function stGoalMetrics(sg: Goal, habits: Habit[]): { time: number; completion: number; health: number; completionRate: number; recencyScore: number; momentum: number } {
+function stGoalMetrics(sg: Goal, goals: Goal[], habits: Habit[]): { time: number; completion: number; health: number; completionRate: number; recencyScore: number; momentum: number } {
+  const now     = Date.now();
   const totalMs = (sg.timeframe || 1) * 30.44 * 86_400_000;
-  const elapsed = Math.min(1, Math.max(0, (Date.now() - sg.createdAt) / totalMs));
-  const sgHabits = habits.filter((h) => h.goalId === sg.id);
+  const elapsed = Math.min(1, Math.max(0, (now - sg.createdAt) / totalMs));
 
-  const habitWeight = (h: Habit) => Math.min(1 + (h.streak || 0) * 0.2, 4.0);
-  const FOUR_WEEKS = 28 * 86_400_000;
-  const now = Date.now();
-  const recency = (ts?: number) => ts ? Math.max(0, 1 - (now - ts) / FOUR_WEEKS) : 0;
-  const habitRecency = (h: Habit, ts?: number): number => {
-    const ext    = Math.min((h.streak || 0) / 14, 1);
-    const window = FOUR_WEEKS * (1 + ext);
-    return ts ? Math.max(0, 1 - (now - ts) / window) : 0;
-  };
+  const subGoals  = goals.filter((g) => g.parentGoalId === sg.id);
+  const subtree   = new Set<string>([sg.id, ...subGoals.map((g) => g.id)]);
+  const sgHabits  = habits.filter((h) => subtree.has(h.goalId));
 
-  type Item = { w: number; done: boolean; r: number };
-  const taskItems: Item[]  = sgHabits.filter((h) => h.kind === 'task').map((h) => ({ w: 2, done: !!h.completed, r: recency(h.completedAt) }));
-  const habitItems: Item[] = sgHabits.filter((h) => h.kind === 'habit').map((h) => ({ w: habitWeight(h), done: isHabitDoneThisPeriod(h), r: habitRecency(h, h.completedAt) }));
-  const allItems: Item[]   = [{ w: 10, done: !!sg.completedAt, r: recency(sg.completedAt) }, ...taskItems, ...habitItems];
-
-  const totalW    = allItems.reduce((s, x) => s + x.w, 0);
-  const doneW     = allItems.filter((x) => x.done).reduce((s, x) => s + x.w, 0);
-  const completion = totalW > 0 ? doneW / totalW : 0;
-
-  const activeItems     = [...taskItems, ...habitItems];
-  const activeTotalW    = activeItems.reduce((s, x) => s + x.w, 0);
-  const activeDoneItems = activeItems.filter((x) => x.done);
-  const activeDoneW     = activeDoneItems.reduce((s, x) => s + x.w, 0);
-  const completionRate  = activeTotalW > 0 ? activeDoneW / activeTotalW : 0;
-  const recencyScore    = activeDoneW > 0 ? activeDoneItems.reduce((s, x) => s + x.r * x.w, 0) / activeDoneW : 0;
-  const health = completionRate * recencyScore;
-  const momentum = (completion + health) / 2;
-
+  const completion     = computeDone(subGoals, sgHabits, now);
+  const health         = computeHealth(subGoals, sgHabits, now, elapsed);
+  const completionRate = completion;
+  const recencyScore   = health;
+  const momentum       = (completion + health) / 2;
   return { time: elapsed, completion, health, completionRate, recencyScore, momentum };
 }
 
@@ -2379,11 +2543,8 @@ function GoalStrip({
   isShort?: boolean;
 }) {
   const [showInfo, setShowInfo] = useState(false);
-  const countdown    = getGoalCountdown(goal);
-  const completePct  = Math.round(metrics.completion * 100);
-  const healthPct    = Math.round(metrics.health * 100);
-  const donePct      = Math.round(metrics.completionRate * 100);
-  const freshPct     = Math.round(metrics.recencyScore * 100);
+  const countdown  = getGoalCountdown(goal);
+  const healthPct  = Math.round(metrics.health * 100);
   return (
     <div className={`goal-strip${isShort ? ' goal-strip--short' : ''}`}>
       <div className="strip-title">{goal.title}</div>
@@ -2393,13 +2554,6 @@ function GoalStrip({
           <div className="strip-fill tone-time" style={{ width: `${Math.round(metrics.time * 100)}%` }} />
         </div>
         <span className="strip-pct strip-countdown">{countdown}</span>
-      </div>
-      <div className="strip-row">
-        <span className="strip-label">Done</span>
-        <div className="strip-track">
-          <div className="strip-fill" style={{ width: `${completePct}%`, background: domainColor, opacity: 0.5 }} />
-        </div>
-        <span className="strip-pct">{completePct}%</span>
       </div>
       <div className="strip-row">
         <span className="strip-label">
@@ -2420,20 +2574,17 @@ function GoalStrip({
         <div className="health-popup">
           <div className="health-popup-row">
             <span className="health-popup-formula">
-              {donePct}% done × {freshPct}% fresh
+              habit fidelity · task completion · sub-goal milestones
             </span>
-            <span className="health-popup-result" style={{ color: domainColor }}>= {healthPct}%</span>
+            <span className="health-popup-result" style={{ color: domainColor }}>{healthPct}%</span>
           </div>
           <div className="health-popup-divider" />
           <div className="health-popup-weights">
-            {!isShort && <span><b>10×</b> Short-term goal</span>}
-            <span><b>2×</b> Task</span>
-            <span><b>1–4×</b> Habit (streak scales weight)</span>
+            <span>Are you on track for the time spent?</span>
+            <span>Are your habits consistent?</span>
           </div>
           <div className="health-popup-note">
-            {isShort
-              ? 'Completion × recency of tasks and habits — both must be high. This goal\'s own completion is shown in the Done bar above.'
-              : 'Completion × recency — both must be high. Driven by short-term sub-goals (10×), tasks (2×), and habits (1–4× by streak). Long-term goal completion is shown in the Done bar above.'}
+            Are you on track for the time spent, and are your habits consistent?
           </div>
         </div>
       )}
@@ -2453,10 +2604,10 @@ function GoalsDashboard({
   habits: Habit[];
   onClose: () => void;
 }) {
-  const longGoals  = goals.filter((g) => g.horizon === 'long');
-  const allShort   = goals.filter((g) => g.horizon === 'short');
+  const longGoals  = goals.filter((g) => g.horizon === 'long'  && !g.parentGoalId);
+  const allShort   = goals.filter((g) => g.horizon === 'short' && !g.parentGoalId);
   const ltMetrics  = new Map(longGoals.map((g) => [g.id, vitalityFor(g, goals, habits)] as const));
-  const stMetrics  = new Map(allShort.map((g) => [g.id, stGoalMetrics(g, habits)] as const));
+  const stMetrics  = new Map(allShort.map((g) => [g.id, stGoalMetrics(g, goals, habits)] as const));
 
   const ltSpiderValues = longGoals.map((g) => ltMetrics.get(g.id)!.health);
   const stSpiderValues = allShort.map((g) => stMetrics.get(g.id)!.health);
@@ -2488,26 +2639,10 @@ function GoalsDashboard({
     return () => observer.disconnect();
   }, []);
 
-  const stHealthNote = (
+  const healthNote = (
     <div className="dash-health-note">
       <div className="dash-health-note-title">How Health is calculated</div>
-      <p>Health = <b>weighted % done</b> × <b>how recently</b> — both must be high.</p>
-      <div className="dash-health-weights">
-        <span><b>2×</b> Task</span>
-        <span><b>1–4×</b> Habit (streak grows weight)</span>
-      </div>
-    </div>
-  );
-
-  const ltHealthNote = (
-    <div className="dash-health-note">
-      <div className="dash-health-note-title">How Health is calculated</div>
-      <p>Health = <b>weighted % done</b> × <b>how recently</b> — both must be high.</p>
-      <div className="dash-health-weights">
-        <span><b>10×</b> Short-term sub-goal</span>
-        <span><b>2×</b> Task</span>
-        <span><b>1–4×</b> Habit (streak grows weight)</span>
-      </div>
+      <p>Are you on track for the time spent, and are your habits consistent?</p>
     </div>
   );
 
@@ -2519,8 +2654,8 @@ function GoalsDashboard({
       </div>
 
       <div className="spider-pills">
-        <button className={`spider-pill${activeSlide === 0 ? ' active' : ''}`} onClick={() => scrollToSlide(0)}>Short-term</button>
-        <button className={`spider-pill${activeSlide === 1 ? ' active' : ''}`} onClick={() => scrollToSlide(1)}>Long-term</button>
+        <button className={`spider-pill${activeSlide === 0 ? ' active' : ''}`} onClick={() => scrollToSlide(0)}>1–12 mo</button>
+        <button className={`spider-pill${activeSlide === 1 ? ' active' : ''}`} onClick={() => scrollToSlide(1)}>1–5 yr</button>
       </div>
 
       <div className="spider-track" ref={trackRef} role="region" aria-label="Goal charts">
@@ -2537,7 +2672,7 @@ function GoalsDashboard({
               <div key={d.id} className="dash-domain-section">
                 <div className="dash-domain-label" style={{ color: domainColor }}>{d.name}</div>
                 {dShort.map((sg) => {
-                  const parent = sg.parentGoalId ? longGoals.find((lg) => lg.id === sg.parentGoalId) : null;
+                  const parent = sg.parentGoalId ? goals.find((g) => g.id === sg.parentGoalId) : null;
                   return (
                     <div key={sg.id}>
                       {parent && (
@@ -2550,7 +2685,7 @@ function GoalsDashboard({
               </div>
             );
           })}
-          {stHealthNote}
+          {healthNote}
         </div>
 
         {/* Slide 1: Long-term */}
@@ -2571,7 +2706,7 @@ function GoalsDashboard({
               </div>
             );
           })}
-          {ltHealthNote}
+          {healthNote}
         </div>
       </div>
 
@@ -2599,83 +2734,6 @@ function decayedAvg(key: string, reflections: ReflectionEntry[]): number {
   return wTotal > 0 ? wSum / wTotal : 0;
 }
 
-/* ---------------- ValueLineChart ---------------- */
-function ValueLineChart({
-  valueKey,
-  reflections,
-  color,
-}: {
-  valueKey: string;
-  reflections: ReflectionEntry[];
-  color: string;
-}) {
-  const points = reflections
-    .filter((r) => r.scores[valueKey] !== undefined)
-    .sort((a, b) => a.date - b.date);
-
-  if (!points.length) {
-    return <p className="chart-empty">No data yet</p>;
-  }
-
-  const W = 280, H = 82, PL = 6, PR = 6, PT = 8, PB = 16;
-  const chartW = W - PL - PR;
-  const chartH = H - PT - PB;
-  const n = points.length;
-
-  // Equal index-based spacing — right for weekly data, avoids same-day collapse
-  const cx = (i: number) =>
-    n === 1 ? PL + chartW / 2 : PL + (i / (n - 1)) * chartW;
-  const cy = (i: number) =>
-    PT + chartH - (points[i].scores[valueKey] / 3) * chartH;
-
-  const linePath = points
-    .map((_, i) => `${i === 0 ? 'M' : 'L'}${cx(i).toFixed(1)},${cy(i).toFixed(1)}`)
-    .join(' ');
-
-  const areaPath =
-    linePath +
-    ` L${cx(n - 1).toFixed(1)},${(PT + chartH).toFixed(1)}` +
-    ` L${cx(0).toFixed(1)},${(PT + chartH).toFixed(1)} Z`;
-
-  // Only label every Nth dot so text doesn't overlap on dense charts
-  const labelEvery = n <= 6 ? 1 : n <= 12 ? 2 : 3;
-
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="value-line-chart">
-      {/* gridlines */}
-      {[0, 1, 2, 3].map((v) => {
-        const y = PT + chartH - (v / 3) * chartH;
-        return (
-          <line key={v} x1={PL} y1={y} x2={W - PR} y2={y}
-            stroke="var(--line)" strokeWidth={v === 0 ? 1 : 0.5}
-            strokeDasharray={v > 0 ? '3 3' : ''} />
-        );
-      })}
-      {/* area */}
-      <path d={areaPath} fill={color} fillOpacity="0.12" />
-      {/* line */}
-      {n > 1 && (
-        <path d={linePath} fill="none" stroke={color} strokeWidth="2"
-          strokeLinejoin="round" strokeLinecap="round" />
-      )}
-      {/* dots */}
-      {points.map((_, i) => (
-        <circle key={i} cx={cx(i)} cy={cy(i)} r="3.5" fill={color} />
-      ))}
-      {/* date label under every Nth dot */}
-      {points.map((p, i) => {
-        if (i % labelEvery !== 0 && i !== n - 1) return null;
-        const anchor = i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle';
-        return (
-          <text key={i} x={cx(i)} y={H - 3} textAnchor={anchor}
-            fontSize="6.5" fill="var(--muted)">
-            {formatReviewDate(p.date)}
-          </text>
-        );
-      })}
-    </svg>
-  );
-}
 
 /* ---------------- RadarChart ---------------- */
 function RadarChart({
@@ -2690,9 +2748,9 @@ function RadarChart({
   reflections: ReflectionEntry[];
 }) {
   const axes = domains.flatMap((d) =>
-    d.values.map((v, i) => ({
+    d.values.map((v) => ({
       label: v,
-      key: `${d.id}:${i}`,
+      key: `${d.id}:${v}`,
       color: DOMAIN_COLORS[d.id] ?? 'var(--muted)',
     })),
   );
@@ -2705,7 +2763,7 @@ function RadarChart({
   };
 
   const rings = [0.25, 0.5, 0.75, 1];
-  const dataPoints = axes.map((ax) => pt(axes.indexOf(ax), valueAlignmentScore(ax.key, goals, habits, reflections) / 10));
+  const dataPoints = axes.map((ax) => pt(axes.indexOf(ax), valueAlignmentScore(ax.key, goals, habits, reflections, domains) / 10));
   const poly = dataPoints.map((p) => `${p.x},${p.y}`).join(' ');
 
   const labelAnchor = (i: number): 'start' | 'end' | 'middle' => {
@@ -2758,11 +2816,6 @@ function RadarChart({
 
 const REVIEW_MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-function formatReviewDate(ts: number): string {
-  const d = new Date(ts);
-  return `${REVIEW_MONTH_NAMES[d.getMonth()]} ${d.getDate()}`;
-}
-
 function formatReviewDateFull(ts: number): string {
   const d = new Date(ts);
   return `${REVIEW_MONTH_NAMES[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
@@ -2783,7 +2836,6 @@ function ReviewPanel({
   onReset: () => void;
   onClose: () => void;
 }) {
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
   const [logOpen, setLogOpen] = useState(false);
   const [collapsedDomains, setCollapsedDomains] = useState<Set<string>>(new Set());
@@ -2794,19 +2846,6 @@ function ReviewPanel({
       next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
-
-  const latest = reflections[reflections.length - 1];
-
-  const atRiskGoals = latest
-    ? goals.filter(
-        (g) =>
-          g.horizon === 'long' &&
-          g.valueIndexes.some((vi) => {
-            const key = `${g.domainId}:${vi}`;
-            return (latest.scores[key] ?? 3) < 2;
-          }),
-      )
-    : [];
 
   return (
     <div className="review-panel">
@@ -2830,17 +2869,7 @@ function ReviewPanel({
           <div className="review-values-section">
             {domains.map((d) => {
               const domainColor = DOMAIN_COLORS[d.id] ?? 'var(--accent)';
-              // Collect all value keys for this domain: current values + any orphaned scored keys
-              const currentKeys = d.values.map((v, vi) => ({ label: v, key: `${d.id}:${vi}` }));
-              const scoredKeys = new Set(
-                reflections.flatMap((r) =>
-                  Object.keys(r.scores).filter((k) => k.startsWith(`${d.id}:`))
-                )
-              );
-              const orphanedKeys = [...scoredKeys]
-                .filter((k) => !currentKeys.some((c) => c.key === k))
-                .map((k) => ({ label: `Value ${k.split(':')[1]}`, key: k }));
-              const allValueRows = [...currentKeys, ...orphanedKeys];
+              const allValueRows = d.values.map((v) => ({ label: v, key: `${d.id}:${v}` }));
               if (!allValueRows.length) return null;
               const isCollapsed = collapsedDomains.has(d.id);
               return (
@@ -2854,15 +2883,11 @@ function ReviewPanel({
                     <span className="review-domain-chevron">{isCollapsed ? '▾' : '▴'}</span>
                   </button>
                   {!isCollapsed && allValueRows.map(({ label, key }) => {
-                    const score = valueAlignmentScore(key, goals, habits, reflections);
+                    const score = valueAlignmentScore(key, goals, habits, reflections, domains);
                     const pct = score / 10;
-                    const isOpen = selectedKey === key;
                     return (
                       <div key={key} className="review-value-row">
-                        <button
-                          className={`review-value-btn${isOpen ? ' open' : ''}`}
-                          onClick={() => setSelectedKey(isOpen ? null : key)}
-                        >
+                        <div className="review-value-btn">
                           <span className="review-value-name">{label}</span>
                           <div className="review-value-bar-wrap">
                             <div
@@ -2871,17 +2896,7 @@ function ReviewPanel({
                             />
                           </div>
                           <span className="review-value-score">{Math.round(pct * 100)}%</span>
-                          <span className="review-value-chevron">{isOpen ? '▴' : '▾'}</span>
-                        </button>
-                        {isOpen && (
-                          <div className="review-value-chart">
-                            <ValueLineChart
-                              valueKey={key}
-                              reflections={reflections}
-                              color={domainColor}
-                            />
-                          </div>
-                        )}
+                        </div>
                       </div>
                     );
                   })}
@@ -2892,22 +2907,6 @@ function ReviewPanel({
               Score 0–100%: reflection 70%, goal &amp; habit activity 30%
             </div>
           </div>
-
-          {/* Goals at risk */}
-          {atRiskGoals.length > 0 && (
-            <div className="review-risk-section">
-              <div className="review-section-label">Goals at risk this week</div>
-              {atRiskGoals.map((g) => {
-                const d = domains.find((x) => x.id === g.domainId);
-                return (
-                  <div key={g.id} className="review-risk-row">
-                    <span className="review-risk-domain">{d?.name}</span>
-                    <span className="review-risk-title">{g.title}</span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
 
           {/* Reflection log */}
           <div className="review-log-section">
@@ -2928,16 +2927,16 @@ function ReviewPanel({
                     </div>
                     {domains.map((d) => {
                       const color = DOMAIN_COLORS[d.id] ?? 'var(--accent)';
-                      const hasScores = d.values.some((_, vi) => r.scores[`${d.id}:${vi}`] != null);
+                      const hasScores = d.values.some((v) => r.scores[`${d.id}:${v}`] != null);
                       if (!hasScores) return null;
                       return (
                         <div key={d.id} className="review-log-domain">
                           <div className="review-log-domain-label" style={{ color }}>{d.name}</div>
-                          {d.values.map((v, vi) => {
-                            const score = r.scores[`${d.id}:${vi}`];
+                          {d.values.map((v) => {
+                            const score = r.scores[`${d.id}:${v}`];
                             if (score == null) return null;
                             return (
-                              <div key={vi} className="review-log-value-row">
+                              <div key={v} className="review-log-value-row">
                                 <span className="review-log-value-name">{v}</span>
                                 <div className="review-log-dots">
                                   {[1, 2, 3].map((n) => (
@@ -3042,6 +3041,11 @@ function dateInCurrentPeriod(dateStr: string, h: Habit): boolean {
         /* years */         interval * 365.25 * 86_400_000;
       return Date.now() - d.getTime() < windowMs;
     }
+    case 'specific-days': {
+      const scheduled = h.specificDays ?? [];
+      if (!scheduled.includes(now.getDay())) return false;
+      return dateStr === toDateStr(now);
+    }
     default:
       return dateStr === toDateStr(now);
   }
@@ -3049,6 +3053,61 @@ function dateInCurrentPeriod(dateStr: string, h: Habit): boolean {
 
 function isHabitDoneThisPeriod(h: Habit): boolean {
   return (h.completions ?? []).some((d) => dateInCurrentPeriod(d, h));
+}
+
+/** Is this habit actually scheduled to appear today? Cadence-aware. */
+function isHabitScheduledToday(h: Habit): boolean {
+  const day = new Date().getDay(); // 0=Sun … 6=Sat
+  switch (h.recurrence ?? 'daily') {
+    case 'weekdays':
+      return day !== 0 && day !== 6;
+    case 'specific-days':
+      return (h.specificDays ?? []).includes(day);
+    // weekly / monthly / yearly / custom are open commitments: shown until
+    // completed for the current period, then they fall into Done.
+    default:
+      return true;
+  }
+}
+
+/** Roughly how many days between expected completions, by cadence. */
+function naturalIntervalDays(h: Habit): number {
+  switch (h.recurrence ?? 'daily') {
+    case 'weekly':
+      return 7;
+    case 'monthly':
+      return 30;
+    case 'yearly':
+      return 365;
+    case 'specific-days': {
+      const n = (h.specificDays ?? []).length;
+      return n ? 7 / n : 7;
+    }
+    case 'custom': {
+      const iv = Math.max(1, h.customInterval ?? 1);
+      const u = h.customUnit ?? 'weeks';
+      return iv * (u === 'days' ? 1 : u === 'weeks' ? 7 : u === 'months' ? 30 : 365);
+    }
+    default: // daily, weekdays
+      return 1;
+  }
+}
+
+/** Days since this habit was last completed; Infinity if never. */
+function daysSinceLastDone(h: Habit): number {
+  const comps = h.completions ?? [];
+  if (!comps.length) return Infinity;
+  const last = comps.reduce(
+    (max, d) => Math.max(max, new Date(d + 'T12:00').getTime()),
+    0,
+  );
+  return (Date.now() - last) / 86_400_000;
+}
+
+/** A habit has been neglected when it's overdue by ≥ 2× its natural interval. */
+function isNeglected(h: Habit): boolean {
+  if (h.kind !== 'habit') return false;
+  return daysSinceLastDone(h) >= naturalIntervalDays(h) * 2;
 }
 
 /* ---------------- bits ---------------- */
@@ -3087,6 +3146,27 @@ function Tick() {
   );
 }
 
+/** One-way arrow — marks a one-off task. */
+function TaskArrow() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M5 12h13M13 7l5 5-5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/** Two cyclic arrows — marks a repeatable habit. */
+function RepeatIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M4 9a8 8 0 0 1 13.7-3.3L20 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M20 4v4h-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M20 15a8 8 0 0 1-13.7 3.3L4 16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M4 20v-4h4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function TrashIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
@@ -3100,6 +3180,7 @@ function TrashIcon() {
     </svg>
   );
 }
+
 
 function IconBase() {
   return (
