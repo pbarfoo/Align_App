@@ -2534,9 +2534,8 @@ function GoalStrip({
   isShort?: boolean;
 }) {
   const [showInfo, setShowInfo] = useState(false);
-  const countdown   = getGoalCountdown(goal);
-  const completePct = Math.round(metrics.completion * 100);
-  const healthPct   = Math.round(metrics.health * 100);
+  const countdown  = getGoalCountdown(goal);
+  const healthPct  = Math.round(metrics.health * 100);
   return (
     <div className={`goal-strip${isShort ? ' goal-strip--short' : ''}`}>
       <div className="strip-title">{goal.title}</div>
@@ -2546,13 +2545,6 @@ function GoalStrip({
           <div className="strip-fill tone-time" style={{ width: `${Math.round(metrics.time * 100)}%` }} />
         </div>
         <span className="strip-pct strip-countdown">{countdown}</span>
-      </div>
-      <div className="strip-row">
-        <span className="strip-label">Done</span>
-        <div className="strip-track">
-          <div className="strip-fill" style={{ width: `${completePct}%`, background: domainColor, opacity: 0.5 }} />
-        </div>
-        <span className="strip-pct">{completePct}%</span>
       </div>
       <div className="strip-row">
         <span className="strip-label">
