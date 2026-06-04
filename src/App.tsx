@@ -2377,19 +2377,19 @@ function computeHealth(subGoals: Goal[], treeHabits: Habit[], now: number): numb
 
 /**
  * Done = simple count ratio across sub-goals, habits, and tasks.
- * Sub-goals: completed (completedAt set).
- * Habits: done at least once in the last 28 days.
- * Tasks: completed (h.completed true).
- * Denominator is the total count of all three — no weights.
+ * Sub-goals: completed (completedAt set) — weight 3 each.
+ * Habits: done at least once in the last 28 days — weight 1 each.
+ * Tasks: completed (h.completed true) — weight 1 each.
  */
 function computeDone(subGoals: Goal[], treeHabits: Habit[], now: number): number {
+  const SUB_W = 3;
   const lookbackDate = toDateStr(new Date(now - 28 * 86_400_000));
   const tasks  = treeHabits.filter((h) => h.kind === 'task');
   const habits = treeHabits.filter((h) => h.kind === 'habit');
-  const total  = subGoals.length + tasks.length + habits.length;
+  const total  = subGoals.length * SUB_W + tasks.length + habits.length;
   if (total === 0) return 0;
   const done =
-    subGoals.filter((g) => !!g.completedAt).length +
+    subGoals.filter((g) => !!g.completedAt).length * SUB_W +
     tasks.filter((h) => !!h.completed).length +
     habits.filter((h) => (h.completions ?? []).some((d) => d >= lookbackDate)).length;
   return done / total;
