@@ -2578,8 +2578,8 @@ function GoalStrip({
           </div>
           <div className="health-popup-divider" />
           <div className="health-popup-weights">
-            <span><b>60%</b> Pace — progress made vs. time elapsed</span>
-            <span><b>40%</b> Habit consistency — 28-day fidelity, streak-weighted</span>
+            <span>Are you on track for the time spent?</span>
+            <span>Are your habits consistent?</span>
           </div>
           <div className="health-popup-note">
             {isShort
@@ -2642,10 +2642,7 @@ function GoalsDashboard({
   const healthNote = (
     <div className="dash-health-note">
       <div className="dash-health-note-title">How Health is calculated</div>
-      <p><b>60% Pace</b> — how much you've done vs. how much time has passed. <b>40% Habit consistency</b> — 28-day fidelity, streak-weighted. Behind schedule or skipping habits = lower health.</p>
-      <div className="dash-health-weights">
-        <span>Tasks ×1 · Sub-goals ×4 · Habits ×streak (1–4)</span>
-      </div>
+      <p>Are you on track for the time spent, and are your habits consistent?</p>
     </div>
   );
 
