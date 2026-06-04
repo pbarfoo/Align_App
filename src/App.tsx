@@ -2359,6 +2359,13 @@ function vitalityFor(
 
   type Item = { w: number; done: boolean; r: number };
 
+  // For health purposes, "done" means completed within 2× the habit's natural
+  // cadence — prevents health from resetting to 0 the moment a new period starts.
+  const recentlyDone = (h: Habit): boolean => {
+    if (!h.completedAt) return false;
+    return (now - h.completedAt) < naturalIntervalDays(h) * 2 * 86_400_000;
+  };
+
   // ALL items — includes LT goal (weight 50) for the Done bar
   const allItems: Item[] = [
     { w: 50, done: !!lg.completedAt,             r: recency(lg.completedAt) },
@@ -2367,7 +2374,7 @@ function vitalityFor(
     ...subtreeHabits.filter((h) => h.kind === 'task').map((h): Item =>
       ({ w: 2,  done: !!h.completed,             r: recency(h.completedAt) })),
     ...subtreeHabits.filter((h) => h.kind === 'habit').map((h): Item =>
-      ({ w: habitWeight(h), done: isHabitDoneThisPeriod(h), r: habitRecency(h, h.completedAt) })),
+      ({ w: habitWeight(h), done: recentlyDone(h), r: habitRecency(h, h.completedAt) })),
   ];
 
   // Done bar: weighted fraction of the entire tree (including LT goal)
@@ -2420,8 +2427,12 @@ function stGoalMetrics(sg: Goal, goals: Goal[], habits: Habit[]): { time: number
   };
 
   type Item = { w: number; done: boolean; r: number };
+  const recentlyDone = (h: Habit): boolean => {
+    if (!h.completedAt) return false;
+    return (now - h.completedAt) < naturalIntervalDays(h) * 2 * 86_400_000;
+  };
   const taskItems: Item[]  = sgHabits.filter((h) => h.kind === 'task').map((h) => ({ w: 2, done: !!h.completed, r: recency(h.completedAt) }));
-  const habitItems: Item[] = sgHabits.filter((h) => h.kind === 'habit').map((h) => ({ w: habitWeight(h), done: isHabitDoneThisPeriod(h), r: habitRecency(h, h.completedAt) }));
+  const habitItems: Item[] = sgHabits.filter((h) => h.kind === 'habit').map((h) => ({ w: habitWeight(h), done: recentlyDone(h), r: habitRecency(h, h.completedAt) }));
   const subGoalItems: Item[] = subGoals.map((g): Item => ({ w: 10, done: !!g.completedAt, r: recency(g.completedAt) }));
   const allItems: Item[]   = [{ w: 10, done: !!sg.completedAt, r: recency(sg.completedAt) }, ...subGoalItems, ...taskItems, ...habitItems];
 
