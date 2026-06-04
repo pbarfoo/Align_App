@@ -2329,70 +2329,93 @@ function valueAlignmentScore(
 
 /* ---------------- GoalsDashboard ---------------- */
 
+/**
+ * Option-B health: weighted-average fidelity across habits, tasks, sub-goals.
+ * - Habits:    completions in last 28 days ÷ expected completions (cadence-aware)
+ * - Tasks:     completed recently → reward (fades 8 wks); overdue → penalty; future/undated → skipped
+ * - Sub-goals: completed → recency bonus; incomplete → skipped (their children already score)
+ * Adding new items with no due date never drops health; only behaviour changes the score.
+ */
+function computeHealth(subGoals: Goal[], treeHabits: Habit[], now: number): number {
+  const FOUR_WEEKS  = 28 * 86_400_000;
+  const EIGHT_WEEKS = 56 * 86_400_000;
+  const lookbackDate = toDateStr(new Date(now - FOUR_WEEKS));
+
+  interface FI { score: number; w: number; }
+  const items: FI[] = [];
+
+  // Habits — fidelity over last 28 days
+  treeHabits.filter((h) => h.kind === 'habit').forEach((h) => {
+    const expected = Math.max(1, 28 / naturalIntervalDays(h));
+    const actual   = (h.completions ?? []).filter((d) => d >= lookbackDate).length;
+    const w        = Math.min(1 + (h.streak || 0) * 0.2, 4.0);
+    items.push({ score: Math.min(actual / expected, 1), w });
+  });
+
+  // Tasks — reward done, penalise overdue, skip future/undated
+  treeHabits.filter((h) => h.kind === 'task').forEach((h) => {
+    if (h.completed && h.completedAt) {
+      const score = Math.max(0, 1 - (now - h.completedAt) / EIGHT_WEEKS);
+      if (score > 0) items.push({ score, w: 2 });
+    } else if (h.dueDate) {
+      const dueMs = new Date(h.dueDate + 'T12:00').getTime();
+      if (dueMs <= now) {
+        // Overdue: penalty decays from 0 → 0 over 4 weeks past due
+        items.push({ score: Math.max(0, 1 - (now - dueMs) / FOUR_WEEKS), w: 2 });
+      }
+      // Future due date: skip
+    }
+    // No due date, not done: skip — don't penalise planning ahead
+  });
+
+  // Sub-goals — completion bonus only; incomplete sub-goals skipped
+  subGoals.forEach((g) => {
+    if (g.completedAt) {
+      const score = Math.max(0, 1 - (now - g.completedAt) / EIGHT_WEEKS);
+      if (score > 0) items.push({ score, w: 10 });
+    }
+  });
+
+  if (items.length === 0) return 0;
+  const totalW = items.reduce((s, x) => s + x.w, 0);
+  return items.reduce((s, x) => s + x.score * x.w, 0) / totalW;
+}
+
 function vitalityFor(
   lg: Goal,
   goals: Goal[],
   habits: Habit[],
 ): { time: number; completion: number; health: number; completionRate: number; recencyScore: number; momentum: number } {
+  const now     = Date.now();
   const totalMs = (lg.timeframe || 1) * 365.25 * 86_400_000;
-  const elapsed = Math.min(1, Math.max(0, (Date.now() - lg.createdAt) / totalMs));
+  const elapsed = Math.min(1, Math.max(0, (now - lg.createdAt) / totalMs));
 
-  const shortGoals    = goals.filter((g) => g.parentGoalId === lg.id);
-  const subtree       = new Set<string>([lg.id, ...shortGoals.map((g) => g.id)]);
+  const subGoals      = goals.filter((g) => g.parentGoalId === lg.id);
+  const subtree       = new Set<string>([lg.id, ...subGoals.map((g) => g.id)]);
   const subtreeHabits = habits.filter((h) => subtree.has(h.goalId));
 
-  // Habit base weight 1, +0.2 per streak level, capped at 4.0
-  const habitWeight = (h: Habit) => Math.min(1 + (h.streak || 0) * 0.2, 4.0);
-
+  // Done bar: weighted fraction of entire tree (goal + sub-goals + tasks + habits)
   const FOUR_WEEKS = 28 * 86_400_000;
-  const now = Date.now();
-  // Standard recency: linear decay 1→0 over 4 weeks (ST goals, tasks)
-  const recency = (ts?: number) =>
-    ts ? Math.max(0, 1 - (now - ts) / FOUR_WEEKS) : 0;
-  // Streak-extended recency for habits: window grows 4→8 weeks as streak 0→14+
-  // Continuous habits stay "fresh" longer — rewarding sustained effort
-  const habitRecency = (h: Habit, ts?: number): number => {
-    const ext    = Math.min((h.streak || 0) / 14, 1); // 0.0–1.0
-    const window = FOUR_WEEKS * (1 + ext);              // 4–8 weeks
-    return ts ? Math.max(0, 1 - (now - ts) / window) : 0;
-  };
-
-  type Item = { w: number; done: boolean; r: number };
-
-  // For health purposes, "done" means completed within 2× the habit's natural
-  // cadence — prevents health from resetting to 0 the moment a new period starts.
-  const recentlyDone = (h: Habit): boolean => {
-    if (!h.completedAt) return false;
-    return (now - h.completedAt) < naturalIntervalDays(h) * 2 * 86_400_000;
-  };
-
-  // ALL items — includes LT goal (weight 50) for the Done bar
+  const habitWeight = (h: Habit) => Math.min(1 + (h.streak || 0) * 0.2, 4.0);
+  type Item = { w: number; done: boolean; };
   const allItems: Item[] = [
-    { w: 50, done: !!lg.completedAt,             r: recency(lg.completedAt) },
-    ...shortGoals.map((g): Item =>
-      ({ w: 10, done: !!g.completedAt,           r: recency(g.completedAt) })),
-    ...subtreeHabits.filter((h) => h.kind === 'task').map((h): Item =>
-      ({ w: 2,  done: !!h.completed,             r: recency(h.completedAt) })),
-    ...subtreeHabits.filter((h) => h.kind === 'habit').map((h): Item =>
-      ({ w: habitWeight(h), done: recentlyDone(h), r: habitRecency(h, h.completedAt) })),
+    { w: 50, done: !!lg.completedAt },
+    ...subGoals.map((g): Item => ({ w: 10, done: !!g.completedAt })),
+    ...subtreeHabits.filter((h) => h.kind === 'task').map((h): Item => ({ w: 2, done: !!h.completed })),
+    ...subtreeHabits.filter((h) => h.kind === 'habit').map((h): Item => ({ w: habitWeight(h), done: !!(h.completions ?? []).some((d) => d >= toDateStr(new Date(now - FOUR_WEEKS))) })),
   ];
-
-  // Done bar: weighted fraction of the entire tree (including LT goal)
-  const totalW    = allItems.reduce((s, x) => s + x.w, 0);
-  const doneW     = allItems.filter((x) => x.done).reduce((s, x) => s + x.w, 0);
+  const totalW   = allItems.reduce((s, x) => s + x.w, 0);
+  const doneW    = allItems.filter((x) => x.done).reduce((s, x) => s + x.w, 0);
   const completion = totalW > 0 ? doneW / totalW : 0;
 
-  // Health bar: completionRate × recencyScore over active sub-items only
-  // (ST goals, tasks, habits). LT goal completion lives in the Done bar.
+  const health = computeHealth(subGoals, subtreeHabits, now);
+
+  // Keep completionRate / recencyScore for GoalStrip display tooltip
   const activeItems     = allItems.slice(1);
   const activeTotalW    = activeItems.reduce((s, x) => s + x.w, 0);
-  const activeDoneItems = activeItems.filter((x) => x.done);
-  const activeDoneW     = activeDoneItems.reduce((s, x) => s + x.w, 0);
+  const activeDoneW     = activeItems.filter((x) => x.done).reduce((s, x) => s + x.w, 0);
   const completionRate  = activeTotalW > 0 ? activeDoneW / activeTotalW : 0;
-  const recencyScore    = activeDoneW > 0
-    ? activeDoneItems.reduce((s, x) => s + x.r * x.w, 0) / activeDoneW : 0;
-  const health = completionRate * recencyScore;
-
+  const recencyScore    = health; // for tooltip: show health directly
   const momentum = (completion + health) / 2;
   return { time: elapsed, completion, health, completionRate, recencyScore, momentum };
 }
@@ -2410,45 +2433,36 @@ const THREAD_PALETTE = [
 
 
 function stGoalMetrics(sg: Goal, goals: Goal[], habits: Habit[]): { time: number; completion: number; health: number; completionRate: number; recencyScore: number; momentum: number } {
+  const now     = Date.now();
   const totalMs = (sg.timeframe || 1) * 30.44 * 86_400_000;
-  const elapsed = Math.min(1, Math.max(0, (Date.now() - sg.createdAt) / totalMs));
-  const subGoals     = goals.filter((g) => g.parentGoalId === sg.id);
-  const subtree      = new Set<string>([sg.id, ...subGoals.map((g) => g.id)]);
-  const sgHabits     = habits.filter((h) => subtree.has(h.goalId));
+  const elapsed = Math.min(1, Math.max(0, (now - sg.createdAt) / totalMs));
 
+  const subGoals  = goals.filter((g) => g.parentGoalId === sg.id);
+  const subtree   = new Set<string>([sg.id, ...subGoals.map((g) => g.id)]);
+  const sgHabits  = habits.filter((h) => subtree.has(h.goalId));
+
+  // Done bar
+  const FOUR_WEEKS  = 28 * 86_400_000;
   const habitWeight = (h: Habit) => Math.min(1 + (h.streak || 0) * 0.2, 4.0);
-  const FOUR_WEEKS = 28 * 86_400_000;
-  const now = Date.now();
-  const recency = (ts?: number) => ts ? Math.max(0, 1 - (now - ts) / FOUR_WEEKS) : 0;
-  const habitRecency = (h: Habit, ts?: number): number => {
-    const ext    = Math.min((h.streak || 0) / 14, 1);
-    const window = FOUR_WEEKS * (1 + ext);
-    return ts ? Math.max(0, 1 - (now - ts) / window) : 0;
-  };
-
-  type Item = { w: number; done: boolean; r: number };
-  const recentlyDone = (h: Habit): boolean => {
-    if (!h.completedAt) return false;
-    return (now - h.completedAt) < naturalIntervalDays(h) * 2 * 86_400_000;
-  };
-  const taskItems: Item[]  = sgHabits.filter((h) => h.kind === 'task').map((h) => ({ w: 2, done: !!h.completed, r: recency(h.completedAt) }));
-  const habitItems: Item[] = sgHabits.filter((h) => h.kind === 'habit').map((h) => ({ w: habitWeight(h), done: recentlyDone(h), r: habitRecency(h, h.completedAt) }));
-  const subGoalItems: Item[] = subGoals.map((g): Item => ({ w: 10, done: !!g.completedAt, r: recency(g.completedAt) }));
-  const allItems: Item[]   = [{ w: 10, done: !!sg.completedAt, r: recency(sg.completedAt) }, ...subGoalItems, ...taskItems, ...habitItems];
-
-  const totalW    = allItems.reduce((s, x) => s + x.w, 0);
-  const doneW     = allItems.filter((x) => x.done).reduce((s, x) => s + x.w, 0);
+  type Item = { w: number; done: boolean; };
+  const allItems: Item[] = [
+    { w: 10, done: !!sg.completedAt },
+    ...subGoals.map((g): Item => ({ w: 10, done: !!g.completedAt })),
+    ...sgHabits.filter((h) => h.kind === 'task').map((h): Item => ({ w: 2, done: !!h.completed })),
+    ...sgHabits.filter((h) => h.kind === 'habit').map((h): Item => ({ w: habitWeight(h), done: !!(h.completions ?? []).some((d) => d >= toDateStr(new Date(now - FOUR_WEEKS))) })),
+  ];
+  const totalW   = allItems.reduce((s, x) => s + x.w, 0);
+  const doneW    = allItems.filter((x) => x.done).reduce((s, x) => s + x.w, 0);
   const completion = totalW > 0 ? doneW / totalW : 0;
 
-  const activeItems     = [...subGoalItems, ...taskItems, ...habitItems];
-  const activeTotalW    = activeItems.reduce((s, x) => s + x.w, 0);
-  const activeDoneItems = activeItems.filter((x) => x.done);
-  const activeDoneW     = activeDoneItems.reduce((s, x) => s + x.w, 0);
-  const completionRate  = activeTotalW > 0 ? activeDoneW / activeTotalW : 0;
-  const recencyScore    = activeDoneW > 0 ? activeDoneItems.reduce((s, x) => s + x.r * x.w, 0) / activeDoneW : 0;
-  const health = completionRate * recencyScore;
-  const momentum = (completion + health) / 2;
+  const health = computeHealth(subGoals, sgHabits, now);
 
+  const activeItems  = allItems.slice(1);
+  const activeTotalW = activeItems.reduce((s, x) => s + x.w, 0);
+  const activeDoneW  = activeItems.filter((x) => x.done).reduce((s, x) => s + x.w, 0);
+  const completionRate = activeTotalW > 0 ? activeDoneW / activeTotalW : 0;
+  const recencyScore   = health;
+  const momentum = (completion + health) / 2;
   return { time: elapsed, completion, health, completionRate, recencyScore, momentum };
 }
 
@@ -2540,11 +2554,9 @@ function GoalStrip({
   isShort?: boolean;
 }) {
   const [showInfo, setShowInfo] = useState(false);
-  const countdown    = getGoalCountdown(goal);
-  const completePct  = Math.round(metrics.completion * 100);
-  const healthPct    = Math.round(metrics.health * 100);
-  const donePct      = Math.round(metrics.completionRate * 100);
-  const freshPct     = Math.round(metrics.recencyScore * 100);
+  const countdown   = getGoalCountdown(goal);
+  const completePct = Math.round(metrics.completion * 100);
+  const healthPct   = Math.round(metrics.health * 100);
   return (
     <div className={`goal-strip${isShort ? ' goal-strip--short' : ''}`}>
       <div className="strip-title">{goal.title}</div>
@@ -2581,9 +2593,9 @@ function GoalStrip({
         <div className="health-popup">
           <div className="health-popup-row">
             <span className="health-popup-formula">
-              {donePct}% done × {freshPct}% fresh
+              habit fidelity · task completion · sub-goal milestones
             </span>
-            <span className="health-popup-result" style={{ color: domainColor }}>= {healthPct}%</span>
+            <span className="health-popup-result" style={{ color: domainColor }}>{healthPct}%</span>
           </div>
           <div className="health-popup-divider" />
           <div className="health-popup-weights">
@@ -2649,25 +2661,14 @@ function GoalsDashboard({
     return () => observer.disconnect();
   }, []);
 
-  const stHealthNote = (
+  const healthNote = (
     <div className="dash-health-note">
       <div className="dash-health-note-title">How Health is calculated</div>
-      <p>Health = <b>weighted % done</b> × <b>how recently</b> — both must be high.</p>
+      <p>Weighted average of <b>habit fidelity</b> (28-day window), <b>task completion</b>, and <b>sub-goal milestones</b>. Adding items with no due date never drops your score.</p>
       <div className="dash-health-weights">
-        <span><b>2×</b> Task</span>
-        <span><b>1–4×</b> Habit (streak grows weight)</span>
-      </div>
-    </div>
-  );
-
-  const ltHealthNote = (
-    <div className="dash-health-note">
-      <div className="dash-health-note-title">How Health is calculated</div>
-      <p>Health = <b>weighted % done</b> × <b>how recently</b> — both must be high.</p>
-      <div className="dash-health-weights">
-        <span><b>10×</b> Short-term sub-goal</span>
-        <span><b>2×</b> Task</span>
-        <span><b>1–4×</b> Habit (streak grows weight)</span>
+        <span><b>1–4×</b> Habit — completions ÷ expected (streak grows weight)</span>
+        <span><b>2×</b> Task — reward if done, penalty if overdue, skipped if future</span>
+        <span><b>10×</b> Sub-goal — bonus when completed, skipped while in progress</span>
       </div>
     </div>
   );
@@ -2711,7 +2712,7 @@ function GoalsDashboard({
               </div>
             );
           })}
-          {stHealthNote}
+          {healthNote}
         </div>
 
         {/* Slide 1: Long-term */}
@@ -2732,7 +2733,7 @@ function GoalsDashboard({
               </div>
             );
           })}
-          {ltHealthNote}
+          {healthNote}
         </div>
       </div>
 
