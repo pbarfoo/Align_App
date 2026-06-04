@@ -2330,49 +2330,26 @@ function valueAlignmentScore(
 /* ---------------- GoalsDashboard ---------------- */
 
 /**
- * Option-B health: weighted-average fidelity across habits, tasks, sub-goals.
- * - Habits:    completions in last 28 days ÷ expected completions (cadence-aware)
- * - Tasks:     completed recently → reward (fades 8 wks); overdue → penalty; future/undated → skipped
- * - Sub-goals: completed → recency bonus; incomplete → skipped (their children already score)
- * Adding new items with no due date never drops health; only behaviour changes the score.
+ * Health = habit fidelity over the last 28 days, weighted by streak.
+ * completions_in_window ÷ expected_completions, averaged across all habits.
+ * Tasks and sub-goals do not affect health — they belong to Done.
+ * A goal with no habits scores 0 (no recurring work = no health signal).
  */
-function computeHealth(subGoals: Goal[], treeHabits: Habit[], now: number): number {
-  const FOUR_WEEKS  = 28 * 86_400_000;
-  const EIGHT_WEEKS = 56 * 86_400_000;
-  const lookbackDate = toDateStr(new Date(now - FOUR_WEEKS));
+function computeHealth(_subGoals: Goal[], treeHabits: Habit[], now: number): number {
+  const lookbackDate = toDateStr(new Date(now - 28 * 86_400_000));
+  const habits = treeHabits.filter((h) => h.kind === 'habit');
+  if (habits.length === 0) return 0;
 
-  interface FI { score: number; w: number; }
-  const items: FI[] = [];
-
-  // Habits — fidelity over last 28 days
-  treeHabits.filter((h) => h.kind === 'habit').forEach((h) => {
+  let totalW = 0, scoreW = 0;
+  habits.forEach((h) => {
     const expected = Math.max(1, 28 / naturalIntervalDays(h));
     const actual   = (h.completions ?? []).filter((d) => d >= lookbackDate).length;
+    const fidelity = Math.min(actual / expected, 1);
     const w        = Math.min(1 + (h.streak || 0) * 0.2, 4.0);
-    items.push({ score: Math.min(actual / expected, 1), w });
+    scoreW  += fidelity * w;
+    totalW  += w;
   });
-
-  // Tasks — completed tasks reward health; uncompleted tasks skipped entirely
-  treeHabits.filter((h) => h.kind === 'task').forEach((h) => {
-    if (h.completed && h.completedAt) {
-      const score = Math.max(0, 1 - (now - h.completedAt) / EIGHT_WEEKS);
-      if (score > 0) items.push({ score, w: 2 });
-    }
-    // uncompleted tasks (with or without due date) are skipped —
-    // adding tasks never drops health; completing them raises it
-  });
-
-  // Sub-goals — completion bonus only; incomplete sub-goals skipped
-  subGoals.forEach((g) => {
-    if (g.completedAt) {
-      const score = Math.max(0, 1 - (now - g.completedAt) / EIGHT_WEEKS);
-      if (score > 0) items.push({ score, w: 4 });
-    }
-  });
-
-  if (items.length === 0) return 0;
-  const totalW = items.reduce((s, x) => s + x.w, 0);
-  return items.reduce((s, x) => s + x.score * x.w, 0) / totalW;
+  return totalW > 0 ? scoreW / totalW : 0;
 }
 
 /**
@@ -2571,9 +2548,8 @@ function GoalStrip({
           </div>
           <div className="health-popup-divider" />
           <div className="health-popup-weights">
-            <span>Habit fidelity (28-day window, streak scales weight)</span>
-            <span>Completed tasks (reward fades over 8 wks)</span>
-            <span>Completed sub-goals (bonus, fades over 8 wks)</span>
+            <span>Habit completions ÷ expected in last 28 days</span>
+            <span>Streak grows each habit's weight (1–4×)</span>
           </div>
           <div className="health-popup-note">
             {isShort
@@ -2636,11 +2612,9 @@ function GoalsDashboard({
   const healthNote = (
     <div className="dash-health-note">
       <div className="dash-health-note-title">How Health is calculated</div>
-      <p>Weighted average of <b>habit fidelity</b> (28-day window), <b>task completion</b>, and <b>sub-goal milestones</b>. Adding items with no due date never drops your score.</p>
+      <p><b>Habit fidelity</b> over the last 28 days — completions ÷ expected, weighted by streak. Goals with no habits score 0.</p>
       <div className="dash-health-weights">
-        <span><b>1–4×</b> Habit — completions ÷ expected (streak grows weight)</span>
-        <span><b>2×</b> Task — reward if done, penalty if overdue, skipped if future</span>
-        <span><b>10×</b> Sub-goal — bonus when completed, skipped while in progress</span>
+        <span><b>1–4×</b> per habit — streak grows weight</span>
       </div>
     </div>
   );
