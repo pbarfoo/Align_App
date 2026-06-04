@@ -2330,26 +2330,56 @@ function valueAlignmentScore(
 /* ---------------- GoalsDashboard ---------------- */
 
 /**
- * Health = habit fidelity over the last 28 days, weighted by streak.
- * completions_in_window ÷ expected_completions, averaged across all habits.
- * Tasks and sub-goals do not affect health — they belong to Done.
- * A goal with no habits scores 0 (no recurring work = no health signal).
+ * Two-factor health:
+ *   health = 0.6 × pace + 0.4 × habit_consistency   (when habits exist)
+ *   health = pace                                     (no habits — tasks/sub-goals only)
+ *
+ * pace = done_fraction / time_elapsed_fraction (capped 0–1)
+ *   done_fraction  = (completed tasks×1 + completed sub-goals×4 + active habits×streak_weight)
+ *                    / (total tasks×1 + total sub-goals×4 + total habit weights)
+ *   time_elapsed   = how far through the goal's total duration (0–1), floored at 0.05
+ *
+ * habit_consistency = 28-day fidelity per habit, averaged weighted by streak (1–4×)
  */
-function computeHealth(_subGoals: Goal[], treeHabits: Habit[], now: number): number {
-  const lookbackDate = toDateStr(new Date(now - 28 * 86_400_000));
-  const habits = treeHabits.filter((h) => h.kind === 'habit');
-  if (habits.length === 0) return 0;
+function computeHealth(
+  subGoals: Goal[],
+  treeHabits: Habit[],
+  now: number,
+  timeElapsed: number,
+): number {
+  const SUB_W = 4;
+  const habitW     = (h: Habit) => Math.min(1 + (h.streak || 0) * 0.2, 4.0);
+  const lookback   = toDateStr(new Date(now - 28 * 86_400_000));
+  const tasks      = treeHabits.filter((h) => h.kind === 'task');
+  const habits     = treeHabits.filter((h) => h.kind === 'habit');
 
+  // Pace
+  const habitTotalW  = habits.reduce((s, h) => s + habitW(h), 0);
+  const totalWeight  = tasks.length + subGoals.length * SUB_W + habitTotalW;
+  let pace = 0;
+  if (totalWeight > 0) {
+    const taskDone    = tasks.filter((h) => !!h.completed).length;
+    const subDone     = subGoals.filter((g) => !!g.completedAt).length * SUB_W;
+    const habitDoneW  = habits
+      .filter((h) => (h.completions ?? []).some((d) => d >= lookback))
+      .reduce((s, h) => s + habitW(h), 0);
+    const doneFraction = (taskDone + subDone + habitDoneW) / totalWeight;
+    pace = Math.min(doneFraction / Math.max(timeElapsed, 0.05), 1.0);
+  }
+
+  // Habit consistency
+  if (habits.length === 0) return pace;
   let totalW = 0, scoreW = 0;
   habits.forEach((h) => {
     const expected = Math.max(1, 28 / naturalIntervalDays(h));
-    const actual   = (h.completions ?? []).filter((d) => d >= lookbackDate).length;
-    const fidelity = Math.min(actual / expected, 1);
-    const w        = Math.min(1 + (h.streak || 0) * 0.2, 4.0);
-    scoreW  += fidelity * w;
-    totalW  += w;
+    const actual   = (h.completions ?? []).filter((d) => d >= lookback).length;
+    const w        = habitW(h);
+    scoreW += Math.min(actual / expected, 1) * w;
+    totalW += w;
   });
-  return totalW > 0 ? scoreW / totalW : 0;
+  const habitConsistency = totalW > 0 ? scoreW / totalW : 0;
+
+  return 0.6 * pace + 0.4 * habitConsistency;
 }
 
 /**
@@ -2387,7 +2417,7 @@ function vitalityFor(
   const subtreeHabits = habits.filter((h) => subtree.has(h.goalId));
 
   const completion     = computeDone(subGoals, subtreeHabits, now);
-  const health         = computeHealth(subGoals, subtreeHabits, now);
+  const health         = computeHealth(subGoals, subtreeHabits, now, elapsed);
   const completionRate = completion;
   const recencyScore   = health;
   const momentum       = (completion + health) / 2;
@@ -2416,7 +2446,7 @@ function stGoalMetrics(sg: Goal, goals: Goal[], habits: Habit[]): { time: number
   const sgHabits  = habits.filter((h) => subtree.has(h.goalId));
 
   const completion     = computeDone(subGoals, sgHabits, now);
-  const health         = computeHealth(subGoals, sgHabits, now);
+  const health         = computeHealth(subGoals, sgHabits, now, elapsed);
   const completionRate = completion;
   const recencyScore   = health;
   const momentum       = (completion + health) / 2;
@@ -2548,8 +2578,8 @@ function GoalStrip({
           </div>
           <div className="health-popup-divider" />
           <div className="health-popup-weights">
-            <span>Habit completions ÷ expected in last 28 days</span>
-            <span>Streak grows each habit's weight (1–4×)</span>
+            <span><b>60%</b> Pace — progress made vs. time elapsed</span>
+            <span><b>40%</b> Habit consistency — 28-day fidelity, streak-weighted</span>
           </div>
           <div className="health-popup-note">
             {isShort
@@ -2612,9 +2642,9 @@ function GoalsDashboard({
   const healthNote = (
     <div className="dash-health-note">
       <div className="dash-health-note-title">How Health is calculated</div>
-      <p><b>Habit fidelity</b> over the last 28 days — completions ÷ expected, weighted by streak. Goals with no habits score 0.</p>
+      <p><b>60% Pace</b> — how much you've done vs. how much time has passed. <b>40% Habit consistency</b> — 28-day fidelity, streak-weighted. Behind schedule or skipping habits = lower health.</p>
       <div className="dash-health-weights">
-        <span><b>1–4×</b> per habit — streak grows weight</span>
+        <span>Tasks ×1 · Sub-goals ×4 · Habits ×streak (1–4)</span>
       </div>
     </div>
   );
