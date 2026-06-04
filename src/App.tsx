@@ -2352,20 +2352,14 @@ function computeHealth(subGoals: Goal[], treeHabits: Habit[], now: number): numb
     items.push({ score: Math.min(actual / expected, 1), w });
   });
 
-  // Tasks — reward done, penalise overdue, skip future/undated
+  // Tasks — completed tasks reward health; uncompleted tasks skipped entirely
   treeHabits.filter((h) => h.kind === 'task').forEach((h) => {
     if (h.completed && h.completedAt) {
       const score = Math.max(0, 1 - (now - h.completedAt) / EIGHT_WEEKS);
       if (score > 0) items.push({ score, w: 2 });
-    } else if (h.dueDate) {
-      const dueMs = new Date(h.dueDate + 'T12:00').getTime();
-      if (dueMs <= now) {
-        // Overdue: penalty decays from 0 → 0 over 4 weeks past due
-        items.push({ score: Math.max(0, 1 - (now - dueMs) / FOUR_WEEKS), w: 2 });
-      }
-      // Future due date: skip
     }
-    // No due date, not done: skip — don't penalise planning ahead
+    // uncompleted tasks (with or without due date) are skipped —
+    // adding tasks never drops health; completing them raises it
   });
 
   // Sub-goals — completion bonus only; incomplete sub-goals skipped
