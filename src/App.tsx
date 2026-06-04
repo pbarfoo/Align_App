@@ -2347,7 +2347,7 @@ function computeHealth(
   now: number,
   timeElapsed: number,
 ): number {
-  const SUB_W = 4;
+  const SUB_W = 5;
   const habitW     = (h: Habit) => Math.min(1 + (h.streak || 0) * 0.2, 4.0);
   const lookback   = toDateStr(new Date(now - 28 * 86_400_000));
   const tasks      = treeHabits.filter((h) => h.kind === 'task');
@@ -2389,7 +2389,7 @@ function computeHealth(
  * Tasks: completed (h.completed true) — weight 1 each.
  */
 function computeDone(subGoals: Goal[], treeHabits: Habit[], now: number): number {
-  const SUB_W = 4;
+  const SUB_W = 5;
   const habitW = (h: Habit) => Math.min(1 + (h.streak || 0) * 0.2, 4.0);
   const lookbackDate = toDateStr(new Date(now - 28 * 86_400_000));
   const tasks  = treeHabits.filter((h) => h.kind === 'task');
