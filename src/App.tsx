@@ -2364,7 +2364,9 @@ function computeHealth(
       .filter((h) => (h.completions ?? []).some((d) => d >= lookback))
       .reduce((s, h) => s + habitW(h), 0);
     const doneFraction = (taskDone + subDone + habitDoneW) / totalWeight;
-    pace = Math.min(doneFraction / Math.max(timeElapsed, 0.05), 1.0);
+    pace = timeElapsed < 0.1
+      ? Math.min(doneFraction, 1.0)
+      : Math.min(doneFraction / timeElapsed, 1.0);
   }
 
   // Habit consistency
