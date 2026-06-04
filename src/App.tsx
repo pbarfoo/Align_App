@@ -2335,8 +2335,8 @@ function valueAlignmentScore(
  *   health = pace                                     (no habits — tasks/sub-goals only)
  *
  * pace = done_fraction / time_elapsed_fraction (capped 0–1)
- *   done_fraction  = (completed tasks×1 + completed sub-goals×4 + active habits×streak_weight)
- *                    / (total tasks×1 + total sub-goals×4 + total habit weights)
+ *   done_fraction  = (completed tasks×1 + completed sub-goals×5 + active habits×streak_weight)
+ *                    / (total tasks×1 + total sub-goals×5 + total habit weights)
  *   time_elapsed   = how far through the goal's total duration (0–1), floored at 0.05
  *
  * habit_consistency = 28-day fidelity per habit, averaged weighted by streak (1–4×)
@@ -2582,9 +2582,7 @@ function GoalStrip({
             <span>Are your habits consistent?</span>
           </div>
           <div className="health-popup-note">
-            {isShort
-              ? 'Completion × recency of tasks and habits — both must be high. This goal\'s own completion is shown in the Done bar above.'
-              : 'Completion × recency — both must be high. Driven by short-term sub-goals (10×), tasks (2×), and habits (1–4× by streak). Long-term goal completion is shown in the Done bar above.'}
+            Are you on track for the time spent, and are your habits consistent?
           </div>
         </div>
       )}
