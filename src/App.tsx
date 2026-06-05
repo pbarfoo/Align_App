@@ -2347,6 +2347,7 @@ function computeHealth(
   treeHabits: Habit[],
   now: number,
   timeElapsed: number,
+  isFocus = false,
 ): number {
   const SUB_W = 5;
   const habitW     = (h: Habit) => Math.min(1 + (h.streak || 0) * 0.2, 4.0);
@@ -2374,8 +2375,13 @@ function computeHealth(
       : Math.min(doneFraction / timeElapsed, 1.0);
   }
 
+  // Focus adjustment: raises the bar when neglected, rewards when delivering
+  // Range: −10% (pace=0) to +10% (pace=1), neutral at pace=0.5
+  const focusAdj = isFocus ? (pace - 0.5) * 0.2 : 0;
+
   // Habit consistency
-  if (habits.length === 0) return 0.7 * pace + 0.3 * engagement;
+  const applyFocus = (h: number) => Math.max(0, Math.min(h + focusAdj, 1.0));
+  if (habits.length === 0) return applyFocus(0.7 * pace + 0.3 * engagement);
   let totalW = 0, scoreW = 0;
   habits.forEach((h) => {
     const expected = Math.max(1, 28 / naturalIntervalDays(h));
@@ -2386,7 +2392,7 @@ function computeHealth(
   });
   const habitConsistency = totalW > 0 ? scoreW / totalW : 0;
 
-  return 0.5 * pace + 0.3 * habitConsistency + 0.2 * engagement;
+  return applyFocus(0.5 * pace + 0.3 * habitConsistency + 0.2 * engagement);
 }
 
 /**
@@ -2414,6 +2420,7 @@ function vitalityFor(
   lg: Goal,
   goals: Goal[],
   habits: Habit[],
+  isFocus = false,
 ): { time: number; completion: number; health: number; completionRate: number; recencyScore: number; momentum: number } {
   const now     = Date.now();
   const totalMs = (lg.timeframe || 1) * 365.25 * 86_400_000;
@@ -2424,7 +2431,7 @@ function vitalityFor(
   const subtreeHabits = habits.filter((h) => subtree.has(h.goalId));
 
   const completion     = computeDone(subGoals, subtreeHabits, now);
-  const health         = computeHealth(subGoals, subtreeHabits, now, elapsed);
+  const health         = computeHealth(subGoals, subtreeHabits, now, elapsed, isFocus);
   const completionRate = completion;
   const recencyScore   = health;
   const momentum       = (completion + health) / 2;
@@ -2443,7 +2450,7 @@ const THREAD_PALETTE = [
 ];
 
 
-function stGoalMetrics(sg: Goal, goals: Goal[], habits: Habit[]): { time: number; completion: number; health: number; completionRate: number; recencyScore: number; momentum: number } {
+function stGoalMetrics(sg: Goal, goals: Goal[], habits: Habit[], isFocus = false): { time: number; completion: number; health: number; completionRate: number; recencyScore: number; momentum: number } {
   const now     = Date.now();
   const totalMs = (sg.timeframe || 1) * 30.44 * 86_400_000;
   const elapsed = Math.min(1, Math.max(0, (now - sg.createdAt) / totalMs));
@@ -2453,7 +2460,7 @@ function stGoalMetrics(sg: Goal, goals: Goal[], habits: Habit[]): { time: number
   const sgHabits  = habits.filter((h) => subtree.has(h.goalId));
 
   const completion     = computeDone(subGoals, sgHabits, now);
-  const health         = computeHealth(subGoals, sgHabits, now, elapsed);
+  const health         = computeHealth(subGoals, sgHabits, now, elapsed, isFocus);
   const completionRate = completion;
   const recencyScore   = health;
   const momentum       = (completion + health) / 2;
@@ -2612,8 +2619,15 @@ function GoalsDashboard({
 }) {
   const longGoals  = goals.filter((g) => g.horizon === 'long'  && !g.parentGoalId);
   const allShort   = goals.filter((g) => g.horizon === 'short' && !g.parentGoalId);
-  const ltMetrics  = new Map(longGoals.map((g) => [g.id, vitalityFor(g, goals, habits)] as const));
-  const stMetrics  = new Map(allShort.map((g) => [g.id, stGoalMetrics(g, goals, habits)] as const));
+
+  // First goal per domain = focus (same rule as Align tab)
+  const seenLt = new Set<string>();
+  const focusLtIds = new Set(longGoals.filter((g) => { if (seenLt.has(g.domainId)) return false; seenLt.add(g.domainId); return true; }).map((g) => g.id));
+  const seenSt = new Set<string>();
+  const focusStIds = new Set(allShort.filter((g) => { if (seenSt.has(g.domainId)) return false; seenSt.add(g.domainId); return true; }).map((g) => g.id));
+
+  const ltMetrics  = new Map(longGoals.map((g) => [g.id, vitalityFor(g, goals, habits, focusLtIds.has(g.id))] as const));
+  const stMetrics  = new Map(allShort.map((g) => [g.id, stGoalMetrics(g, goals, habits, focusStIds.has(g.id))] as const));
 
   const ltSpiderValues = longGoals.map((g) => ltMetrics.get(g.id)!.health);
   const stSpiderValues = allShort.map((g) => stMetrics.get(g.id)!.health);
