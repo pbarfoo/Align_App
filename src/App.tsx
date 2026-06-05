@@ -2579,17 +2579,18 @@ function GoalStrip({
         <div className="health-popup">
           <div className="health-popup-row">
             <span className="health-popup-formula">
-              habit fidelity · task completion · sub-goal milestones
+              pace · habit consistency · planning engagement
             </span>
             <span className="health-popup-result" style={{ color: domainColor }}>{healthPct}%</span>
           </div>
           <div className="health-popup-divider" />
           <div className="health-popup-weights">
-            <span>Are you on track for the time spent?</span>
-            <span>Are your habits consistent?</span>
+            <span>Are you on track for the time spent? (50%)</span>
+            <span>Are your habits consistent? (30%)</span>
+            <span>Have you built out your plan? (20%)</span>
           </div>
           <div className="health-popup-note">
-            Are you on track for the time spent, and are your habits consistent?
+            Pace × 50% + habit consistency × 30% + planning engagement × 20%
           </div>
         </div>
       )}
@@ -2647,7 +2648,7 @@ function GoalsDashboard({
   const healthNote = (
     <div className="dash-health-note">
       <div className="dash-health-note-title">How Health is calculated</div>
-      <p>Are you on track for the time spent, and are your habits consistent?</p>
+      <p>Pace (50%) · Habit consistency (30%) · Planning engagement (20%)</p>
     </div>
   );
 
