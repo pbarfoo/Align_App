@@ -2330,16 +2330,17 @@ function valueAlignmentScore(
 /* ---------------- GoalsDashboard ---------------- */
 
 /**
- * Two-factor health:
- *   health = 0.6 × pace + 0.4 × habit_consistency   (when habits exist)
- *   health = pace                                     (no habits — tasks/sub-goals only)
+ * Three-factor health:
+ *   health = 0.5 × pace + 0.3 × habit_consistency + 0.2 × engagement   (habits exist)
+ *   health = 0.7 × pace + 0.3 × engagement                              (no habits)
  *
- * pace = done_fraction / time_elapsed_fraction (capped 0–1)
- *   done_fraction  = (completed tasks×1 + completed sub-goals×5 + active habits×streak_weight)
- *                    / (total tasks×1 + total sub-goals×5 + total habit weights)
- *   time_elapsed   = how far through the goal's total duration (0–1), floored at 0.05
+ * pace        = done_fraction / time_elapsed_fraction (capped 0–1)
+ *   done_fraction = (completed tasks×1 + completed sub-goals×5 + active habits×streak_weight)
+ *                   / (total tasks×1 + total sub-goals×5 + total habit weights)
  *
  * habit_consistency = 28-day fidelity per habit, averaged weighted by streak (1–4×)
+ *
+ * engagement  = how structured the goal is — scales to 1.0 at 5+ items (sub-goals + tasks + habits)
  */
 function computeHealth(
   subGoals: Goal[],
@@ -2352,6 +2353,10 @@ function computeHealth(
   const lookback   = toDateStr(new Date(now - 28 * 86_400_000));
   const tasks      = treeHabits.filter((h) => h.kind === 'task');
   const habits     = treeHabits.filter((h) => h.kind === 'habit');
+
+  // Engagement: creating sub-goals, tasks, or habits is itself a health signal
+  const itemCount  = subGoals.length + tasks.length + habits.length;
+  const engagement = Math.min(itemCount / 5, 1.0);
 
   // Pace
   const habitTotalW  = habits.reduce((s, h) => s + habitW(h), 0);
@@ -2370,7 +2375,7 @@ function computeHealth(
   }
 
   // Habit consistency
-  if (habits.length === 0) return pace;
+  if (habits.length === 0) return 0.7 * pace + 0.3 * engagement;
   let totalW = 0, scoreW = 0;
   habits.forEach((h) => {
     const expected = Math.max(1, 28 / naturalIntervalDays(h));
@@ -2381,7 +2386,7 @@ function computeHealth(
   });
   const habitConsistency = totalW > 0 ? scoreW / totalW : 0;
 
-  return 0.6 * pace + 0.4 * habitConsistency;
+  return 0.5 * pace + 0.3 * habitConsistency + 0.2 * engagement;
 }
 
 /**
