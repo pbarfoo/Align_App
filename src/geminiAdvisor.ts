@@ -271,7 +271,7 @@ function valueFingerprint(domains: Domain[]): string {
 
 
 function coachCacheKey(date: string, domains: Domain[]) {
-  return `gemini-coach-v18-${date}-${valueFingerprint(domains)}`;
+  return `gemini-coach-v19-${date}-${valueFingerprint(domains)}`;
 }
 
 export async function getGeminiCoachCard(
@@ -404,7 +404,7 @@ Your goal is to:
 Rules:
 - Only reference goals, habits, and values present in the data. Do not invent topics.
 - Do not fixate on one value or goal repeatedly — cover the breadth of the user's life.
-- Keep values anchored to their own domain. Do not transplant a value from one domain onto a goal in a different domain — e.g. a "service" value in a community domain means serving others, not serving a personal business goal.
+- Respect what each value actually means to the user. Values have a fixed meaning regardless of which domain or goal they appear on — do not reinterpret them. For example, if "service" is a value, it always means serving others, never "pursuing" or "serving" one's own goals.
 - Focus goals (marked [FOCUS]) and values with low reflection scores are useful signals, not mandates.
 - Tone: warm, direct, brief. No filler or generic advice.
 
