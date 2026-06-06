@@ -269,14 +269,6 @@ function valueFingerprint(domains: Domain[]): string {
   return Math.abs(h).toString(36);
 }
 
-function isoWeek(d: Date): number {
-  const t = new Date(d.valueOf());
-  const dayNr = (d.getDay() + 6) % 7;
-  t.setDate(t.getDate() - dayNr + 3);
-  const jan4 = new Date(t.getFullYear(), 0, 4);
-  const diff = t.getTime() - jan4.getTime();
-  return 1 + Math.round((diff / 86_400_000 - 3 + ((jan4.getDay() + 6) % 7)) / 7);
-}
 
 function coachCacheKey(date: string, domains: Domain[]) {
   return `gemini-coach-v16-${date}-${valueFingerprint(domains)}`;
@@ -300,8 +292,6 @@ export async function getGeminiCoachCard(
 
   const now = new Date();
   const dayName = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][now.getDay()];
-  const allValues = domains.flatMap((d) => d.values);
-  const weekValue = allValues.length ? allValues[isoWeek(now) % allValues.length] : null;
 
   const goalMap = new Map(goals.map((g) => [g.id, g]));
 
@@ -317,7 +307,7 @@ export async function getGeminiCoachCard(
       .join(', ');
   };
 
-  // First active goal per domain = top priority (user's drag order)
+  // First active goal per domain = focus (user's drag order)
   const topGoalIds = new Set<string>();
   const seenDomains = new Set<string>();
   for (const g of goals) {
@@ -327,6 +317,29 @@ export async function getGeminiCoachCard(
     }
   }
 
+  // Values from focus goals (what the user has declared most important per domain)
+  const focusValues = Array.from(topGoalIds).flatMap((id) => {
+    const g = goals.find((goal) => goal.id === id);
+    if (!g) return [];
+    const dom = domains.find((d) => d.id === g.domainId);
+    if (!dom) return [];
+    return g.valueIndexes.filter((i) => i < dom.values.length).map((i) => dom.values[i]);
+  });
+
+  // Values with low average reflection scores (below 3 on a 1–5 scale)
+  const scoreAccum = new Map<string, number[]>();
+  reflections.slice(-4).forEach((r) => {
+    Object.entries(r.scores).forEach(([key, val]) => {
+      if (!scoreAccum.has(key)) scoreAccum.set(key, []);
+      scoreAccum.get(key)!.push(val as number);
+    });
+  });
+  const lowScoringValues = Array.from(scoreAccum.entries())
+    .map(([key, vals]) => ({ name: key.slice(key.indexOf(':') + 1), avg: vals.reduce((a, b) => a + b, 0) / vals.length }))
+    .filter((v) => v.avg < 3)
+    .sort((a, b) => a.avg - b.avg)
+    .map((v) => v.name);
+
   const activeGoals = goals.filter((g) => !g.completedAt);
   const ltGoals = activeGoals.filter((g) => g.horizon === 'long');
   const stGoals = activeGoals.filter((g) => g.horizon === 'short');
@@ -334,13 +347,14 @@ export async function getGeminiCoachCard(
   const goalLine = (g: Goal) => {
     const dom = domains.find((d) => d.id === g.domainId);
     const vals = resolveGoalValues(g);
-    const priority = topGoalIds.has(g.id) ? ' [TOP PRIORITY]' : '';
+    const priority = topGoalIds.has(g.id) ? ' [FOCUS]' : '';
     return `- "${g.title}" | ${g.timeframe}${g.horizon === 'long' ? 'yr' : 'mo'} | ${dom?.name ?? '?'}${vals ? ` | values:[${vals}]` : ''}${priority}`;
   };
 
   const contextLines: string[] = [
     `Today is ${dayName}, ${today}.`,
-    weekValue ? `This week's value thread: "${weekValue}".` : '',
+    focusValues.length ? `Values tied to focus goals: ${focusValues.join(', ')}.` : '',
+    lowScoringValues.length ? `Values with recent low reflection scores (needs attention): ${lowScoringValues.join(', ')}.` : '',
     '',
     '## Long-term goals',
     ...(ltGoals.length ? ltGoals.map(goalLine) : ['- (none)']),
@@ -371,26 +385,31 @@ export async function getGeminiCoachCard(
           return `- week ${r.weekNumber} | [${scores || 'no scores'}] | "${r.note}"`;
         })
       : ['- (none yet)']),
-  ];
+  ].filter((l) => l !== '');
 
   const feedback = (await getCoachFeedbackHistory(userId)).slice(-20);
   const liked = feedback.filter((f) => f.rating === 'up').map((f) => `"${f.title}"`).join(', ');
   const disliked = feedback.filter((f) => f.rating === 'down').map((f) => `"${f.title}"`).join(', ');
   const feedbackLines = (liked || disliked)
-    ? `\n## Style feedback on past cards\n- Liked: ${liked || 'none'}\n- Disliked: ${disliked || 'none'}\nMatch the style of liked cards; avoid the tone of disliked ones.\n`
+    ? `\n## Style & tone feedback (adjust HOW you write, not WHAT you cover)\n- Liked tone/style: ${liked || 'none'}\n- Disliked tone/style: ${disliked || 'none'}\nThis feedback is about writing style only — do not let it cause you to repeat the same values or goals.\n`
     : '';
 
-  const prompt = `You are a direct personal coach. Write one daily coaching card grounded in the user's goals.
+  const prompt = `You are a personal coach. Write one daily coaching card grounded in the user's real data.
 
-Approach:
-- Lead with the user's most important active goal(s). TOP PRIORITY goals carry the most weight.
-- Reference a real goal or habit from the data — do not invent topics not present in the data.
-- The weekly value thread is context — let it colour the message naturally, not dominate it.
-- Tone: warm, direct, brief. No filler.
+Your goal is to:
+1. Encourage — acknowledge real progress, streaks, or effort visible in the data.
+2. Provide habit insight — notice what's working, what's slipping, or what patterns are emerging.
+3. Remind of values and goals — weave in the user's values naturally without fixating on any single one. Rotate across goals and domains day to day.
+
+Rules:
+- Only reference goals, habits, and values present in the data. Do not invent topics.
+- Do not fixate on one value or goal repeatedly — cover the breadth of the user's life.
+- Focus goals (marked [FOCUS]) and values with low reflection scores are useful signals, not mandates.
+- Tone: warm, direct, brief. No filler or generic advice.
 
 Format:
 - Title: 4–6 words, grounded in a real goal or habit.
-- Blurb: exactly 2 sentences. First: encouragement tied to a specific goal, habit, or recent progress. Second: one concrete nudge for today.
+- Blurb: exactly 2 sentences. First: genuine encouragement tied to specific data. Second: one concrete, actionable nudge for today.
 ${feedbackLines}
 ${contextLines.join('\n')}
 
