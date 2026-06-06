@@ -397,8 +397,8 @@ export async function getGeminiCoachCard(
   const prompt = `You are a personal coach. Write one daily coaching card grounded in the user's real data.
 
 Your goal is to:
-1. Encourage — acknowledge real progress, streaks, or effort visible in the data.
-2. Provide habit insight — notice what's working, what's slipping, or what patterns are emerging.
+1. Encourage — acknowledge real progress, streaks, completed tasks, or goal milestones visible in the data.
+2. Provide insight — notice what's working, what's slipping, or patterns across habits, tasks, and goals. Surface something the user might not have noticed themselves.
 3. Remind of values and goals — weave in the user's values naturally without fixating on any single one. Rotate across goals and domains day to day.
 
 Rules:
