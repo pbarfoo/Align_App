@@ -888,36 +888,53 @@ h1 {
   font-weight: 600;
 }
 
-.progress-wrap {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 20px;
-  margin-bottom: 26px;
-}
-
-.progress-num {
+.coach-card-header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-size: 16px;
-  font-weight: 400;
-  color: var(--muted);
+  justify-content: space-between;
+  margin-bottom: 12px;
 }
-
-.progress-sq {
-  display: inline-flex;
+.coach-card-label {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  display: flex;
   align-items: center;
-  justify-content: center;
-  width: 52px;
-  height: 52px;
-  border-radius: 10px;
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-  font-size: 28px;
+  gap: 6px;
+}
+.coach-progress {
+  margin-bottom: 14px;
+}
+.coach-progress-num {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.coach-progress-done {
+  font-size: 36px;
   font-weight: 700;
   color: var(--text);
-  flex-shrink: 0;
+  line-height: 1;
+}
+.coach-progress-total {
+  font-size: 14px;
+  color: var(--muted);
+}
+.coach-progress-bar {
+  height: 5px;
+  border-radius: 3px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.coach-progress-bar > i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+  transition: width 0.4s ease;
 }
 
 .bar {
@@ -1075,15 +1092,10 @@ h1 {
   background: color-mix(in srgb, var(--accent) 5%, var(--surface));
   border: 1px solid var(--line);
   border-radius: 14px;
-  padding: 10px 14px 12px;
+  padding: 14px 16px 14px;
   margin-left: -14px;
   margin-right: -14px;
-}
-.today-section.coach-card .today-section-head {
-  color: var(--muted);
-  font-size: 11px;
-  border-bottom: none;
-  margin-bottom: 6px;
+  margin-bottom: 20px;
 }
 .coach-title {
   font-size: 15px;
