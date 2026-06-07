@@ -2144,7 +2144,7 @@ function Reflect({
   onClose: () => void;
   onSave: (scores: Record<string, number>, note: string, weekNumber: number, date: number) => void;
 }) {
-  const [weekOffset, setWeekOffset] = useState<0 | -1>(0);
+  const [weekOffset] = useState<0 | -1>(-1);
   const [scores, setScores] = useState<Record<string, number>>({});
   const [note, setNote] = useState('');
   const [step, setStep] = useState<'score' | 'insight'>('score');
@@ -2219,11 +2219,7 @@ function Reflect({
   return (
     <div className="scrim" role="dialog" aria-modal="true" onClick={onClose}>
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
-        <h2>{weekOffset === -1 ? 'Last week' : 'This week'}</h2>
-        <div className="seg" style={{ marginBottom: 12 }}>
-          <button type="button" className={weekOffset === 0 ? 'on' : ''} onClick={() => setWeekOffset(0)}>This week</button>
-          <button type="button" className={weekOffset === -1 ? 'on' : ''} onClick={() => setWeekOffset(-1)}>Last week</button>
-        </div>
+        <h2>Last week</h2>
         <p>How well did your week reflect each value?</p>
         <div className="reflect-list">
           {rows.map(({ d, v, key }) => (
