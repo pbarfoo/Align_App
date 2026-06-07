@@ -1764,6 +1764,7 @@ function Today({
 
   const [geminiFocus, setGeminiFocus] = useState<FocusPick[] | null>(null);
   const [geminiLoading, setGeminiLoading] = useState(false);
+  const [focusRefreshKey, setFocusRefreshKey] = useState(0);
   const [coachCard, setCoachCard] = useState<CoachCard | null>(null);
   const [coachLoading, setCoachLoading] = useState(false);
   const [coachRating, setCoachRating] = useState<'up' | 'down' | null>(null);
@@ -1912,9 +1913,8 @@ function Today({
   useEffect(() => {
     if (!allActionableIds.length) return;
     setGeminiLoading(true);
-    getGeminiFocusPicks(domains, goals, habits, allActionableIds)
+    getGeminiFocusPicks(domains, goals, habits, allActionableIds, focusRefreshKey > 0)
       .then((picks) => {
-        // Keep only IDs that are still actionable (in case of stale cache)
         const live = new Set(allActionableIds);
         setGeminiFocus(picks.filter((p) => live.has(p.id)));
       })
@@ -1923,7 +1923,8 @@ function Today({
         setGeminiFocus(null);
       })
       .finally(() => setGeminiLoading(false));
-  }, []); // once per mount (cache handles per-day freshness)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusRefreshKey]); // re-runs on manual refresh; cache handles per-day freshness
 
   useEffect(() => {
     setCoachLoading(true);
@@ -2040,7 +2041,16 @@ function Today({
         <div className="today-section focus">
           <div className="today-section-head">
             ✦ Today's focus
-            {geminiLoading && <span className="focus-loading">thinking…</span>}
+            {geminiLoading
+              ? <span className="focus-loading">thinking…</span>
+              : (
+                <button
+                  className="focus-refresh-btn"
+                  onClick={() => setFocusRefreshKey((k) => k + 1)}
+                  title="Shuffle focus picks"
+                >↺</button>
+              )
+            }
           </div>
           {focusDisplay.map(({ item, reason }) => (
             <React.Fragment key={item.id}>

@@ -1081,6 +1081,22 @@ h1 {
   font-style: italic;
   animation: pulse 1.4s ease-in-out infinite;
 }
+.focus-refresh-btn {
+  margin-left: auto;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 14px;
+  padding: 0 2px;
+  opacity: 0.6;
+  transition: opacity 0.15s, transform 0.2s;
+  line-height: 1;
+}
+.focus-refresh-btn:hover {
+  opacity: 1;
+  transform: rotate(180deg);
+}
 @keyframes pulse {
   0%, 100% { opacity: 0.4; }
   50% { opacity: 1; }

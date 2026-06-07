@@ -126,14 +126,17 @@ export async function getGeminiFocusPicks(
   goals: Goal[],
   habits: Habit[],
   actionableIds: string[],
+  bust = false,
 ): Promise<FocusPick[]> {
   const apiKey = import.meta.env.VITE_GEMINI_API_KEY as string | undefined;
   if (!apiKey) throw new Error('No VITE_GEMINI_API_KEY');
 
   const today = toDateStr(new Date());
-  const cached = localStorage.getItem(cacheKey(today));
-  if (cached) {
-    try { return JSON.parse(cached) as FocusPick[]; } catch { /* fall through */ }
+  if (!bust) {
+    const cached = localStorage.getItem(cacheKey(today));
+    if (cached) {
+      try { return JSON.parse(cached) as FocusPick[]; } catch { /* fall through */ }
+    }
   }
 
   const now = new Date();
