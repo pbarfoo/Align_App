@@ -1648,6 +1648,13 @@ h1 {
   font-size: 9px;
   opacity: 0.6;
 }
+.review-domain-score {
+  margin-left: 6px;
+  font-size: 9px;
+  font-weight: 600;
+  opacity: 0.65;
+  letter-spacing: 0;
+}
 .review-value-row {
   margin-bottom: 2px;
 }

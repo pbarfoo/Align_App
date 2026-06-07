@@ -2888,6 +2888,10 @@ function ReviewPanel({
               const allValueRows = d.values.map((v) => ({ label: v, key: `${d.id}:${v}` }));
               if (!allValueRows.length) return null;
               const isCollapsed = collapsedDomains.has(d.id);
+              const avgScore = allValueRows.reduce(
+                (sum, { key }) => sum + valueAlignmentScore(key, goals, habits, reflections, domains), 0,
+              ) / allValueRows.length;
+              const domainPct = Math.round(avgScore * 10);
               return (
                 <div key={d.id} className="review-value-domain-group">
                   <button
@@ -2895,7 +2899,10 @@ function ReviewPanel({
                     style={{ color: domainColor }}
                     onClick={() => toggleDomain(d.id)}
                   >
-                    <span>{d.name}</span>
+                    <span>
+                      {d.name}
+                      <span className="review-domain-score">{domainPct}%</span>
+                    </span>
                     <span className="review-domain-chevron">{isCollapsed ? '▾' : '▴'}</span>
                   </button>
                   {!isCollapsed && allValueRows.map(({ label, key }) => {
