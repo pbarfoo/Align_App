@@ -2899,11 +2899,11 @@ function ReviewPanel({
                     style={{ color: domainColor }}
                     onClick={() => toggleDomain(d.id)}
                   >
-                    <span>
-                      {d.name}
+                    <span>{d.name}</span>
+                    <span className="review-domain-right">
                       <span className="review-domain-score">{domainPct}%</span>
+                      <span className="review-domain-chevron">{isCollapsed ? '▾' : '▴'}</span>
                     </span>
-                    <span className="review-domain-chevron">{isCollapsed ? '▾' : '▴'}</span>
                   </button>
                   {!isCollapsed && allValueRows.map(({ label, key }) => {
                     const score = valueAlignmentScore(key, goals, habits, reflections, domains);
