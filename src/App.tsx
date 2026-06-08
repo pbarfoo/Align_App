@@ -1762,9 +1762,6 @@ function Today({
   const toggleDomain = (id: DomainId) =>
     setCollapsedDomains(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
 
-  const [quickAddDomain, setQuickAddDomain] = useState<string | null>(null);
-  const [quickAddText, setQuickAddText] = useState('');
-
   const [geminiFocus, setGeminiFocus] = useState<FocusPick[] | null>(null);
   const [geminiLoading, setGeminiLoading] = useState(false);
   const [focusRefreshKey, setFocusRefreshKey] = useState(0);
@@ -1864,19 +1861,6 @@ function Today({
     return g.title;
   };
 
-  const addQuickTask = (domainId: string, title: string) => {
-    const goal = goals.find((g) => g.domainId === domainId && !g.completedAt);
-    if (!goal) return;
-    setHabits((prev) => [...prev, {
-      id: uid('h'),
-      goalId: goal.id,
-      title,
-      kind: 'task' as const,
-      doneToday: false,
-    }]);
-    setQuickAddDomain(null);
-    setQuickAddText('');
-  };
 
   const allValues = domains.flatMap((d) => d.values);
   const weekValue = allValues.length
@@ -2103,42 +2087,13 @@ function Today({
               </span>
             </button>
             {!collapsed && (
-              <>
-                {items.length > 0
-                  ? items.map(renderRow)
-                  : (
-                    <div className="today-empty-domain">
-                      Nothing scheduled for {dom.name} today.
-                    </div>
-                  )
-                }
-                {domainHasGoals(dom.id) && (
-                  quickAddDomain === dom.id ? (
-                    <div className="quick-add-row">
-                      <input
-                        className="quick-add-input"
-                        autoFocus
-                        value={quickAddText}
-                        onChange={(e) => setQuickAddText(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && quickAddText.trim()) addQuickTask(dom.id, quickAddText.trim());
-                          if (e.key === 'Escape') { setQuickAddDomain(null); setQuickAddText(''); }
-                        }}
-                        placeholder="Task name…"
-                      />
-                      <button
-                        className="quick-add-cancel"
-                        onClick={() => { setQuickAddDomain(null); setQuickAddText(''); }}
-                      >✕</button>
-                    </div>
-                  ) : (
-                    <button
-                      className="quick-add-btn"
-                      onClick={() => setQuickAddDomain(dom.id)}
-                    >+ Task</button>
-                  )
-                )}
-              </>
+              items.length > 0
+                ? items.map(renderRow)
+                : (
+                  <div className="today-empty-domain">
+                    Nothing scheduled for {dom.name} today.
+                  </div>
+                )
             )}
           </div>
         );
