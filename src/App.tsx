@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { getGeminiFocusPicks, getGeminiCoachCard, saveCoachFeedback, getTodayCoachRating, type FocusPick, type CoachCard } from './geminiAdvisor';
+import { getGeminiCoachCard, saveCoachFeedback, getTodayCoachRating, type CoachCard } from './geminiAdvisor';
 import {
   DndContext, type DragEndEvent, MouseSensor, TouchSensor,
   useSensor, useSensors, closestCenter,
@@ -1762,9 +1762,7 @@ function Today({
   const toggleDomain = (id: DomainId) =>
     setCollapsedDomains(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
 
-  const [geminiFocus, setGeminiFocus] = useState<FocusPick[] | null>(null);
-  const [geminiLoading, setGeminiLoading] = useState(false);
-  const [focusRefreshKey, setFocusRefreshKey] = useState(0);
+  const [domainFocusOffsets, setDomainFocusOffsets] = useState<Record<string, number>>({});
   const [coachCard, setCoachCard] = useState<CoachCard | null>(null);
   const [coachLoading, setCoachLoading] = useState(false);
   const [coachRating, setCoachRating] = useState<'up' | 'down' | null>(null);
@@ -1901,35 +1899,20 @@ function Today({
     }
     return s;
   };
-  const topFocusHabits = openHabits
-    .map((item) => ({ item, score: focusScore(item) }))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 3)
-    .map((x) => x.item);
-  const topFocusTasks = openTasks
-    .map((item) => ({ item, score: focusScore(item) }))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 3)
-    .map((x) => x.item);
-  const todaysFocus = [...topFocusHabits, ...topFocusTasks];
-
-  const allActionableIds = [...openHabits, ...openTasks].map((h) => h.id);
-
-  useEffect(() => {
-    if (!allActionableIds.length) return;
-    setGeminiLoading(true);
-    getGeminiFocusPicks(domains, goals, habits, allActionableIds, focusRefreshKey > 0)
-      .then((picks) => {
-        const live = new Set(allActionableIds);
-        setGeminiFocus(picks.filter((p) => live.has(p.id)));
-      })
-      .catch((err) => {
-        console.warn('Gemini focus unavailable, using heuristic:', err);
-        setGeminiFocus(null);
-      })
-      .finally(() => setGeminiLoading(false));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusRefreshKey]); // re-runs on manual refresh; cache handles per-day freshness
+  const getFocusForDomain = (domainId: string): Habit[] => {
+    const items = [...openHabits, ...openTasks].filter((h) => {
+      const g = goals.find((x) => x.id === h.goalId);
+      return g?.domainId === domainId;
+    });
+    if (!items.length) return [];
+    const scored = items
+      .map((item) => ({ item, score: focusScore(item) }))
+      .sort((a, b) => b.score - a.score);
+    const offset = ((domainFocusOffsets[domainId] ?? 0) * 3) % scored.length;
+    return Array.from({ length: Math.min(3, scored.length) }, (_, i) =>
+      scored[(offset + i) % scored.length].item,
+    );
+  };
 
   useEffect(() => {
     setCoachLoading(true);
@@ -1945,14 +1928,6 @@ function Today({
       })
       .finally(() => setCoachLoading(false));
   }, []); // once per mount (cache handles per-day freshness)
-
-  // Resolve the display focus: Gemini picks if available, else heuristic
-  const habitMap = new Map(habits.map((h) => [h.id, h]));
-  const focusDisplay: Array<{ item: Habit; reason?: string }> = geminiFocus
-    ? geminiFocus
-        .map((p) => ({ item: habitMap.get(p.id)!, reason: p.reason }))
-        .filter((x) => !!x.item)
-    : todaysFocus.map((item) => ({ item }));
 
   const renderRow = (h: Habit) => {
     const isDone = h.kind === 'task' ? !!h.completed : isHabitDoneThisPeriod(h);
@@ -2041,27 +2016,31 @@ function Today({
         )}
       </div>
 
-      {/* Today's focus: Gemini-powered top-3, heuristic fallback */}
-      {(focusDisplay.length > 0 || geminiLoading) && (
+      {/* Today's focus — top 3 per domain */}
+      {domains.some((d) => getFocusForDomain(d.id).length > 0) && (
         <div className="today-section focus">
-          <div className="today-section-head">
-            ✦ Today's focus
-            {geminiLoading
-              ? <span className="focus-loading">thinking…</span>
-              : (
-                <button
-                  className="focus-refresh-btn"
-                  onClick={() => setFocusRefreshKey((k) => k + 1)}
-                  title="Shuffle focus picks"
-                >↺</button>
-              )
-            }
-          </div>
-          {focusDisplay.map(({ item }) => (
-            <React.Fragment key={item.id}>
-              {renderRow(item)}
-            </React.Fragment>
-          ))}
+          <div className="today-section-head">✦ Today's focus</div>
+          {domains.map((d) => {
+            const focusItems = getFocusForDomain(d.id);
+            if (!focusItems.length) return null;
+            const domainColor = DOMAIN_COLORS[d.id] ?? 'var(--accent)';
+            return (
+              <div key={d.id} className="focus-domain-group">
+                <div className="focus-domain-head" style={{ color: domainColor }}>
+                  <span>{d.name}</span>
+                  <button
+                    className="focus-refresh-btn"
+                    onClick={() => setDomainFocusOffsets((prev) => ({
+                      ...prev,
+                      [d.id]: (prev[d.id] ?? 0) + 1,
+                    }))}
+                    title="Shuffle"
+                  >↺</button>
+                </div>
+                {focusItems.map(renderRow)}
+              </div>
+            );
+          })}
         </div>
       )}
 
