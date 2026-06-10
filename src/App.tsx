@@ -2057,10 +2057,9 @@ function Today({
               )
             }
           </div>
-          {focusDisplay.map(({ item, reason }) => (
+          {focusDisplay.map(({ item }) => (
             <React.Fragment key={item.id}>
               {renderRow(item)}
-              {reason && <div className="focus-reason">{reason}</div>}
             </React.Fragment>
           ))}
         </div>
