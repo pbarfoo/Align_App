@@ -1908,7 +1908,7 @@ function Today({
     const scored = items
       .map((item) => ({ item, score: focusScore(item) }))
       .sort((a, b) => b.score - a.score);
-    const offset = (domainFocusOffsets[domainId] ?? 0) % scored.length;
+    const offset = ((domainFocusOffsets[domainId] ?? 0) * 3) % scored.length;
     return Array.from({ length: Math.min(3, scored.length) }, (_, i) =>
       scored[(offset + i) % scored.length].item,
     );
@@ -2021,10 +2021,6 @@ function Today({
         <div className="today-section focus">
           <div className="today-section-head">✦ Today's focus</div>
           {domains.map((d) => {
-            const poolSize = [...openHabits, ...openTasks].filter((h) => {
-              const g = goals.find((x) => x.id === h.goalId);
-              return g?.domainId === d.id;
-            }).length;
             const focusItems = getFocusForDomain(d.id);
             if (!focusItems.length) return null;
             const domainColor = DOMAIN_COLORS[d.id] ?? 'var(--accent)';
@@ -2032,16 +2028,14 @@ function Today({
               <div key={d.id} className="focus-domain-group">
                 <div className="focus-domain-head" style={{ color: domainColor }}>
                   <span>{d.name}</span>
-                  {poolSize > 3 && (
-                    <button
-                      className="focus-refresh-btn"
-                      onClick={() => setDomainFocusOffsets((prev) => ({
-                        ...prev,
-                        [d.id]: (prev[d.id] ?? 0) + 1,
-                      }))}
-                      title="Shuffle"
-                    >↺</button>
-                  )}
+                  <button
+                    className="focus-refresh-btn"
+                    onClick={() => setDomainFocusOffsets((prev) => ({
+                      ...prev,
+                      [d.id]: (prev[d.id] ?? 0) + 1,
+                    }))}
+                    title="Shuffle"
+                  >↺</button>
                 </div>
                 {focusItems.map(renderRow)}
               </div>
