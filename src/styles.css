@@ -1064,31 +1064,32 @@ h1 {
 .today-section.focus .habit-row:last-child {
   border-bottom: none;
 }
-.focus-domain-group {
-  margin-bottom: 6px;
+.focus-reason {
+  font-size: 11px;
+  font-style: italic;
+  color: var(--muted);
+  padding: 0 4px 10px 44px;
+  margin-top: -8px;
 }
-.focus-domain-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  padding: 10px 4px 4px;
-  border-top: 1px solid var(--line);
-}
-.focus-domain-group:first-child .focus-domain-head {
-  border-top: none;
-  padding-top: 4px;
+.focus-loading {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--muted);
+  font-style: italic;
+  animation: pulse 1.4s ease-in-out infinite;
 }
 .focus-refresh-btn {
+  margin-left: auto;
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 13px;
+  color: var(--accent);
+  font-size: 14px;
   padding: 0 2px;
-  opacity: 0.5;
+  opacity: 0.6;
   transition: opacity 0.15s, transform 0.2s;
   line-height: 1;
 }
