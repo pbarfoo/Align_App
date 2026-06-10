@@ -13,7 +13,7 @@ export interface Goal {
   domainId: DomainId;
   /** indexes into domain.values; [] means no values tagged */
   valueIndexes: number[];
-  horizon: 'long' | 'short';
+  horizon: 'long' | 'short' | 'ongoing';
   title: string;
   /** short goals point to the long goal they serve */
   parentGoalId?: string;
@@ -316,6 +316,7 @@ export function getRecurrenceString(h: Habit): string {
 
 /** Long: createdAt + timeframe years. Short: createdAt + timeframe months. */
 export function getGoalCountdown(goal: Goal): string {
+  if (goal.horizon === 'ongoing') return 'Ongoing';
   const created = new Date(goal.createdAt || Date.now());
   const target = new Date(created);
   if (goal.horizon === 'long') {

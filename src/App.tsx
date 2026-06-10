@@ -67,7 +67,7 @@ function goalFromRow(row: Row): Goal {
   return {
     id: row.id, domainId: row.domain_id as DomainId,
     valueIndexes: row.value_indexes ?? [],
-    horizon: row.horizon as 'long' | 'short',
+    horizon: row.horizon as 'long' | 'short' | 'ongoing',
     title: row.title,
     parentGoalId: row.parent_goal_id ?? undefined,
     createdAt: row.created_at,
@@ -787,7 +787,7 @@ function Align({
   const addGoal = (
     valueIndexes: number[],
     title: string,
-    horizon: 'long' | 'short',
+    horizon: 'long' | 'short' | 'ongoing',
     timeframe: number,
     parentGoalId?: string,
   ) => {
@@ -842,7 +842,7 @@ function Align({
   const updateGoalTitle = (id: string, title: string) =>
     setGoals((prev) => prev.map((g) => (g.id === id ? { ...g, title } : g)));
 
-  const updateGoalTimeframe = (id: string, horizon: 'long' | 'short', timeframe: number) =>
+  const updateGoalTimeframe = (id: string, horizon: 'long' | 'short' | 'ongoing', timeframe: number) =>
     setGoals((prev) => prev.map((g) => (g.id === id ? { ...g, horizon, timeframe } : g)));
 
 
@@ -1147,7 +1147,7 @@ function ShortWithActions({
   ) => void;
   onDeleteGoal: (id: string) => void;
   onRenameGoal: (id: string, title: string) => void;
-  onChangeGoalTimeframe: (id: string, horizon: 'long' | 'short', t: number) => void;
+  onChangeGoalTimeframe: (id: string, horizon: 'long' | 'short' | 'ongoing', t: number) => void;
   onDeleteHabit: (id: string) => void;
   onEditHabit: (id: string, updates: Partial<Habit>) => void;
   onToggleGoalComplete: (id: string) => void;
@@ -1430,7 +1430,7 @@ function AddGoalForm({
   indent,
 }: {
   domainValues: string[];
-  onAdd: (valueIndexes: number[], title: string, horizon: 'long' | 'short', timeframe: number) => void;
+  onAdd: (valueIndexes: number[], title: string, horizon: 'long' | 'short' | 'ongoing', timeframe: number) => void;
   forceOpen?: boolean;
   onClose?: () => void;
   indent?: string;
@@ -1449,7 +1449,7 @@ function AddGoalForm({
   const submit = () => {
     if (!title.trim()) return;
     const [h, t] = timeKey.split(':');
-    onAdd([...picked].sort((a, b) => a - b), title.trim(), h as 'long' | 'short', Number(t));
+    onAdd([...picked].sort((a, b) => a - b), title.trim(), h as 'long' | 'short' | 'ongoing', Number(t));
     close();
   };
 
@@ -1487,6 +1487,7 @@ function AddGoalForm({
         </>
       )}
       <select value={timeKey} onChange={(e) => setTimeKey(e.target.value)}>
+        <option value="ongoing:0">Ongoing (no deadline)</option>
         <option value="short:1">1 month</option>
         <option value="short:3">3 months</option>
         <option value="short:6">6 months</option>
@@ -1540,7 +1541,7 @@ function GoalNode({
   onAddChild?: () => void;
   onDelete?: () => void;
   onRename?: (title: string) => void;
-  onChangeTimeframe?: (horizon: 'long' | 'short', t: number) => void;
+  onChangeTimeframe?: (horizon: 'long' | 'short' | 'ongoing', t: number) => void;
   editValuesActive?: boolean;
   onEditValues?: () => void;
   onChangeValues?: (idxs: number[]) => void;
@@ -1605,11 +1606,12 @@ function GoalNode({
               onClick={(e) => e.stopPropagation()}
               onChange={(e) => {
                 const [h, t] = e.target.value.split(':');
-                onChangeTimeframe(h as 'long' | 'short', Number(t));
+                onChangeTimeframe(h as 'long' | 'short' | 'ongoing', Number(t));
                 setEditingTimeframe(false);
               }}
               onBlur={() => setEditingTimeframe(false)}
             >
+              <option value="ongoing:0">Ongoing</option>
               <option value="short:1">1 mo</option>
               <option value="short:3">3 mo</option>
               <option value="short:6">6 mo</option>
@@ -1625,7 +1627,7 @@ function GoalNode({
               title={onChangeTimeframe ? 'Click to edit' : undefined}
               style={onChangeTimeframe ? { cursor: 'pointer', textDecoration: 'underline dotted' } : undefined}
             >
-              {goal.horizon === 'long' ? `${goal.timeframe} yr` : goal.timeframe === 12 ? '1 yr' : `${goal.timeframe} mo`}
+              {goal.horizon === 'ongoing' ? '∞' : goal.horizon === 'long' ? `${goal.timeframe} yr` : goal.timeframe === 12 ? '1 yr' : `${goal.timeframe} mo`}
             </span>
           )}
         </div>
@@ -1795,8 +1797,10 @@ function Today({
   // main list, so balance across life areas is visible.
   const domainOf = (goalId: string) =>
     goals.find((g) => g.id === goalId)?.domainId;
-  const horizonOf = (goalId: string) =>
-    goals.find((g) => g.id === goalId)?.horizon;
+  const horizonOf = (goalId: string) => {
+    const h = goals.find((g) => g.id === goalId)?.horizon;
+    return h === 'ongoing' ? 'short' : h;
+  };
 
   // Priority tier (lower = higher up). Short-term goals are the active push,
   // so they rank above long-term — but a long-term item that's been neglected
@@ -2287,7 +2291,9 @@ function valueAlignmentScore(
   for (const g of allTagged) {
     const h = g.horizon === 'long'
       ? vitalityFor(g, goals, habits).health
-      : stGoalMetrics(g, goals, habits).health;
+      : g.horizon === 'ongoing'
+        ? ongoingGoalMetrics(g, goals, habits).health
+        : stGoalMetrics(g, goals, habits).health;
     actSum += h; actCount++;
   }
   for (const h of habits.filter((h) => h.goalId && taggedIds.has(h.goalId))) {
@@ -2369,7 +2375,7 @@ function computeHealth(
 
   // Habit consistency
   const applyFocus = (h: number) => Math.max(0, Math.min(h + focusAdj, 1.0));
-  if (habits.length === 0) return applyFocus(0.7 * pace + 0.3 * engagement);
+
   let totalW = 0, scoreW = 0;
   habits.forEach((h) => {
     const expected = Math.max(1, 28 / naturalIntervalDays(h));
@@ -2380,6 +2386,13 @@ function computeHealth(
   });
   const habitConsistency = totalW > 0 ? scoreW / totalW : 0;
 
+  // Ongoing goals: no pace component — health is purely consistency + engagement
+  if (timeElapsed < 0) {
+    if (habits.length === 0) return applyFocus(engagement);
+    return applyFocus(0.7 * habitConsistency + 0.3 * engagement);
+  }
+
+  if (habits.length === 0) return applyFocus(0.7 * pace + 0.3 * engagement);
   return applyFocus(0.5 * pace + 0.3 * habitConsistency + 0.2 * engagement);
 }
 
@@ -2453,6 +2466,21 @@ function stGoalMetrics(sg: Goal, goals: Goal[], habits: Habit[], isFocus = false
   const recencyScore   = health;
   const momentum       = (completion + health) / 2;
   return { time: elapsed, completion, health, completionRate, recencyScore, momentum };
+}
+
+
+function ongoingGoalMetrics(og: Goal, goals: Goal[], habits: Habit[], isFocus = false): { time: number; completion: number; health: number; completionRate: number; recencyScore: number; momentum: number } {
+  const now    = Date.now();
+  const subGoals = goals.filter((g) => g.parentGoalId === og.id);
+  const subtree  = new Set<string>([og.id, ...subGoals.map((g) => g.id)]);
+  const ogHabits = habits.filter((h) => subtree.has(h.goalId));
+
+  const completion     = computeDone(subGoals, ogHabits, now);
+  const health         = computeHealth(subGoals, ogHabits, now, -1 /* ongoing sentinel */, isFocus);
+  const completionRate = completion;
+  const recencyScore   = health;
+  const momentum       = health;
+  return { time: 0, completion, health, completionRate, recencyScore, momentum };
 }
 
 
@@ -2605,25 +2633,30 @@ function GoalsDashboard({
   habits: Habit[];
   onClose: () => void;
 }) {
-  const longGoals  = goals.filter((g) => g.horizon === 'long'  && !g.parentGoalId);
-  const allShort   = goals.filter((g) => g.horizon === 'short' && !g.parentGoalId);
+  const longGoals    = goals.filter((g) => g.horizon === 'long'    && !g.parentGoalId);
+  const allShort     = goals.filter((g) => g.horizon === 'short'   && !g.parentGoalId);
+  const ongoingGoals = goals.filter((g) => g.horizon === 'ongoing' && !g.parentGoalId);
 
   // First goal per domain = focus (same rule as Align tab)
   const seenLt = new Set<string>();
   const focusLtIds = new Set(longGoals.filter((g) => { if (seenLt.has(g.domainId)) return false; seenLt.add(g.domainId); return true; }).map((g) => g.id));
   const seenSt = new Set<string>();
   const focusStIds = new Set(allShort.filter((g) => { if (seenSt.has(g.domainId)) return false; seenSt.add(g.domainId); return true; }).map((g) => g.id));
+  const seenOg = new Set<string>();
+  const focusOgIds = new Set(ongoingGoals.filter((g) => { if (seenOg.has(g.domainId)) return false; seenOg.add(g.domainId); return true; }).map((g) => g.id));
 
   const ltMetrics  = new Map(longGoals.map((g) => [g.id, vitalityFor(g, goals, habits, focusLtIds.has(g.id))] as const));
   const stMetrics  = new Map(allShort.map((g) => [g.id, stGoalMetrics(g, goals, habits, focusStIds.has(g.id))] as const));
+  const ogMetrics  = new Map(ongoingGoals.map((g) => [g.id, ongoingGoalMetrics(g, goals, habits, focusOgIds.has(g.id))] as const));
 
   const ltSpiderValues = longGoals.map((g) => ltMetrics.get(g.id)!.health);
   const stSpiderValues = allShort.map((g) => stMetrics.get(g.id)!.health);
+  const ogSpiderValues = ongoingGoals.map((g) => ogMetrics.get(g.id)!.health);
 
-  const [activeSlide, setActiveSlide] = useState<0 | 1>(0);
+  const [activeSlide, setActiveSlide] = useState<0 | 1 | 2>(0);
   const trackRef = useRef<HTMLDivElement>(null);
 
-  const scrollToSlide = (index: 0 | 1) => {
+  const scrollToSlide = (index: 0 | 1 | 2) => {
     trackRef.current?.scrollTo({ left: index * (trackRef.current.clientWidth || 0), behavior: 'smooth' });
     setActiveSlide(index);
   };
@@ -2637,7 +2670,7 @@ function GoalsDashboard({
         entries.forEach((entry) => {
           if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
             const idx = Array.from(slides).indexOf(entry.target as HTMLElement);
-            if (idx !== -1) setActiveSlide(idx as 0 | 1);
+            if (idx !== -1) setActiveSlide(idx as 0 | 1 | 2);
           }
         });
       },
@@ -2647,10 +2680,16 @@ function GoalsDashboard({
     return () => observer.disconnect();
   }, []);
 
-  const healthNote = (
+  const healthNoteDeadline = (
     <div className="dash-health-note">
       <div className="dash-health-note-title">How Health is calculated</div>
       <p>Pace (50%) · Habit consistency (30%) · Planning engagement (20%)</p>
+    </div>
+  );
+  const healthNoteOngoing = (
+    <div className="dash-health-note">
+      <div className="dash-health-note-title">How Health is calculated</div>
+      <p>Habit consistency (70%) · Planning engagement (30%) — no deadline</p>
     </div>
   );
 
@@ -2664,6 +2703,7 @@ function GoalsDashboard({
       <div className="spider-pills">
         <button className={`spider-pill${activeSlide === 0 ? ' active' : ''}`} onClick={() => scrollToSlide(0)}>1–12 mo</button>
         <button className={`spider-pill${activeSlide === 1 ? ' active' : ''}`} onClick={() => scrollToSlide(1)}>1–5 yr</button>
+        <button className={`spider-pill${activeSlide === 2 ? ' active' : ''}`} onClick={() => scrollToSlide(2)}>Ongoing</button>
       </div>
 
       <div className="spider-track" ref={trackRef} role="region" aria-label="Goal charts">
@@ -2693,7 +2733,7 @@ function GoalsDashboard({
               </div>
             );
           })}
-          {healthNote}
+          {healthNoteDeadline}
         </div>
 
         {/* Slide 1: Long-term */}
@@ -2714,13 +2754,35 @@ function GoalsDashboard({
               </div>
             );
           })}
-          {healthNote}
+          {healthNoteDeadline}
+        </div>
+
+        {/* Slide 2: Ongoing */}
+        <div className="spider-slide">
+          {ongoingGoals.length > 0
+            ? <DashSpider goals={ongoingGoals} values={ogSpiderValues} />
+            : <p className="spider-empty">No ongoing goals yet.</p>}
+          {domains.map((d) => {
+            const dOng = ongoingGoals.filter((g) => g.domainId === d.id);
+            if (!dOng.length) return null;
+            const domainColor = DOMAIN_COLORS[d.id] ?? 'var(--accent)';
+            return (
+              <div key={d.id} className="dash-domain-section">
+                <div className="dash-domain-label" style={{ color: domainColor }}>{d.name}</div>
+                {dOng.map((og) => (
+                  <GoalStrip key={og.id} goal={og} metrics={ogMetrics.get(og.id)!} domainColor={domainColor} isShort />
+                ))}
+              </div>
+            );
+          })}
+          {healthNoteOngoing}
         </div>
       </div>
 
       <div className="spider-dots">
         <button className={`spider-dot${activeSlide === 0 ? ' active' : ''}`} onClick={() => scrollToSlide(0)} aria-label="Short-term goals chart" />
         <button className={`spider-dot${activeSlide === 1 ? ' active' : ''}`} onClick={() => scrollToSlide(1)} aria-label="Long-term goals chart" />
+        <button className={`spider-dot${activeSlide === 2 ? ' active' : ''}`} onClick={() => scrollToSlide(2)} aria-label="Ongoing goals chart" />
       </div>
     </div>
   );
