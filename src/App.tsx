@@ -882,11 +882,12 @@ function Align({
       const today = toDateStr(new Date());
       const completions = h.completions ?? [];
       const turningOn = !completions.includes(today);
+      const newCompletions = turningOn ? [...completions, today] : completions.filter((d) => d !== today);
       return {
         ...h,
         doneToday: turningOn,
-        completions: turningOn ? [...completions, today] : completions.filter((d) => d !== today),
-        streak: turningOn ? (h.streak || 0) + 1 : Math.max(0, (h.streak || 0) - 1),
+        completions: newCompletions,
+        streak: computeStreakFromCompletions(newCompletions, h),
         completedAt: turningOn ? Date.now() : undefined,
       };
     }));
@@ -1418,6 +1419,16 @@ function AddActionForm({
           Cancel
         </button>
       </div>
+      {onSave && initial?.kind === 'habit' && (initial.streak ?? 0) > 0 && (
+        <div className="streak-reset-row">
+          <button
+            className="streak-reset-btn"
+            onClick={() => { onSave({ streak: 0, completions: [] }); onClose(); }}
+          >
+            Reset streak ({initial.streak})
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -1843,11 +1854,12 @@ function Today({
       const today = toDateStr(new Date());
       const completions = h.completions ?? [];
       const turningOn = !completions.includes(today);
+      const newCompletions = turningOn ? [...completions, today] : completions.filter((d) => d !== today);
       return {
         ...h,
         doneToday: turningOn,
-        completions: turningOn ? [...completions, today] : completions.filter((d) => d !== today),
-        streak: turningOn ? (h.streak || 0) + 1 : Math.max(0, (h.streak || 0) - 1),
+        completions: newCompletions,
+        streak: computeStreakFromCompletions(newCompletions, h),
         completedAt: turningOn ? Date.now() : undefined,
       };
     }));
@@ -1935,6 +1947,19 @@ function Today({
 
   const renderRow = (h: Habit) => {
     const isDone = h.kind === 'task' ? !!h.completed : isHabitDoneThisPeriod(h);
+    const graceDays = !isDone ? getGraceDays(h) : [];
+    const frozenDate = graceDays[0] ?? null; // oldest unlogged grace day shown first
+    const logGraceDay = (dateStr: string) => {
+      setHabits((prev) => prev.map((x) => {
+        if (x.id !== h.id) return x;
+        const newCompletions = [...(x.completions ?? []), dateStr];
+        return { ...x, completions: newCompletions, streak: computeStreakFromCompletions(newCompletions, x) };
+      }));
+    };
+    const DAY_LABELS: Record<string, string> = { '0': 'Sun', '1': 'Mon', '2': 'Tue', '3': 'Wed', '4': 'Thu', '5': 'Fri', '6': 'Sat' };
+    const graceLabel = frozenDate
+      ? DAY_LABELS[String(new Date(frozenDate + 'T12:00').getDay())] + ' ' + frozenDate.slice(5).replace('-', '/')
+      : null;
     return (
       <div className="habit-row" key={h.id}>
         <button
@@ -1958,6 +1983,14 @@ function Today({
             {h.kind === 'task' ? `Task · ${getTaskCountdown(h)}` : getRecurrenceString(h)}
             &nbsp;·&nbsp; serves <b>{lineage(h.goalId)}</b>
           </div>
+          {frozenDate && (
+            <div className="streak-frozen">
+              <span className="streak-frozen-label">❄ missed {graceLabel}</span>
+              <button className="streak-frozen-log" onClick={() => logGraceDay(frozenDate)}>
+                + log it
+              </button>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -3187,10 +3220,59 @@ function daysSinceLastDone(h: Habit): number {
   return (Date.now() - last) / 86_400_000;
 }
 
+/**
+ * Compute streak from the completions array, using a 2-day grace window for
+ * daily-ish habits so forgetting to log doesn't silently break a streak.
+ * For weekly/monthly/etc habits, one completion per period is enough.
+ */
+function computeStreakFromCompletions(completions: string[], h: Habit): number {
+  if (!completions.length) return 0;
+  const sorted = [...completions].sort().reverse(); // newest first
+  const interval = naturalIntervalDays(h);
+  const graceDays = interval <= 2 ? 2 : 0; // grace only for daily-ish habits
+  let streak = 0;
+  let cursor = new Date();
+  cursor.setHours(0, 0, 0, 0);
+  for (const d of sorted) {
+    const day = new Date(d + 'T12:00');
+    day.setHours(0, 0, 0, 0);
+    const gapDays = Math.round((cursor.getTime() - day.getTime()) / 86_400_000);
+    if (gapDays < 0) continue; // future date, skip
+    if (gapDays <= interval + graceDays) {
+      streak++;
+      cursor = new Date(day.getTime() - interval * 86_400_000);
+    } else {
+      break;
+    }
+  }
+  return streak;
+}
+
 /** A habit has been neglected when it's overdue by ≥ 2× its natural interval. */
 function isNeglected(h: Habit): boolean {
   if (h.kind !== 'habit') return false;
   return daysSinceLastDone(h) >= naturalIntervalDays(h) * 2;
+}
+
+/**
+ * Returns up to 2 missed dates (YYYY-MM-DD) within the grace window,
+ * oldest first, for habits that have a streak but missed a day or two.
+ * Only applies to daily-ish habits (interval ≤ 2 days).
+ */
+function getGraceDays(h: Habit): string[] {
+  if (h.kind !== 'habit' || (h.streak ?? 0) === 0) return [];
+  if (naturalIntervalDays(h) > 2) return []; // grace only for daily-ish habits
+  const done = new Set(h.completions ?? []);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const missed: string[] = [];
+  for (let i = 1; i <= 2; i++) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const str = toDateStr(d);
+    if (!done.has(str)) missed.push(str);
+  }
+  return missed.reverse(); // oldest first so user processes in order
 }
 
 /* ---------------- bits ---------------- */
