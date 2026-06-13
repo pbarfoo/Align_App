@@ -1015,6 +1015,23 @@ function Align({
                         <span className="goal-date">
                           {h.kind === 'task' ? getTaskCountdown(h) : getRecurrenceString(h)}
                         </span>
+                        {(() => {
+                          const graceDays = !done ? getGraceDays(h) : [];
+                          const frozenDate = graceDays[0] ?? null;
+                          if (!frozenDate) return null;
+                          const DAY_LABELS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+                          const graceLabel = DAY_LABELS[new Date(frozenDate + 'T12:00').getDay()] + ' ' + frozenDate.slice(5).replace('-', '/');
+                          return (
+                            <span className="streak-frozen">
+                              <span className="streak-frozen-label">❄ missed {graceLabel}</span>
+                              <button className="streak-frozen-log" onClick={(e) => {
+                                e.stopPropagation();
+                                const newCompletions = [...(h.completions ?? []), frozenDate];
+                                updateHabit(h.id, { completions: newCompletions, streak: computeStreakFromCompletions(newCompletions, h) });
+                              }}>+ log it</button>
+                            </span>
+                          );
+                        })()}
                       </div>
                     </div>
                     <div className="node-ctrls">
@@ -1947,19 +1964,6 @@ function Today({
 
   const renderRow = (h: Habit) => {
     const isDone = h.kind === 'task' ? !!h.completed : isHabitDoneThisPeriod(h);
-    const graceDays = !isDone ? getGraceDays(h) : [];
-    const frozenDate = graceDays[0] ?? null; // oldest unlogged grace day shown first
-    const logGraceDay = (dateStr: string) => {
-      setHabits((prev) => prev.map((x) => {
-        if (x.id !== h.id) return x;
-        const newCompletions = [...(x.completions ?? []), dateStr];
-        return { ...x, completions: newCompletions, streak: computeStreakFromCompletions(newCompletions, x) };
-      }));
-    };
-    const DAY_LABELS: Record<string, string> = { '0': 'Sun', '1': 'Mon', '2': 'Tue', '3': 'Wed', '4': 'Thu', '5': 'Fri', '6': 'Sat' };
-    const graceLabel = frozenDate
-      ? DAY_LABELS[String(new Date(frozenDate + 'T12:00').getDay())] + ' ' + frozenDate.slice(5).replace('-', '/')
-      : null;
     return (
       <div className="habit-row" key={h.id}>
         <button
@@ -1983,14 +1987,6 @@ function Today({
             {h.kind === 'task' ? `Task · ${getTaskCountdown(h)}` : getRecurrenceString(h)}
             &nbsp;·&nbsp; serves <b>{lineage(h.goalId)}</b>
           </div>
-          {frozenDate && (
-            <div className="streak-frozen">
-              <span className="streak-frozen-label">❄ missed {graceLabel}</span>
-              <button className="streak-frozen-log" onClick={() => logGraceDay(frozenDate)}>
-                + log it
-              </button>
-            </div>
-          )}
         </div>
       </div>
     );
