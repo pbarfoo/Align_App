@@ -1997,7 +1997,7 @@ function Today({
                 const DAY = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
                 const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
                 const label = `${DAY[d.getDay()]}, ${MON[d.getMonth()]} ${d.getDate()}`;
-                return <span style={{ color: '#6ab4f5' }}><CalIcon /> {label} ↺</span>;
+                return <span style={{ color: '#e05c5c' }}><CalIcon /> {label} ↺</span>;
               }
               return getRecurrenceString(h);
             })()}
