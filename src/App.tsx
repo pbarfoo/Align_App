@@ -881,11 +881,15 @@ function Align({
       }
       const today = toDateStr(new Date());
       const completions = h.completions ?? [];
-      const turningOn = !completions.includes(today);
-      const newCompletions = turningOn ? [...completions, today] : completions.filter((d) => d !== today);
+      // If today isn't done yet and there are frozen days, log the oldest frozen
+      // day first — checkmark works through the backlog before logging today.
+      const frozen = getGraceDays(h);
+      const target = (!completions.includes(today) && frozen.length > 0) ? frozen[0] : today;
+      const turningOn = !completions.includes(target);
+      const newCompletions = turningOn ? [...completions, target] : completions.filter((d) => d !== target);
       return {
         ...h,
-        doneToday: turningOn,
+        doneToday: target === today ? turningOn : h.doneToday,
         completions: newCompletions,
         streak: computeStreakFromCompletions(newCompletions, h),
         completedAt: turningOn ? Date.now() : undefined,
@@ -1024,13 +1028,9 @@ function Align({
                           const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
                           const graceLabel = `${DAY[fd.getDay()]}, ${MON[fd.getMonth()]} ${fd.getDate()}`;
                           return (
-                            <button className="streak-frozen" onClick={(e) => {
-                              e.stopPropagation();
-                              const newCompletions = [...(h.completions ?? []), frozenDate];
-                              updateHabit(h.id, { completions: newCompletions, streak: computeStreakFromCompletions(newCompletions, h) });
-                            }}>
+                            <span className="streak-frozen">
                               <CalIcon /> {graceLabel} ↺
-                            </button>
+                            </span>
                           );
                         })()}
                       </div>
