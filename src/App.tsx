@@ -2369,9 +2369,15 @@ function computeHealth(
       : Math.min(doneFraction / timeElapsed, 1.0);
   }
 
+  // Time-maturity: pace credit scales with how far into the goal's life we are.
+  // A goal must prove consistency over time — early completions can't spike health.
+  // Starts at 10% on day 1, reaches full credit at ~25% elapsed.
+  const timeFactor = timeElapsed >= 0 ? Math.min(1.0, timeElapsed * 4 + 0.1) : 1.0;
+  const adjustedPace = pace * timeFactor;
+
   // Focus adjustment: raises the bar when neglected, rewards when delivering
   // Range: −10% (pace=0) to +10% (pace=1), neutral at pace=0.5
-  const focusAdj = isFocus ? (pace - 0.5) * 0.2 : 0;
+  const focusAdj = isFocus ? (adjustedPace - 0.5) * 0.2 : 0;
 
   // Habit consistency
   const applyFocus = (h: number) => Math.max(0, Math.min(h + focusAdj, 1.0));
@@ -2392,8 +2398,8 @@ function computeHealth(
     return applyFocus(0.7 * habitConsistency + 0.3 * engagement);
   }
 
-  if (habits.length === 0) return applyFocus(0.7 * pace + 0.3 * engagement);
-  return applyFocus(0.5 * pace + 0.3 * habitConsistency + 0.2 * engagement);
+  if (habits.length === 0) return applyFocus(0.7 * adjustedPace + 0.3 * engagement);
+  return applyFocus(0.5 * adjustedPace + 0.3 * habitConsistency + 0.2 * engagement);
 }
 
 /**
