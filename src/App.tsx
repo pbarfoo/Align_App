@@ -1025,7 +1025,7 @@ function Align({
                           const graceLabel = `${DAY[fd.getDay()]}, ${MON[fd.getMonth()]} ${fd.getDate()}`;
                           return (
                             <span className="streak-frozen">
-                              <span className="streak-frozen-label">📅 {graceLabel} ↺</span>
+                              <span className="streak-frozen-label"><CalIcon /> {graceLabel} ↺</span>
                               <button className="streak-frozen-log" onClick={(e) => {
                                 e.stopPropagation();
                                 const newCompletions = [...(h.completions ?? []), frozenDate];
@@ -1997,7 +1997,7 @@ function Today({
                 const DAY = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
                 const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
                 const label = `${DAY[d.getDay()]}, ${MON[d.getMonth()]} ${d.getDate()}`;
-                return <span style={{ color: '#6ab4f5' }}>📅 {label} ↺</span>;
+                return <span style={{ color: '#6ab4f5' }}><CalIcon /> {label} ↺</span>;
               }
               return getRecurrenceString(h);
             })()}
@@ -3339,6 +3339,17 @@ function RepeatIcon() {
       <path d="M20 4v4h-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
       <path d="M20 15a8 8 0 0 1-13.7 3.3L4 16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
       <path d="M4 20v-4h4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function CalIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 12 12" fill="none" style={{ display: 'inline', verticalAlign: 'middle', marginBottom: '1px' }}>
+      <rect x="0.5" y="1.5" width="11" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.2"/>
+      <line x1="0.5" y1="4.5" x2="11.5" y2="4.5" stroke="currentColor" strokeWidth="1.2"/>
+      <line x1="3.5" y1="0" x2="3.5" y2="3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+      <line x1="8.5" y1="0" x2="8.5" y2="3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
     </svg>
   );
 }
