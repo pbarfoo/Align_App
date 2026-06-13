@@ -1019,11 +1019,13 @@ function Align({
                           const graceDays = !done ? getGraceDays(h) : [];
                           const frozenDate = graceDays[0] ?? null;
                           if (!frozenDate) return null;
-                          const DAY_LABELS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-                          const graceLabel = DAY_LABELS[new Date(frozenDate + 'T12:00').getDay()] + ' ' + frozenDate.slice(5).replace('-', '/');
+                          const fd = new Date(frozenDate + 'T12:00');
+                          const DAY = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+                          const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                          const graceLabel = `${DAY[fd.getDay()]}, ${MON[fd.getMonth()]} ${fd.getDate()}`;
                           return (
                             <span className="streak-frozen">
-                              <span className="streak-frozen-label">❄ missed {graceLabel}</span>
+                              <span className="streak-frozen-label">📅 {graceLabel} ↺</span>
                               <button className="streak-frozen-log" onClick={(e) => {
                                 e.stopPropagation();
                                 const newCompletions = [...(h.completions ?? []), frozenDate];
@@ -1991,9 +1993,11 @@ function Today({
               const graceDays = !isDone ? getGraceDays(h) : [];
               const frozenDate = graceDays[0] ?? null;
               if (frozenDate) {
-                const DAY_LABELS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-                const label = DAY_LABELS[new Date(frozenDate + 'T12:00').getDay()] + ' ' + frozenDate.slice(5).replace('-', '/');
-                return <span style={{ color: '#6ab4f5' }}>❄ Frozen ({label})</span>;
+                const d = new Date(frozenDate + 'T12:00');
+                const DAY = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+                const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                const label = `${DAY[d.getDay()]}, ${MON[d.getMonth()]} ${d.getDate()}`;
+                return <span style={{ color: '#6ab4f5' }}>📅 {label} ↺</span>;
               }
               return getRecurrenceString(h);
             })()}
