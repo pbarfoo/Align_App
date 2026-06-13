@@ -1984,8 +1984,10 @@ function Today({
             {h.title}
           </div>
           <div className="habit-meta">
+            <b>{lineage(h.goalId)}</b>
+            &nbsp;·&nbsp;
             {(() => {
-              if (h.kind === 'task') return `Task · ${getTaskCountdown(h)}`;
+              if (h.kind === 'task') return getTaskCountdown(h);
               const graceDays = !isDone ? getGraceDays(h) : [];
               const frozenDate = graceDays[0] ?? null;
               if (frozenDate) {
@@ -1995,7 +1997,6 @@ function Today({
               }
               return getRecurrenceString(h);
             })()}
-            &nbsp;·&nbsp; <b>{lineage(h.goalId)}</b>
           </div>
         </div>
       </div>
