@@ -519,20 +519,13 @@ h1 {
 }
 
 .streak-frozen {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   margin-top: 4px;
-}
-.streak-frozen-label {
   font-size: 11px;
   color: #e05c5c;
   letter-spacing: 0.02em;
-}
-.streak-frozen-log {
-  font-size: 11px;
-  color: #e05c5c;
-  font-weight: 600;
   padding: 2px 7px;
   border: 1px solid #e05c5c40;
   border-radius: 6px;

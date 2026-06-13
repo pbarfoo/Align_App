@@ -1024,14 +1024,13 @@ function Align({
                           const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
                           const graceLabel = `${DAY[fd.getDay()]}, ${MON[fd.getMonth()]} ${fd.getDate()}`;
                           return (
-                            <span className="streak-frozen">
-                              <span className="streak-frozen-label"><CalIcon /> {graceLabel} ↺</span>
-                              <button className="streak-frozen-log" onClick={(e) => {
-                                e.stopPropagation();
-                                const newCompletions = [...(h.completions ?? []), frozenDate];
-                                updateHabit(h.id, { completions: newCompletions, streak: computeStreakFromCompletions(newCompletions, h) });
-                              }}>+ log it</button>
-                            </span>
+                            <button className="streak-frozen" onClick={(e) => {
+                              e.stopPropagation();
+                              const newCompletions = [...(h.completions ?? []), frozenDate];
+                              updateHabit(h.id, { completions: newCompletions, streak: computeStreakFromCompletions(newCompletions, h) });
+                            }}>
+                              <CalIcon /> {graceLabel} ↺
+                            </button>
                           );
                         })()}
                       </div>
