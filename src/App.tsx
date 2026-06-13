@@ -3271,9 +3271,16 @@ function isNeglected(h: Habit): boolean {
  * Only applies to daily-ish habits (interval ≤ 2 days).
  */
 function getGraceDays(h: Habit): string[] {
-  if (h.kind !== 'habit' || (h.streak ?? 0) === 0) return [];
+  if (h.kind !== 'habit') return [];
   if (naturalIntervalDays(h) > 2) return []; // grace only for daily-ish habits
   const done = new Set(h.completions ?? []);
+  // Only show grace if there's a completion within the last 4 days — avoids
+  // showing grace for long-abandoned habits and doesn't rely on stored streak.
+  const hasRecentHistory = [...done].some((d) => {
+    const diff = (Date.now() - new Date(d + 'T12:00').getTime()) / 86_400_000;
+    return diff >= 0 && diff <= 4;
+  });
+  if (!hasRecentHistory) return [];
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const missed: string[] = [];
