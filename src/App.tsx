@@ -1984,7 +1984,17 @@ function Today({
             {h.title}
           </div>
           <div className="habit-meta">
-            {h.kind === 'task' ? `Task · ${getTaskCountdown(h)}` : getRecurrenceString(h)}
+            {(() => {
+              if (h.kind === 'task') return `Task · ${getTaskCountdown(h)}`;
+              const graceDays = !isDone ? getGraceDays(h) : [];
+              const frozenDate = graceDays[0] ?? null;
+              if (frozenDate) {
+                const DAY_LABELS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+                const label = DAY_LABELS[new Date(frozenDate + 'T12:00').getDay()] + ' ' + frozenDate.slice(5).replace('-', '/');
+                return <span style={{ color: '#6ab4f5' }}>❄ Frozen ({label})</span>;
+              }
+              return getRecurrenceString(h);
+            })()}
             &nbsp;·&nbsp; serves <b>{lineage(h.goalId)}</b>
           </div>
         </div>
