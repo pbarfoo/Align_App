@@ -1988,19 +1988,7 @@ function Today({
           <div className="habit-meta">
             <b>{lineage(h.goalId)}</b>
             &nbsp;·&nbsp;
-            {(() => {
-              if (h.kind === 'task') return getTaskCountdown(h);
-              const graceDays = !isDone ? getGraceDays(h) : [];
-              const frozenDate = graceDays[0] ?? null;
-              if (frozenDate) {
-                const d = new Date(frozenDate + 'T12:00');
-                const DAY = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-                const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-                const label = `${DAY[d.getDay()]}, ${MON[d.getMonth()]} ${d.getDate()}`;
-                return <span style={{ color: '#e05c5c' }}><CalIcon /> {label} ↺</span>;
-              }
-              return getRecurrenceString(h);
-            })()}
+            {h.kind === 'task' ? getTaskCountdown(h) : getRecurrenceString(h)}
           </div>
         </div>
       </div>
