@@ -1995,7 +1995,7 @@ function Today({
               }
               return getRecurrenceString(h);
             })()}
-            &nbsp;·&nbsp; serves <b>{lineage(h.goalId)}</b>
+            &nbsp;·&nbsp; <b>{lineage(h.goalId)}</b>
           </div>
         </div>
       </div>
