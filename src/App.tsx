@@ -2176,18 +2176,6 @@ function Reflect({
   const [note, setNote] = useState('');
   const [step, setStep] = useState<'score' | 'insight'>('score');
 
-  useEffect(() => {
-    const d = new Date();
-    if (weekOffset === -1) d.setDate(d.getDate() - 7);
-    const week = getISOWeek(d);
-    const year = d.getFullYear();
-    const existing = [...reflections]
-      .filter((r) => r.weekNumber === week && new Date(r.date).getFullYear() === year)
-      .sort((a, b) => b.date - a.date)[0];
-    setScores(existing?.scores ?? {});
-    setNote(existing?.note ?? '');
-  }, [weekOffset]);
-
   const rows = domains.flatMap((d) =>
     d.values.map((v) => ({ d, v, key: `${d.id}:${v}` })),
   );
