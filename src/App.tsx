@@ -402,7 +402,6 @@ export default function App() {
       {reflectOpen && (
         <Reflect
           domains={domains}
-          reflections={reflections}
           onClose={() => setReflectOpen(false)}
           onSave={(scores, note, weekNumber, date) => {
             const entry: ReflectionEntry = { weekNumber, date, scores, note };
@@ -2162,12 +2161,10 @@ function Today({
 /* ---------------- Reflect ---------------- */
 function Reflect({
   domains,
-  reflections,
   onClose,
   onSave,
 }: {
   domains: Domain[];
-  reflections: ReflectionEntry[];
   onClose: () => void;
   onSave: (scores: Record<string, number>, note: string, weekNumber: number, date: number) => void;
 }) {
