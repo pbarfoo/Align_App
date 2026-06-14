@@ -2342,7 +2342,7 @@ function valueAlignmentScore(
   // Blend
   let score: number;
   if (reflComponent !== null && activityComponent !== null) {
-    score = 0.7 * reflComponent + 0.3 * activityComponent;
+    score = 0.5 * reflComponent + 0.5 * activityComponent;
   } else if (reflComponent !== null) {
     score = reflComponent;
   } else if (activityComponent !== null) {
@@ -3019,7 +3019,7 @@ function ReviewPanel({
               );
             })}
             <div className="review-decay-note">
-              Score 0–100%: reflection 70%, goal &amp; habit activity 30%
+              Score 0–100%: reflection 50%, goal &amp; habit activity 50%
             </div>
           </div>
 
