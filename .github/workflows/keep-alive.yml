@@ -11,6 +11,9 @@ jobs:
     steps:
       - name: Ping Supabase
         run: |
-          curl -sf "https://qnkjunakzytvutikhlwq.supabase.co/rest/v1/" \
+          # Hit a real table so the Postgres DB registers activity (prevents auto-pause),
+          # not just the REST gateway. HEAD with limit=0 keeps it cheap.
+          curl -sf "https://hossofghephkcncecesp.supabase.co/rest/v1/domains?select=id&limit=1" \
             -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
             -o /dev/null && echo "Supabase is alive" || echo "Ping returned non-2xx (project may be paused)"
