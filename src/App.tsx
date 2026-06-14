@@ -2183,7 +2183,6 @@ function Reflect({
   onClose: () => void;
   onSave: (scores: Record<string, number>, note: string, weekNumber: number, date: number) => void;
 }) {
-  const [weekOffset] = useState<0 | -1>(-1);
   const [scores, setScores] = useState<Record<string, number>>({});
   const [note, setNote] = useState('');
   const [step, setStep] = useState<'score' | 'insight'>('score');
@@ -2199,9 +2198,16 @@ function Reflect({
 
   const handleSave = () => {
     const now = new Date();
-    const refWeek = new Date(now);
-    if (weekOffset === -1) refWeek.setDate(refWeek.getDate() - 7);
-    onSave(scores, note, getISOWeek(refWeek), refWeek.getTime());
+    const day = now.getDay();          // 0=Sun, 1=Mon … 6=Sat
+    const week = getISOWeek(now);
+    // Tag the same week the Today-tab prompt looks for, so the entry is
+    // recognised as "this week's" (and the nag disappears): on Sunday this is
+    // the week ending today; during the Mon–Wed grace window it's the week
+    // that ended last Sunday. Date is "now" so the log shows when you actually
+    // reflected and the recency decay treats it as fresh.
+    const inGrace = day >= 1 && day <= 3;
+    const weekNumber = inGrace ? (week > 1 ? week - 1 : 52) : week;
+    onSave(scores, note, weekNumber, now.getTime());
     setStep('insight');
   };
 
