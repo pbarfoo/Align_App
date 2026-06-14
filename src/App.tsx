@@ -109,9 +109,10 @@ function habitFromRow(row: Row): Habit {
 }
 
 function reflToRow(r: ReflectionEntry, userId: string): Row {
+  const year = new Date(r.date).getFullYear();
   return {
-    id: `${userId.slice(0, 8)}-${r.date}`,
-    user_id: userId, week_number: r.weekNumber, year: new Date(r.date).getFullYear(),
+    id: `${userId.slice(0, 8)}-W${r.weekNumber}-${year}`,
+    user_id: userId, week_number: r.weekNumber, year,
     date: r.date, scores: r.scores, note: r.note,
   };
 }
@@ -282,7 +283,17 @@ export default function App() {
         supabase.from('habits').insert(initialHabits.map((x) => habitToRow(x, userId)));
         setHabits(initialHabits);
       }
-      if (r.data?.length) setReflections(r.data.map(reflFromRow));
+      if (r.data?.length) {
+        const loaded = r.data.map(reflFromRow);
+        // Deduplicate: if two rows share the same week+year, keep the one with the latest date
+        const byKey = new Map<string, ReflectionEntry>();
+        for (const e of loaded) {
+          const k = `${e.weekNumber}-${new Date(e.date).getFullYear()}`;
+          const cur = byKey.get(k);
+          if (!cur || e.date > cur.date) byKey.set(k, e);
+        }
+        setReflections([...byKey.values()]);
+      }
 
       // Mark this account as seeded so we never reseed/overwrite again.
       if (!alreadySeeded) supabase.auth.updateUser({ data: { seeded: true } });
@@ -405,7 +416,11 @@ export default function App() {
           onClose={() => setReflectOpen(false)}
           onSave={(scores, note, weekNumber, date) => {
             const entry: ReflectionEntry = { weekNumber, date, scores, note };
-            setReflections((r) => [...r, entry]);
+            const year = new Date(date).getFullYear();
+            setReflections((r) => [
+              ...r.filter((x) => !(x.weekNumber === weekNumber && new Date(x.date).getFullYear() === year)),
+              entry,
+            ]);
             flash('Reflection saved');
           }}
         />
@@ -2184,9 +2199,9 @@ function Reflect({
 
   const handleSave = () => {
     const now = new Date();
-    const lastWeek = new Date(now);
-    if (weekOffset === -1) lastWeek.setDate(lastWeek.getDate() - 7);
-    onSave(scores, note, getISOWeek(lastWeek), now.getTime());
+    const refWeek = new Date(now);
+    if (weekOffset === -1) refWeek.setDate(refWeek.getDate() - 7);
+    onSave(scores, note, getISOWeek(refWeek), refWeek.getTime());
     setStep('insight');
   };
 
