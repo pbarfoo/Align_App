@@ -2183,9 +2183,10 @@ function Reflect({
   };
 
   const handleSave = () => {
-    const d = new Date();
-    if (weekOffset === -1) d.setDate(d.getDate() - 7);
-    onSave(scores, note, getISOWeek(d), d.getTime());
+    const now = new Date();
+    const lastWeek = new Date(now);
+    if (weekOffset === -1) lastWeek.setDate(lastWeek.getDate() - 7);
+    onSave(scores, note, getISOWeek(lastWeek), now.getTime());
     setStep('insight');
   };
 
