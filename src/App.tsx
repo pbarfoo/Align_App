@@ -1810,8 +1810,27 @@ function Today({
   const [domainFocusOffsets, setDomainFocusOffsets] = useState<Record<string, number>>({});
   const [coachCard, setCoachCard] = useState<CoachCard | null>(null);
   const [coachLoading, setCoachLoading] = useState(false);
+  const [coachFailed, setCoachFailed] = useState(false);
   const [coachRating, setCoachRating] = useState<'up' | 'down' | null>(null);
   const today = toDateStr(new Date());
+
+  const fetchCoachCard = () => {
+    if (!goals.length && !habits.length) return;
+    setCoachLoading(true);
+    setCoachFailed(false);
+    getGeminiCoachCard(domains, goals, habits, reflections, userId)
+      .then(async (card) => {
+        setCoachCard(card);
+        const rating = await getTodayCoachRating(today, card.title, userId);
+        setCoachRating(rating);
+      })
+      .catch((err) => {
+        console.warn('Gemini coach unavailable:', err);
+        setCoachCard(null);
+        setCoachFailed(true);
+      })
+      .finally(() => setCoachLoading(false));
+  };
 
   // --- Classify what's relevant *today* ---
   const scheduledHabits = habits.filter(
@@ -1963,20 +1982,7 @@ function Today({
   };
 
   useEffect(() => {
-    // Don't call Gemini before real data arrives — it would cache a "no data" card.
-    if (!goals.length && !habits.length) return;
-    setCoachLoading(true);
-    getGeminiCoachCard(domains, goals, habits, reflections, userId)
-      .then(async (card) => {
-        setCoachCard(card);
-        const rating = await getTodayCoachRating(today, card.title, userId);
-        setCoachRating(rating);
-      })
-      .catch((err) => {
-        console.warn('Gemini coach unavailable:', err);
-        setCoachCard(null);
-      })
-      .finally(() => setCoachLoading(false));
+    fetchCoachCard();
   }, [!goals.length && !habits.length]); // re-runs once data arrives; stable after that
 
   const renderRow = (h: Habit) => {
@@ -2039,6 +2045,11 @@ function Today({
             <i style={{ width: `${pct}%` }} />
           </div>
         </div>
+        {coachFailed && !coachLoading && (
+          <button className="coach-retry-btn" onClick={fetchCoachCard}>
+            Retry coach card ↺
+          </button>
+        )}
         {coachCard && (
           <>
             <div className="coach-title">{coachCard.title}</div>
