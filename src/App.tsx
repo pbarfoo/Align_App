@@ -1963,6 +1963,8 @@ function Today({
   };
 
   useEffect(() => {
+    // Don't call Gemini before real data arrives — it would cache a "no data" card.
+    if (!goals.length && !habits.length) return;
     setCoachLoading(true);
     getGeminiCoachCard(domains, goals, habits, reflections, userId)
       .then(async (card) => {
@@ -1975,7 +1977,7 @@ function Today({
         setCoachCard(null);
       })
       .finally(() => setCoachLoading(false));
-  }, []); // once per mount (cache handles per-day freshness)
+  }, [!goals.length && !habits.length]); // re-runs once data arrives; stable after that
 
   const renderRow = (h: Habit) => {
     const isDone = h.kind === 'task' ? !!h.completed : isHabitDoneThisPeriod(h);
