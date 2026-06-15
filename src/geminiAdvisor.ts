@@ -55,7 +55,7 @@ export async function getTodayCoachRating(
   return (data?.rating as 'up' | 'down' | null) ?? null;
 }
 
-const API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+const API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent';
 
 function cacheKey(date: string) {
   return `gemini-focus-v3-${date}`;
@@ -274,7 +274,7 @@ function valueFingerprint(domains: Domain[]): string {
 
 
 function coachCacheKey(date: string, domains: Domain[]) {
-  return `gemini-coach-v21-${date}-${valueFingerprint(domains)}`;
+  return `gemini-coach-v22-${date}-${valueFingerprint(domains)}`;
 }
 
 export async function getGeminiCoachCard(
