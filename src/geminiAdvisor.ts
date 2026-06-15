@@ -55,7 +55,7 @@ export async function getTodayCoachRating(
   return (data?.rating as 'up' | 'down' | null) ?? null;
 }
 
-const API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent';
+const API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 
 function cacheKey(date: string) {
   return `gemini-focus-v3-${date}`;
@@ -274,7 +274,7 @@ function valueFingerprint(domains: Domain[]): string {
 
 
 function coachCacheKey(date: string, domains: Domain[]) {
-  return `gemini-coach-v19-${date}-${valueFingerprint(domains)}`;
+  return `gemini-coach-v20-${date}-${valueFingerprint(domains)}`;
 }
 
 export async function getGeminiCoachCard(
@@ -397,23 +397,25 @@ export async function getGeminiCoachCard(
     ? `\n## Style & tone feedback (adjust HOW you write, not WHAT you cover)\n- Liked tone/style: ${liked || 'none'}\n- Disliked tone/style: ${disliked || 'none'}\nThis feedback is about writing style only — do not let it cause you to repeat the same values or goals.\n`
     : '';
 
-  const prompt = `You are a personal coach. Write one daily coaching card grounded in the user's real data.
+  const prompt = `You are a personal coach. Write one daily coaching card grounded in the user's real data below.
 
-Your goal is to:
-1. Encourage — acknowledge real progress, streaks, completed tasks, or goal milestones visible in the data.
-2. Provide insight — notice what's working, what's slipping, or patterns across habits, tasks, and goals. Surface something the user might not have noticed themselves.
-3. Remind of values and goals — weave in the user's values naturally without fixating on any single one. Rotate across goals and domains day to day.
+HARD RULES — violations mean the card is wrong:
+- The title MUST contain the name of a real goal or habit from the data. Never a generic phrase.
+- The first sentence MUST mention a specific habit name, streak count, goal title, or completion from the data.
+- NEVER open with day-of-week phrases like "It's Monday", "Fresh week", "Start your week", "New week", etc.
+- Do not invent topics. Only reference what's in the data.
+- Do not reinterpret values. "Service" = serving others. "Autonomy" = independence. Use them as-is.
 
-Rules:
-- Only reference goals, habits, and values present in the data. Do not invent topics.
-- Do not fixate on one value or goal repeatedly — cover the breadth of the user's life.
-- Respect what each value actually means to the user. Values have a fixed meaning regardless of which domain or goal they appear on — do not reinterpret them. For example, if "service" is a value, it always means serving others, never "pursuing" or "serving" one's own goals.
-- Focus goals (marked [FOCUS]) and values with low reflection scores are useful signals, not mandates.
-- Tone: warm, direct, brief. No filler or generic advice.
+Your goal:
+1. Acknowledge one real thing — a streak, a completed task, a goal nearing its end, a habit slipping.
+2. Surface a pattern the user may not have noticed (e.g. consistency gap, a value underserved by current habits).
+3. Give one concrete nudge for today tied to a named habit or goal.
+
+Tone: direct, warm, no filler. Like a coach who actually read the data.
 
 Format:
-- Title: 4–6 words, grounded in a real goal or habit.
-- Blurb: exactly 2 sentences. First: genuine encouragement tied to specific data. Second: one concrete, actionable nudge for today.
+- Title: 4–6 words. Must contain a real habit or goal name.
+- Blurb: exactly 2 sentences. Sentence 1: specific encouragement from data. Sentence 2: one actionable nudge naming a real item.
 ${feedbackLines}
 ${contextLines.join('\n')}
 
