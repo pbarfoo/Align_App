@@ -1042,9 +1042,18 @@ function Align({
                           const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
                           const graceLabel = `${DAY[fd.getDay()]}, ${MON[fd.getMonth()]} ${fd.getDate()}`;
                           return (
-                            <span className="streak-frozen">
+                            <button
+                              className="streak-frozen streak-frozen-reset"
+                              title="Reset streak"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setHabits((prev) => prev.map((x) =>
+                                  x.id !== h.id ? x : { ...x, streak: 0, completions: [] }
+                                ));
+                              }}
+                            >
                               <CalIcon /> {graceLabel} ↺
-                            </span>
+                            </button>
                           );
                         })()}
                       </div>
