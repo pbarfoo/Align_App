@@ -274,7 +274,7 @@ function valueFingerprint(domains: Domain[]): string {
 
 
 function coachCacheKey(date: string, domains: Domain[]) {
-  return `gemini-coach-v23-${date}-${valueFingerprint(domains)}`;
+  return `gemini-coach-v24-${date}-${valueFingerprint(domains)}`;
 }
 
 function yesterdayCardTitle(domains: Domain[]): string | null {
@@ -413,7 +413,13 @@ export async function getGeminiCoachCard(
 
   const prevTitle = yesterdayCardTitle(domains);
   const rotateRule = prevTitle
-    ? `- Yesterday's card was titled "${prevTitle}". Today's card MUST focus on a DIFFERENT goal, habit, or domain — do not repeat the same topic.`
+    ? `- Yesterday's card was titled "${prevTitle}". Today MUST cover a DIFFERENT goal, habit, or domain.`
+    : '';
+
+  // Rotate primary domain focus by day-of-week so the card always feels fresh
+  const domainRota = domains[now.getDay() % domains.length];
+  const focusDomainRule = domainRota
+    ? `- Today's card should primarily draw from the "${domainRota.name}" domain (but can mention others).`
     : '';
 
   const prompt = `You are a personal coach. Write one daily coaching card grounded in the user's real data below.
@@ -425,6 +431,7 @@ HARD RULES — violations mean the card is wrong:
 - Do not invent topics. Only reference what's in the data.
 - Do not reinterpret values. "Service" = serving others. "Autonomy" = independence. Use them as-is.
 ${rotateRule ? `- ${rotateRule}` : ''}
+${focusDomainRule}
 
 Your goal:
 1. Acknowledge one real thing — a streak, a completed task, a goal nearing its end, a habit slipping.
