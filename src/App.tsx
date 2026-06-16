@@ -3296,6 +3296,7 @@ function getGraceDays(h: Habit): string[] {
     d.setDate(d.getDate() - i);
     const dow = d.getDay(); // 0=Sun, 6=Sat
     if (h.recurrence === 'weekdays' && (dow === 0 || dow === 6)) continue;
+    if (h.recurrence === 'specific-days' && h.specificDays && !h.specificDays.includes(dow)) continue;
     const str = toDateStr(d);
     if (!done.has(str)) missed.push(str);
   }
