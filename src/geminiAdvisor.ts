@@ -274,7 +274,21 @@ function valueFingerprint(domains: Domain[]): string {
 
 
 function coachCacheKey(date: string, domains: Domain[]) {
-  return `gemini-coach-v22-${date}-${valueFingerprint(domains)}`;
+  return `gemini-coach-v23-${date}-${valueFingerprint(domains)}`;
+}
+
+function yesterdayCardTitle(domains: Domain[]): string | null {
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yStr = toDateStr(yesterday);
+  // Check v23 and v22 keys so we catch whatever ran yesterday
+  for (const v of ['v23', 'v22', 'v21', 'v20']) {
+    const raw = localStorage.getItem(`gemini-coach-${v}-${yStr}-${valueFingerprint(domains)}`);
+    if (raw) {
+      try { return (JSON.parse(raw) as CoachCard).title; } catch { /* skip */ }
+    }
+  }
+  return null;
 }
 
 export async function getGeminiCoachCard(
@@ -397,6 +411,11 @@ export async function getGeminiCoachCard(
     ? `\n## Style & tone feedback (adjust HOW you write, not WHAT you cover)\n- Liked tone/style: ${liked || 'none'}\n- Disliked tone/style: ${disliked || 'none'}\nThis feedback is about writing style only — do not let it cause you to repeat the same values or goals.\n`
     : '';
 
+  const prevTitle = yesterdayCardTitle(domains);
+  const rotateRule = prevTitle
+    ? `- Yesterday's card was titled "${prevTitle}". Today's card MUST focus on a DIFFERENT goal, habit, or domain — do not repeat the same topic.`
+    : '';
+
   const prompt = `You are a personal coach. Write one daily coaching card grounded in the user's real data below.
 
 HARD RULES — violations mean the card is wrong:
@@ -405,6 +424,7 @@ HARD RULES — violations mean the card is wrong:
 - NEVER open with day-of-week phrases like "It's Monday", "Fresh week", "Start your week", "New week", etc.
 - Do not invent topics. Only reference what's in the data.
 - Do not reinterpret values. "Service" = serving others. "Autonomy" = independence. Use them as-is.
+${rotateRule ? `- ${rotateRule}` : ''}
 
 Your goal:
 1. Acknowledge one real thing — a streak, a completed task, a goal nearing its end, a habit slipping.
@@ -433,7 +453,7 @@ Return JSON only: {"title": "...", "blurb": "..."}`;
         },
         required: ['title', 'blurb'],
       },
-      temperature: 0.5,
+      temperature: 0.8,
     },
   };
 
