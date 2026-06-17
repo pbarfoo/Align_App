@@ -2042,6 +2042,16 @@ function Today({
             {h.kind === 'task' ? getTaskCountdown(h) : getRecurrenceString(h)}
           </div>
           {(() => {
+            if (h.kind === 'task') {
+              if (!isDone && h.dueDate && h.dueDate < today) {
+                const fd = new Date(h.dueDate + 'T12:00');
+                const DAY = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+                const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                const label = `${DAY[fd.getDay()]}, ${MON[fd.getMonth()]} ${fd.getDate()}`;
+                return <span className="streak-frozen"><CalIcon /> {label}</span>;
+              }
+              return null;
+            }
             const graceDays = !isDone ? getGraceDays(h) : [];
             const frozenDate = graceDays[0] ?? null;
             if (!frozenDate) return null;
