@@ -1044,14 +1044,12 @@ function Align({
                           return (
                             <button
                               className="streak-frozen streak-frozen-reset"
-                              title="Log missed day"
+                              title="Reset to today"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setHabits((prev) => prev.map((x) => {
-                                  if (x.id !== h.id) return x;
-                                  const newCompletions = [...(x.completions ?? []), frozenDate];
-                                  return { ...x, completions: newCompletions, streak: computeStreakFromCompletions(newCompletions, x) };
-                                }));
+                                setHabits((prev) => prev.map((x) =>
+                                  x.id !== h.id ? x : { ...x, streak: 0, completions: [] }
+                                ));
                               }}
                             >
                               <CalIcon /> {graceLabel} ↺
@@ -1286,11 +1284,10 @@ function ShortWithActions({
                   return (
                     <button
                       className="streak-frozen streak-frozen-reset"
-                      title="Log missed day"
+                      title="Reset to today"
                       onClick={(e) => {
                         e.stopPropagation();
-                        const newCompletions = [...(h.completions ?? []), frozenDate];
-                        onEditHabit(h.id, { completions: newCompletions, streak: computeStreakFromCompletions(newCompletions, h) });
+                        onEditHabit(h.id, { streak: 0, completions: [] });
                       }}
                     >
                       <CalIcon /> {graceLabel} ↺
@@ -2065,14 +2062,12 @@ function Today({
             return (
               <button
                 className="streak-frozen streak-frozen-reset"
-                title="Log missed day"
+                title="Reset to today"
                 onClick={(e) => {
                   e.stopPropagation();
-                  setHabits((prev) => prev.map((x) => {
-                    if (x.id !== h.id) return x;
-                    const newCompletions = [...(x.completions ?? []), frozenDate];
-                    return { ...x, completions: newCompletions, streak: computeStreakFromCompletions(newCompletions, x) };
-                  }));
+                  setHabits((prev) => prev.map((x) =>
+                    x.id !== h.id ? x : { ...x, streak: 0, completions: [] }
+                  ));
                 }}
               >
                 <CalIcon /> {graceLabel} ↺
