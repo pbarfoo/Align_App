@@ -2041,6 +2041,29 @@ function Today({
             &nbsp;·&nbsp;
             {h.kind === 'task' ? getTaskCountdown(h) : getRecurrenceString(h)}
           </div>
+          {(() => {
+            const graceDays = !isDone ? getGraceDays(h) : [];
+            const frozenDate = graceDays[0] ?? null;
+            if (!frozenDate) return null;
+            const fd = new Date(frozenDate + 'T12:00');
+            const DAY = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+            const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            const graceLabel = `${DAY[fd.getDay()]}, ${MON[fd.getMonth()]} ${fd.getDate()}`;
+            return (
+              <button
+                className="streak-frozen streak-frozen-reset"
+                title="Reset streak"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setHabits((prev) => prev.map((x) =>
+                    x.id !== h.id ? x : { ...x, streak: 0, completions: [] }
+                  ));
+                }}
+              >
+                <CalIcon /> {graceLabel} ↺
+              </button>
+            );
+          })()}
         </div>
       </div>
     );
