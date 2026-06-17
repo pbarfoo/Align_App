@@ -1273,6 +1273,27 @@ function ShortWithActions({
                     ? getTaskCountdown(h)
                     : getRecurrenceString(h)}
                 </span>
+                {(() => {
+                  const graceDays = !done ? getGraceDays(h) : [];
+                  const frozenDate = graceDays[0] ?? null;
+                  if (!frozenDate) return null;
+                  const fd = new Date(frozenDate + 'T12:00');
+                  const DAY = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+                  const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                  const graceLabel = `${DAY[fd.getDay()]}, ${MON[fd.getMonth()]} ${fd.getDate()}`;
+                  return (
+                    <button
+                      className="streak-frozen streak-frozen-reset"
+                      title="Reset streak"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onEditHabit(h.id, { streak: 0, completions: [] });
+                      }}
+                    >
+                      <CalIcon /> {graceLabel} ↺
+                    </button>
+                  );
+                })()}
               </div>
             </div>
             <div className="node-ctrls">
@@ -3290,9 +3311,6 @@ function getGraceDays(h: Habit): string[] {
   if (h.kind !== 'habit') return [];
   if (naturalIntervalDays(h) > 2) return []; // grace only for daily-ish habits
   const done = new Set(h.completions ?? []);
-  // Only show grace for habits that have been done at least once — a habit
-  // that's never been started doesn't have a "frozen" streak to preserve.
-  if (done.size === 0) return [];
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const missed: string[] = [];
