@@ -55,7 +55,13 @@ export async function getTodayCoachRating(
   return (data?.rating as 'up' | 'down' | null) ?? null;
 }
 
-const API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent';
+type GeminiResponse = { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+
+async function callGemini(body: unknown): Promise<GeminiResponse> {
+  const { data, error } = await supabase.functions.invoke('gemini-proxy', { body: { body } });
+  if (error) throw new Error(error.message);
+  return data as GeminiResponse;
+}
 
 function cacheKey(date: string) {
   return `gemini-focus-v3-${date}`;
@@ -128,8 +134,6 @@ export async function getGeminiFocusPicks(
   actionableIds: string[],
   bust = false,
 ): Promise<FocusPick[]> {
-  const apiKey = import.meta.env.VITE_GEMINI_API_KEY as string | undefined;
-  if (!apiKey) throw new Error('No VITE_GEMINI_API_KEY');
 
   const today = toDateStr(new Date());
   if (!bust) {
@@ -242,20 +246,7 @@ Only use IDs from the actionable items list above.`;
     },
   };
 
-  const res = await fetch(`${API_URL}?key=${apiKey}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error((err as { error?: { message?: string } })?.error?.message ?? `HTTP ${res.status}`);
-  }
-
-  const data = await res.json() as {
-    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-  };
+  const data = await callGemini(body);
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
   const picks = JSON.parse(text) as FocusPick[];
 
@@ -298,8 +289,6 @@ export async function getGeminiCoachCard(
   reflections: ReflectionEntry[],
   userId?: string,
 ): Promise<CoachCard> {
-  const apiKey = import.meta.env.VITE_GEMINI_API_KEY as string | undefined;
-  if (!apiKey) throw new Error('No VITE_GEMINI_API_KEY');
 
   const today = toDateStr(new Date());
   const cached = localStorage.getItem(coachCacheKey(today, domains));
@@ -464,20 +453,7 @@ Return JSON only: {"title": "...", "blurb": "..."}`;
     },
   };
 
-  const res = await fetch(`${API_URL}?key=${apiKey}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error((err as { error?: { message?: string } })?.error?.message ?? `HTTP ${res.status}`);
-  }
-
-  const data = await res.json() as {
-    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-  };
+  const data = await callGemini(body);
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
   const card = JSON.parse(text) as CoachCard;
 
