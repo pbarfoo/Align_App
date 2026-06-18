@@ -1934,11 +1934,14 @@ function Today({
       }
       const today = toDateStr(new Date());
       const completions = h.completions ?? [];
-      const turningOn = !completions.includes(today);
-      const newCompletions = turningOn ? [...completions, today] : completions.filter((d) => d !== today);
+      // Mirror Align tab: work through frozen backlog before logging today
+      const frozen = getGraceDays(h);
+      const target = (!completions.includes(today) && frozen.length > 0) ? frozen[0] : today;
+      const turningOn = !completions.includes(target);
+      const newCompletions = turningOn ? [...completions, target] : completions.filter((d) => d !== target);
       return {
         ...h,
-        doneToday: turningOn,
+        doneToday: target === today ? turningOn : h.doneToday,
         completions: newCompletions,
         streak: computeStreakFromCompletions(newCompletions, h),
         completedAt: turningOn ? Date.now() : undefined,
@@ -3344,16 +3347,23 @@ function getGraceDays(h: Habit): string[] {
   if (h.kind !== 'habit') return [];
   if (naturalIntervalDays(h) > 2) return []; // grace only for daily-ish habits
   const done = new Set(h.completions ?? []);
+  const startDateStr = h.startDate ?? null;
+  const todayStr = toDateStr(new Date());
+  // Only show frozen for habits that have actually started: either completed
+  // at least once, or with an explicit startDate that's already in the past.
+  // This prevents brand-new habits from immediately showing a spurious frozen chip.
+  if (done.size === 0 && !(startDateStr && startDateStr < todayStr)) return [];
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const missed: string[] = [];
   for (let i = 1; i <= 2; i++) {
     const d = new Date(today);
     d.setDate(d.getDate() - i);
+    const str = toDateStr(d);
+    if (startDateStr && str < startDateStr) continue; // before habit's start date
     const dow = d.getDay(); // 0=Sun, 6=Sat
     if (h.recurrence === 'weekdays' && (dow === 0 || dow === 6)) continue;
     if (h.recurrence === 'specific-days' && h.specificDays && !h.specificDays.includes(dow)) continue;
-    const str = toDateStr(d);
     if (!done.has(str)) missed.push(str);
   }
   return missed.reverse(); // oldest first so user processes in order
