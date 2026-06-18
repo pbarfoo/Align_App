@@ -1044,11 +1044,11 @@ function Align({
                           return (
                             <button
                               className="streak-frozen streak-frozen-reset"
-                              title="Reset to today"
+                              title="Bring up to date"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setHabits((prev) => prev.map((x) =>
-                                  x.id !== h.id ? x : { ...x, streak: 0, completions: [] }
+                                  x.id !== h.id ? x : { ...x, startDate: toDateStr(new Date()) }
                                 ));
                               }}
                             >
@@ -1284,10 +1284,10 @@ function ShortWithActions({
                   return (
                     <button
                       className="streak-frozen streak-frozen-reset"
-                      title="Reset to today"
+                      title="Bring up to date"
                       onClick={(e) => {
                         e.stopPropagation();
-                        onEditHabit(h.id, { streak: 0, completions: [] });
+                        onEditHabit(h.id, { startDate: toDateStr(new Date()) });
                       }}
                     >
                       <CalIcon /> {graceLabel} ↺
@@ -2065,11 +2065,11 @@ function Today({
             return (
               <button
                 className="streak-frozen streak-frozen-reset"
-                title="Reset to today"
+                title="Bring up to date"
                 onClick={(e) => {
                   e.stopPropagation();
                   setHabits((prev) => prev.map((x) =>
-                    x.id !== h.id ? x : { ...x, streak: 0, completions: [] }
+                    x.id !== h.id ? x : { ...x, startDate: toDateStr(new Date()) }
                   ));
                 }}
               >
