@@ -834,7 +834,10 @@ function Align({
       doneToday: false,
       ...(kind === 'habit'
         ? {
-            startDate: input.startDate || undefined,
+            // Anchor every habit to a start date so missed-day detection knows
+            // when it began (and brand-new habits don't show a spurious "missed
+            // yesterday" chip). Honour an explicit start date when supplied.
+            startDate: input.startDate || toDateStr(new Date()),
             recurrence: input.recurrence ?? 'daily',
             customInterval: input.customInterval ?? 1,
             customUnit: input.customUnit ?? 'weeks',
@@ -3339,34 +3342,63 @@ function isNeglected(h: Habit): boolean {
 }
 
 /**
- * Returns up to 2 missed dates (YYYY-MM-DD) within the grace window,
- * oldest first, for habits that have a streak but missed a day or two.
- * Only applies to daily-ish habits (interval ≤ 2 days).
+ * Returns missed scheduled dates (YYYY-MM-DD), oldest first, that the habit was
+ * due on but never logged. Works for EVERY cadence:
+ *   - calendar-day schedules (daily / weekdays / specific-days): the recent
+ *     scheduled weekdays that elapsed un-logged, up to 2;
+ *   - period schedules (weekly / monthly / yearly / custom): the most recent
+ *     period that fully elapsed with no completion in it.
+ * A habit never flags days before its startDate, so a habit created today never
+ * shows a spurious "missed yesterday" chip.
  */
 function getGraceDays(h: Habit): string[] {
   if (h.kind !== 'habit') return [];
-  if (naturalIntervalDays(h) > 2) return []; // grace only for daily-ish habits
+
   const done = new Set(h.completions ?? []);
   const startDateStr = h.startDate ?? null;
-  const todayStr = toDateStr(new Date());
-  // Only show frozen for habits that have actually started: either completed
-  // at least once, or with an explicit startDate that's already in the past.
-  // This prevents brand-new habits from immediately showing a spurious frozen chip.
-  if (done.size === 0 && !(startDateStr && startDateStr < todayStr)) return [];
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const missed: string[] = [];
-  for (let i = 1; i <= 2; i++) {
-    const d = new Date(today);
-    d.setDate(d.getDate() - i);
-    const str = toDateStr(d);
-    if (startDateStr && str < startDateStr) continue; // before habit's start date
-    const dow = d.getDay(); // 0=Sun, 6=Sat
-    if (h.recurrence === 'weekdays' && (dow === 0 || dow === 6)) continue;
-    if (h.recurrence === 'specific-days' && h.specificDays && !h.specificDays.includes(dow)) continue;
-    if (!done.has(str)) missed.push(str);
+  const rec = h.recurrence ?? 'daily';
+
+  // ---- Calendar-day cadences: enumerate the actual missed weekday occurrences.
+  if (rec === 'daily' || rec === 'weekdays' || rec === 'specific-days') {
+    const isScheduled = (d: Date): boolean => {
+      const dow = d.getDay(); // 0=Sun … 6=Sat
+      if (rec === 'weekdays') return dow !== 0 && dow !== 6;
+      if (rec === 'specific-days') return (h.specificDays ?? []).includes(dow);
+      return true; // daily
+    };
+    const missed: string[] = [];
+    // Walk back day-by-day collecting the contiguous recent lapse (max 2). Stop
+    // at the habit's start date or the first scheduled day that WAS logged.
+    for (let i = 1; i <= 14 && missed.length < 2; i++) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      const str = toDateStr(d);
+      if (startDateStr && str < startDateStr) break; // before habit started
+      if (!isScheduled(d)) continue;                 // not a due day
+      if (done.has(str)) break;                       // last due day was logged
+      missed.push(str);
+    }
+    return missed.reverse(); // oldest first so user processes in order
   }
-  return missed.reverse(); // oldest first so user processes in order
+
+  // ---- Period cadences: flag the previous period if it elapsed with no log.
+  if (isHabitDoneThisPeriod(h)) return [];            // current period satisfied
+  const interval = Math.round(naturalIntervalDays(h));
+  const prev = new Date(today);
+  prev.setDate(prev.getDate() - interval);
+  const prevStr = toDateStr(prev);
+  if (startDateStr && prevStr < startDateStr) return []; // started this period
+  // If the most recent completion already falls inside the previous period
+  // window, that period was satisfied — the current (still-open) period isn't
+  // "missed" yet, so show nothing.
+  const lastDone = (h.completions ?? []).reduce(
+    (max, d) => Math.max(max, new Date(d + 'T12:00').getTime()),
+    -Infinity,
+  );
+  if (lastDone >= prev.getTime()) return [];
+  return [prevStr];
 }
 
 /* ---------------- bits ---------------- */
