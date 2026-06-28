@@ -55,7 +55,13 @@ export async function getTodayCoachRating(
   return (data?.rating as 'up' | 'down' | null) ?? null;
 }
 
-const API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent';
+type GeminiResponse = { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+
+async function callGemini(body: unknown): Promise<GeminiResponse> {
+  const { data, error } = await supabase.functions.invoke('gemini-proxy', { body: { body } });
+  if (error) throw new Error(error.message);
+  return data as GeminiResponse;
+}
 
 function cacheKey(date: string) {
   return `gemini-focus-v3-${date}`;
@@ -126,14 +132,15 @@ export async function getGeminiFocusPicks(
   goals: Goal[],
   habits: Habit[],
   actionableIds: string[],
+  bust = false,
 ): Promise<FocusPick[]> {
-  const apiKey = import.meta.env.VITE_GEMINI_API_KEY as string | undefined;
-  if (!apiKey) throw new Error('No VITE_GEMINI_API_KEY');
 
   const today = toDateStr(new Date());
-  const cached = localStorage.getItem(cacheKey(today));
-  if (cached) {
-    try { return JSON.parse(cached) as FocusPick[]; } catch { /* fall through */ }
+  if (!bust) {
+    const cached = localStorage.getItem(cacheKey(today));
+    if (cached) {
+      try { return JSON.parse(cached) as FocusPick[]; } catch { /* fall through */ }
+    }
   }
 
   const now = new Date();
@@ -239,20 +246,7 @@ Only use IDs from the actionable items list above.`;
     },
   };
 
-  const res = await fetch(`${API_URL}?key=${apiKey}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error((err as { error?: { message?: string } })?.error?.message ?? `HTTP ${res.status}`);
-  }
-
-  const data = await res.json() as {
-    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-  };
+  const data = await callGemini(body);
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
   const picks = JSON.parse(text) as FocusPick[];
 
@@ -269,17 +263,23 @@ function valueFingerprint(domains: Domain[]): string {
   return Math.abs(h).toString(36);
 }
 
-function isoWeek(d: Date): number {
-  const t = new Date(d.valueOf());
-  const dayNr = (d.getDay() + 6) % 7;
-  t.setDate(t.getDate() - dayNr + 3);
-  const jan4 = new Date(t.getFullYear(), 0, 4);
-  const diff = t.getTime() - jan4.getTime();
-  return 1 + Math.round((diff / 86_400_000 - 3 + ((jan4.getDay() + 6) % 7)) / 7);
-}
 
 function coachCacheKey(date: string, domains: Domain[]) {
-  return `gemini-coach-v16-${date}-${valueFingerprint(domains)}`;
+  return `gemini-coach-v24-${date}-${valueFingerprint(domains)}`;
+}
+
+function yesterdayCardTitle(domains: Domain[]): string | null {
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yStr = toDateStr(yesterday);
+  // Check v23 and v22 keys so we catch whatever ran yesterday
+  for (const v of ['v23', 'v22', 'v21', 'v20']) {
+    const raw = localStorage.getItem(`gemini-coach-${v}-${yStr}-${valueFingerprint(domains)}`);
+    if (raw) {
+      try { return (JSON.parse(raw) as CoachCard).title; } catch { /* skip */ }
+    }
+  }
+  return null;
 }
 
 export async function getGeminiCoachCard(
@@ -289,8 +289,6 @@ export async function getGeminiCoachCard(
   reflections: ReflectionEntry[],
   userId?: string,
 ): Promise<CoachCard> {
-  const apiKey = import.meta.env.VITE_GEMINI_API_KEY as string | undefined;
-  if (!apiKey) throw new Error('No VITE_GEMINI_API_KEY');
 
   const today = toDateStr(new Date());
   const cached = localStorage.getItem(coachCacheKey(today, domains));
@@ -300,8 +298,6 @@ export async function getGeminiCoachCard(
 
   const now = new Date();
   const dayName = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][now.getDay()];
-  const allValues = domains.flatMap((d) => d.values);
-  const weekValue = allValues.length ? allValues[isoWeek(now) % allValues.length] : null;
 
   const goalMap = new Map(goals.map((g) => [g.id, g]));
 
@@ -317,7 +313,7 @@ export async function getGeminiCoachCard(
       .join(', ');
   };
 
-  // First active goal per domain = top priority (user's drag order)
+  // First active goal per domain = focus (user's drag order)
   const topGoalIds = new Set<string>();
   const seenDomains = new Set<string>();
   for (const g of goals) {
@@ -327,6 +323,29 @@ export async function getGeminiCoachCard(
     }
   }
 
+  // Values from focus goals (what the user has declared most important per domain)
+  const focusValues = Array.from(topGoalIds).flatMap((id) => {
+    const g = goals.find((goal) => goal.id === id);
+    if (!g) return [];
+    const dom = domains.find((d) => d.id === g.domainId);
+    if (!dom) return [];
+    return g.valueIndexes.filter((i) => i < dom.values.length).map((i) => dom.values[i]);
+  });
+
+  // Values with low average reflection scores (below 3 on a 1–5 scale)
+  const scoreAccum = new Map<string, number[]>();
+  reflections.slice(-4).forEach((r) => {
+    Object.entries(r.scores).forEach(([key, val]) => {
+      if (!scoreAccum.has(key)) scoreAccum.set(key, []);
+      scoreAccum.get(key)!.push(val as number);
+    });
+  });
+  const lowScoringValues = Array.from(scoreAccum.entries())
+    .map(([key, vals]) => ({ name: key.slice(key.indexOf(':') + 1), avg: vals.reduce((a, b) => a + b, 0) / vals.length }))
+    .filter((v) => v.avg < 3)
+    .sort((a, b) => a.avg - b.avg)
+    .map((v) => v.name);
+
   const activeGoals = goals.filter((g) => !g.completedAt);
   const ltGoals = activeGoals.filter((g) => g.horizon === 'long');
   const stGoals = activeGoals.filter((g) => g.horizon === 'short');
@@ -334,13 +353,14 @@ export async function getGeminiCoachCard(
   const goalLine = (g: Goal) => {
     const dom = domains.find((d) => d.id === g.domainId);
     const vals = resolveGoalValues(g);
-    const priority = topGoalIds.has(g.id) ? ' [TOP PRIORITY]' : '';
+    const priority = topGoalIds.has(g.id) ? ' [FOCUS]' : '';
     return `- "${g.title}" | ${g.timeframe}${g.horizon === 'long' ? 'yr' : 'mo'} | ${dom?.name ?? '?'}${vals ? ` | values:[${vals}]` : ''}${priority}`;
   };
 
   const contextLines: string[] = [
     `Today is ${dayName}, ${today}.`,
-    weekValue ? `This week's value thread: "${weekValue}".` : '',
+    focusValues.length ? `Values tied to focus goals: ${focusValues.join(', ')}.` : '',
+    lowScoringValues.length ? `Values with recent low reflection scores (needs attention): ${lowScoringValues.join(', ')}.` : '',
     '',
     '## Long-term goals',
     ...(ltGoals.length ? ltGoals.map(goalLine) : ['- (none)']),
@@ -371,26 +391,47 @@ export async function getGeminiCoachCard(
           return `- week ${r.weekNumber} | [${scores || 'no scores'}] | "${r.note}"`;
         })
       : ['- (none yet)']),
-  ];
+  ].filter((l) => l !== '');
 
   const feedback = (await getCoachFeedbackHistory(userId)).slice(-20);
   const liked = feedback.filter((f) => f.rating === 'up').map((f) => `"${f.title}"`).join(', ');
   const disliked = feedback.filter((f) => f.rating === 'down').map((f) => `"${f.title}"`).join(', ');
   const feedbackLines = (liked || disliked)
-    ? `\n## Style feedback on past cards\n- Liked: ${liked || 'none'}\n- Disliked: ${disliked || 'none'}\nMatch the style of liked cards; avoid the tone of disliked ones.\n`
+    ? `\n## Style & tone feedback (adjust HOW you write, not WHAT you cover)\n- Liked tone/style: ${liked || 'none'}\n- Disliked tone/style: ${disliked || 'none'}\nThis feedback is about writing style only — do not let it cause you to repeat the same values or goals.\n`
     : '';
 
-  const prompt = `You are a direct personal coach. Write one daily coaching card grounded in the user's goals.
+  const prevTitle = yesterdayCardTitle(domains);
+  const rotateRule = prevTitle
+    ? `- Yesterday's card was titled "${prevTitle}". Today MUST cover a DIFFERENT goal, habit, or domain.`
+    : '';
 
-Approach:
-- Lead with the user's most important active goal(s). TOP PRIORITY goals carry the most weight.
-- Reference a real goal or habit from the data — do not invent topics not present in the data.
-- The weekly value thread is context — let it colour the message naturally, not dominate it.
-- Tone: warm, direct, brief. No filler.
+  // Rotate primary domain focus by day-of-week so the card always feels fresh
+  const domainRota = domains[now.getDay() % domains.length];
+  const focusDomainRule = domainRota
+    ? `- Today's card should primarily draw from the "${domainRota.name}" domain (but can mention others).`
+    : '';
+
+  const prompt = `You are a personal coach. Write one daily coaching card grounded in the user's real data below.
+
+HARD RULES — violations mean the card is wrong:
+- The title MUST contain the name of a real goal or habit from the data. Never a generic phrase.
+- The first sentence MUST mention a specific habit name, streak count, goal title, or completion from the data.
+- NEVER open with day-of-week phrases like "It's Monday", "Fresh week", "Start your week", "New week", etc.
+- Do not invent topics. Only reference what's in the data.
+- Do not reinterpret values. "Service" = serving others. "Autonomy" = independence. Use them as-is.
+${rotateRule ? `- ${rotateRule}` : ''}
+${focusDomainRule}
+
+Your goal:
+1. Acknowledge one real thing — a streak, a completed task, a goal nearing its end, a habit slipping.
+2. Surface a pattern the user may not have noticed (e.g. consistency gap, a value underserved by current habits).
+3. Give one concrete nudge for today tied to a named habit or goal.
+
+Tone: direct, warm, no filler. Like a coach who actually read the data.
 
 Format:
-- Title: 4–6 words, grounded in a real goal or habit.
-- Blurb: exactly 2 sentences. First: encouragement tied to a specific goal, habit, or recent progress. Second: one concrete nudge for today.
+- Title: 4–6 words. Must contain a real habit or goal name.
+- Blurb: exactly 2 sentences. Sentence 1: specific encouragement from data. Sentence 2: one actionable nudge naming a real item.
 ${feedbackLines}
 ${contextLines.join('\n')}
 
@@ -408,24 +449,11 @@ Return JSON only: {"title": "...", "blurb": "..."}`;
         },
         required: ['title', 'blurb'],
       },
-      temperature: 0.5,
+      temperature: 0.8,
     },
   };
 
-  const res = await fetch(`${API_URL}?key=${apiKey}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error((err as { error?: { message?: string } })?.error?.message ?? `HTTP ${res.status}`);
-  }
-
-  const data = await res.json() as {
-    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-  };
+  const data = await callGemini(body);
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
   const card = JSON.parse(text) as CoachCard;
 

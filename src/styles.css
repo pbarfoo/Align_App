@@ -2440,3 +2440,25 @@ h1 {
   padding: 0;
   text-decoration: underline;
 }
+
+.streak-frozen {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: #e05c5c;
+  letter-spacing: 0.02em;
+  padding: 2px 7px;
+  border: 1px solid #e05c5c40;
+  border-radius: 6px;
+  background: none;
+  cursor: default;
+}
+.streak-frozen-reset {
+  cursor: pointer;
+}
+.streak-frozen-reset:hover {
+  background: color-mix(in srgb, #e05c5c 12%, transparent);
+  border-color: #e05c5c80;
+}

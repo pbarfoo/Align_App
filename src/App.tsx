@@ -820,7 +820,10 @@ function Align({
       doneToday: false,
       ...(kind === 'habit'
         ? {
-            startDate: input.startDate || undefined,
+            // Anchor every habit to a start date so missed-day detection knows
+            // when it began (and brand-new habits don't show a spurious "missed
+            // yesterday" chip). Honour an explicit start date when supplied.
+            startDate: input.startDate || toDateStr(new Date()),
             recurrence: input.recurrence ?? 'daily',
             customInterval: input.customInterval ?? 1,
             customUnit: input.customUnit ?? 'weeks',
@@ -881,12 +884,16 @@ function Align({
       }
       const today = toDateStr(new Date());
       const completions = h.completions ?? [];
-      const turningOn = !completions.includes(today);
+      // Work through any frozen (missed) backlog oldest-first before logging today.
+      const frozen = getGraceDays(h);
+      const target = (!completions.includes(today) && frozen.length > 0) ? frozen[0] : today;
+      const turningOn = !completions.includes(target);
+      const newCompletions = turningOn ? [...completions, target] : completions.filter((d) => d !== target);
       return {
         ...h,
-        doneToday: turningOn,
-        completions: turningOn ? [...completions, today] : completions.filter((d) => d !== today),
-        streak: turningOn ? (h.streak || 0) + 1 : Math.max(0, (h.streak || 0) - 1),
+        doneToday: target === today ? turningOn : h.doneToday,
+        completions: newCompletions,
+        streak: computeStreakFromCompletions(newCompletions, h),
         completedAt: turningOn ? Date.now() : undefined,
       };
     }));
@@ -1014,6 +1021,29 @@ function Align({
                         <span className="goal-date">
                           {h.kind === 'task' ? getTaskCountdown(h) : getRecurrenceString(h)}
                         </span>
+                        {(() => {
+                          const graceDays = !done ? getGraceDays(h) : [];
+                          const frozenDate = graceDays[0] ?? null;
+                          if (!frozenDate) return null;
+                          const fd = new Date(frozenDate + 'T12:00');
+                          const DAY = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+                          const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                          const graceLabel = `${DAY[fd.getDay()]}, ${MON[fd.getMonth()]} ${fd.getDate()}`;
+                          return (
+                            <button
+                              className="streak-frozen streak-frozen-reset"
+                              title="Bring up to date"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setHabits((prev) => prev.map((x) =>
+                                  x.id !== h.id ? x : { ...x, startDate: toDateStr(new Date()) }
+                                ));
+                              }}
+                            >
+                              <CalIcon /> {graceLabel} ↺
+                            </button>
+                          );
+                        })()}
                       </div>
                     </div>
                     <div className="node-ctrls">
@@ -1231,6 +1261,27 @@ function ShortWithActions({
                     ? getTaskCountdown(h)
                     : getRecurrenceString(h)}
                 </span>
+                {(() => {
+                  const graceDays = !done ? getGraceDays(h) : [];
+                  const frozenDate = graceDays[0] ?? null;
+                  if (!frozenDate) return null;
+                  const fd = new Date(frozenDate + 'T12:00');
+                  const DAY = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+                  const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                  const graceLabel = `${DAY[fd.getDay()]}, ${MON[fd.getMonth()]} ${fd.getDate()}`;
+                  return (
+                    <button
+                      className="streak-frozen streak-frozen-reset"
+                      title="Bring up to date"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onEditHabit(h.id, { startDate: toDateStr(new Date()) });
+                      }}
+                    >
+                      <CalIcon /> {graceLabel} ↺
+                    </button>
+                  );
+                })()}
               </div>
             </div>
             <div className="node-ctrls">
@@ -1839,12 +1890,16 @@ function Today({
       }
       const today = toDateStr(new Date());
       const completions = h.completions ?? [];
-      const turningOn = !completions.includes(today);
+      // Mirror Align tab: work through frozen backlog before logging today.
+      const frozen = getGraceDays(h);
+      const target = (!completions.includes(today) && frozen.length > 0) ? frozen[0] : today;
+      const turningOn = !completions.includes(target);
+      const newCompletions = turningOn ? [...completions, target] : completions.filter((d) => d !== target);
       return {
         ...h,
-        doneToday: turningOn,
-        completions: turningOn ? [...completions, today] : completions.filter((d) => d !== today),
-        streak: turningOn ? (h.streak || 0) + 1 : Math.max(0, (h.streak || 0) - 1),
+        doneToday: target === today ? turningOn : h.doneToday,
+        completions: newCompletions,
+        streak: computeStreakFromCompletions(newCompletions, h),
         completedAt: turningOn ? Date.now() : undefined,
       };
     }));
@@ -1973,6 +2028,39 @@ function Today({
             {h.kind === 'task' ? `Task · ${getTaskCountdown(h)}` : getRecurrenceString(h)}
             &nbsp;·&nbsp; serves <b>{lineage(h.goalId)}</b>
           </div>
+          {(() => {
+            if (h.kind === 'task') {
+              if (!isDone && h.dueDate && h.dueDate < today) {
+                const fd = new Date(h.dueDate + 'T12:00');
+                const DAY = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+                const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+                const label = `${DAY[fd.getDay()]}, ${MON[fd.getMonth()]} ${fd.getDate()}`;
+                return <span className="streak-frozen"><CalIcon /> {label}</span>;
+              }
+              return null;
+            }
+            const graceDays = !isDone ? getGraceDays(h) : [];
+            const frozenDate = graceDays[0] ?? null;
+            if (!frozenDate) return null;
+            const fd = new Date(frozenDate + 'T12:00');
+            const DAY = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+            const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            const graceLabel = `${DAY[fd.getDay()]}, ${MON[fd.getMonth()]} ${fd.getDate()}`;
+            return (
+              <button
+                className="streak-frozen streak-frozen-reset"
+                title="Bring up to date"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setHabits((prev) => prev.map((x) =>
+                    x.id !== h.id ? x : { ...x, startDate: toDateStr(new Date()) }
+                  ));
+                }}
+              >
+                <CalIcon /> {graceLabel} ↺
+              </button>
+            );
+          })()}
         </div>
       </div>
     );
@@ -3115,6 +3203,94 @@ function isNeglected(h: Habit): boolean {
   return daysSinceLastDone(h) >= naturalIntervalDays(h) * 2;
 }
 
+/**
+ * Compute streak from the completions array, using a 2-day grace window for
+ * daily-ish habits so forgetting to log doesn't silently break a streak.
+ * For weekly/monthly/etc habits, one completion per period is enough.
+ */
+function computeStreakFromCompletions(completions: string[], h: Habit): number {
+  if (!completions.length) return 0;
+  const sorted = [...completions].sort().reverse(); // newest first
+  const interval = naturalIntervalDays(h);
+  const graceDays = interval <= 2 ? 2 : 0; // grace only for daily-ish habits
+  let streak = 0;
+  let cursor = new Date();
+  cursor.setHours(0, 0, 0, 0);
+  for (const d of sorted) {
+    const day = new Date(d + 'T12:00');
+    day.setHours(0, 0, 0, 0);
+    const gapDays = Math.round((cursor.getTime() - day.getTime()) / 86_400_000);
+    if (gapDays < 0) continue; // future date, skip
+    if (gapDays <= interval + graceDays) {
+      streak++;
+      cursor = new Date(day.getTime() - interval * 86_400_000);
+    } else {
+      break;
+    }
+  }
+  return streak;
+}
+
+/**
+ * Returns missed scheduled dates (YYYY-MM-DD), oldest first, that the habit was
+ * due on but never logged. Works for EVERY cadence:
+ *   - calendar-day schedules (daily / weekdays / specific-days): the recent
+ *     scheduled weekdays that elapsed un-logged, up to 2;
+ *   - period schedules (weekly / monthly / yearly / custom): the most recent
+ *     period that fully elapsed with no completion in it.
+ * A habit never flags days before its startDate, so a habit created today never
+ * shows a spurious "missed yesterday" chip.
+ */
+function getGraceDays(h: Habit): string[] {
+  if (h.kind !== 'habit') return [];
+
+  const done = new Set(h.completions ?? []);
+  const startDateStr = h.startDate ?? null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const rec = h.recurrence ?? 'daily';
+
+  // ---- Calendar-day cadences: enumerate the actual missed weekday occurrences.
+  if (rec === 'daily' || rec === 'weekdays' || rec === 'specific-days') {
+    const isScheduled = (d: Date): boolean => {
+      const dow = d.getDay(); // 0=Sun … 6=Sat
+      if (rec === 'weekdays') return dow !== 0 && dow !== 6;
+      if (rec === 'specific-days') return (h.specificDays ?? []).includes(dow);
+      return true; // daily
+    };
+    const missed: string[] = [];
+    // Walk back day-by-day collecting the contiguous recent lapse (max 2). Stop
+    // at the habit's start date or the first scheduled day that WAS logged.
+    for (let i = 1; i <= 14 && missed.length < 2; i++) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      const str = toDateStr(d);
+      if (startDateStr && str < startDateStr) break; // before habit started
+      if (!isScheduled(d)) continue;                 // not a due day
+      if (done.has(str)) break;                       // last due day was logged
+      missed.push(str);
+    }
+    return missed.reverse(); // oldest first so user processes in order
+  }
+
+  // ---- Period cadences: flag the previous period if it elapsed with no log.
+  if (isHabitDoneThisPeriod(h)) return [];            // current period satisfied
+  const interval = Math.round(naturalIntervalDays(h));
+  const prev = new Date(today);
+  prev.setDate(prev.getDate() - interval);
+  const prevStr = toDateStr(prev);
+  if (startDateStr && prevStr < startDateStr) return []; // started this period
+  // If the most recent completion already falls inside the previous period
+  // window, that period was satisfied — the current (still-open) period isn't
+  // "missed" yet, so show nothing.
+  const lastDone = (h.completions ?? []).reduce(
+    (max, d) => Math.max(max, new Date(d + 'T12:00').getTime()),
+    -Infinity,
+  );
+  if (lastDone >= prev.getTime()) return [];
+  return [prevStr];
+}
+
 /* ---------------- bits ---------------- */
 function NavBtn({
   label,
@@ -3168,6 +3344,17 @@ function RepeatIcon() {
       <path d="M20 4v4h-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
       <path d="M20 15a8 8 0 0 1-13.7 3.3L4 16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
       <path d="M4 20v-4h4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function CalIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 12 12" fill="none" style={{ display: 'inline', verticalAlign: 'middle', marginBottom: '1px' }}>
+      <rect x="0.5" y="1.5" width="11" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.2"/>
+      <line x1="0.5" y1="4.5" x2="11.5" y2="4.5" stroke="currentColor" strokeWidth="1.2"/>
+      <line x1="3.5" y1="0" x2="3.5" y2="3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+      <line x1="8.5" y1="0" x2="8.5" y2="3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
     </svg>
   );
 }
