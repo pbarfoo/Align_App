@@ -1047,11 +1047,11 @@ function Align({
                           return (
                             <button
                               className="streak-frozen streak-frozen-reset"
-                              title="Bring up to date"
+                              title="Skip this day — clears it without marking complete"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setHabits((prev) => prev.map((x) =>
-                                  x.id !== h.id ? x : { ...x, startDate: toDateStr(new Date()) }
+                                  x.id !== h.id ? x : { ...x, startDate: dayAfter(frozenDate) }
                                 ));
                               }}
                             >
@@ -1287,10 +1287,10 @@ function ShortWithActions({
                   return (
                     <button
                       className="streak-frozen streak-frozen-reset"
-                      title="Bring up to date"
+                      title="Skip this day — clears it without marking complete"
                       onClick={(e) => {
                         e.stopPropagation();
-                        onEditHabit(h.id, { startDate: toDateStr(new Date()) });
+                        onEditHabit(h.id, { startDate: dayAfter(frozenDate) });
                       }}
                     >
                       <CalIcon /> {graceLabel} ↺
@@ -2068,11 +2068,11 @@ function Today({
             return (
               <button
                 className="streak-frozen streak-frozen-reset"
-                title="Bring up to date"
+                title="Skip this day — clears it without marking complete"
                 onClick={(e) => {
                   e.stopPropagation();
                   setHabits((prev) => prev.map((x) =>
-                    x.id !== h.id ? x : { ...x, startDate: toDateStr(new Date()) }
+                    x.id !== h.id ? x : { ...x, startDate: dayAfter(frozenDate) }
                   ));
                 }}
               >
@@ -3218,6 +3218,18 @@ function getISOWeek(d: Date): number {
 /** Returns true if the habit was completed within its current recurrence window. */
 function toDateStr(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * The day after a YYYY-MM-DD string, as YYYY-MM-DD. Used by the reset (↺) pill
+ * to dismiss a single missed day WITHOUT logging a completion: advancing the
+ * habit's startDate past the oldest frozen day drops that day from the missed
+ * set and surfaces the next one (or clears the chip if it was the last).
+ */
+function dayAfter(dateStr: string): string {
+  const d = new Date(dateStr + 'T12:00');
+  d.setDate(d.getDate() + 1);
+  return toDateStr(d);
 }
 
 function dateInCurrentPeriod(dateStr: string, h: Habit): boolean {
