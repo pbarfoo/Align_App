@@ -2760,16 +2760,18 @@ function GoalsDashboard({
   onClose: () => void;
 }) {
   const longGoals    = goals.filter((g) => g.horizon === 'long'    && !g.parentGoalId);
-  const allShort     = goals.filter((g) => g.horizon === 'short'   && !g.parentGoalId);
-  const ongoingGoals = goals.filter((g) => g.horizon === 'ongoing' && !g.parentGoalId);
+  // Short-term includes sub-goals — they get their own strip with a "↳ parent"
+  // label, so goals added under a long-term goal still register here.
+  const allShort     = goals.filter((g) => g.horizon === 'short');
+  const ongoingGoals = goals.filter((g) => g.horizon === 'ongoing');
 
-  // First goal per domain = focus (same rule as Align tab)
+  // First goal per domain = focus (same rule as Align tab: top-level only)
   const seenLt = new Set<string>();
   const focusLtIds = new Set(longGoals.filter((g) => { if (seenLt.has(g.domainId)) return false; seenLt.add(g.domainId); return true; }).map((g) => g.id));
   const seenSt = new Set<string>();
-  const focusStIds = new Set(allShort.filter((g) => { if (seenSt.has(g.domainId)) return false; seenSt.add(g.domainId); return true; }).map((g) => g.id));
+  const focusStIds = new Set(allShort.filter((g) => { if (g.parentGoalId || seenSt.has(g.domainId)) return false; seenSt.add(g.domainId); return true; }).map((g) => g.id));
   const seenOg = new Set<string>();
-  const focusOgIds = new Set(ongoingGoals.filter((g) => { if (seenOg.has(g.domainId)) return false; seenOg.add(g.domainId); return true; }).map((g) => g.id));
+  const focusOgIds = new Set(ongoingGoals.filter((g) => { if (g.parentGoalId || seenOg.has(g.domainId)) return false; seenOg.add(g.domainId); return true; }).map((g) => g.id));
 
   const ltMetrics  = new Map(longGoals.map((g) => [g.id, vitalityFor(g, goals, habits, focusLtIds.has(g.id))] as const));
   const stMetrics  = new Map(allShort.map((g) => [g.id, stGoalMetrics(g, goals, habits, focusStIds.has(g.id))] as const));
@@ -2895,9 +2897,17 @@ function GoalsDashboard({
             return (
               <div key={d.id} className="dash-domain-section">
                 <div className="dash-domain-label" style={{ color: domainColor }}>{d.name}</div>
-                {dOng.map((og) => (
-                  <GoalStrip key={og.id} goal={og} metrics={ogMetrics.get(og.id)!} domainColor={domainColor} isShort />
-                ))}
+                {dOng.map((og) => {
+                  const parent = og.parentGoalId ? goals.find((g) => g.id === og.parentGoalId) : null;
+                  return (
+                    <div key={og.id}>
+                      {parent && (
+                        <div className="dash-st-parent-label">↳ {parent.title}</div>
+                      )}
+                      <GoalStrip goal={og} metrics={ogMetrics.get(og.id)!} domainColor={domainColor} isShort />
+                    </div>
+                  );
+                })}
               </div>
             );
           })}
