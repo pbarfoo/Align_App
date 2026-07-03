@@ -85,7 +85,7 @@ async function getCoachContext(): Promise<unknown | null> {
 }
 
 function cacheKey(date: string) {
-  return `gemini-focus-v5-${date}`;
+  return `gemini-focus-v6-${date}`;
 }
 
 /**
@@ -241,7 +241,7 @@ export async function getGeminiFocusPicks(
     }),
   ].filter((l) => l !== undefined);
 
-  const prompt = `You are the focus advisor for a personal alignment app. Your job is to pick the 2 or 3 items — habits or tasks, any mix — that matter MOST today (3 maximum total). Fewer, better picks beat coverage.
+  const prompt = `You are the focus advisor for a personal alignment app. Your job is to pick the 2 or 3 TASKS that matter MOST today (3 maximum total). Fewer, better picks beat coverage.
 
 Selection criteria (weigh all of these):
 1. Alignment with this week's theme value ("${weekValue ?? 'none'}") and the user's deeper values/vision.
@@ -257,7 +257,7 @@ For each pick, write a reason that is: 5–10 words, specific (reference the goa
 
 ${contextLines.join('\n')}
 
-Return JSON only — an array of 2 or 3 objects: [{"id":"...", "reason":"..."}, ...]
+Return JSON only — an array of 2 or 3 task picks: [{"id":"...", "reason":"..."}, ...]
 Only use IDs from the actionable items list above.`;
 
   const body = {

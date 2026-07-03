@@ -2135,9 +2135,9 @@ function Today({
     .map((p) => ({ reason: p.reason, item: habits.find((h) => h.id === p.id) }))
     .filter((x): x is { reason: string; item: Habit } => {
       const h = x.item;
-      if (!h) return false;
-      if (h.kind === 'task') return !h.completed && !(h.dueDate && h.dueDate <= today);
-      return isHabitScheduledToday(h) && !isHabitDoneThisPeriod(h);
+      // Tasks only: habits have their own card below.
+      if (!h || h.kind !== 'task') return false;
+      return !h.completed && !(h.dueDate && h.dueDate <= today);
     })
     .slice(0, 3); // focus means 2–3 things, not a second to-do list
 
@@ -2220,8 +2220,9 @@ function Today({
   // due-today pin themselves). Silent fallback: the heuristic order below.
   useEffect(() => {
     if (!goals.length && !habits.length) return;
-    const actionableIds = [...openHabits, ...openTasks]
-      .filter((h) => !(h.kind === 'task' && h.dueDate && h.dueDate <= today))
+    // Tasks only — habits have their own card; overdue/due-today pin themselves.
+    const actionableIds = openTasks
+      .filter((h) => !(h.dueDate && h.dueDate <= today))
       .map((h) => h.id);
     if (!actionableIds.length) return;
     setAiFocusLoading(true);
