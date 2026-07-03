@@ -2285,7 +2285,7 @@ function Today({
       {/* Overdue-task triage — reschedule, break down, or delete. No snooze. */}
       {triageRows.length > 0 && (
         <div className="today-section triage">
-          <div className="today-section-head triage-head">⚑ Needs a decision</div>
+          <div className="today-section-head triage-head">⚑ Needs action</div>
           <p className="triage-sub">
             These tasks slipped past their due date. Pick one: check it off, reschedule, break it down, or let it go.
           </p>
