@@ -2123,11 +2123,6 @@ function Today({
   };
 
 
-  const allValues = domains.flatMap((d) => d.values);
-  const weekValue = allValues.length
-    ? allValues[getISOWeek(new Date()) % allValues.length]
-    : null;
-
   // --- The Today list: overdue first (with decision actions inline), then
   // due-today tasks, then Gemini's focus picks, then the rest of today's
   // habits ranked by focus / neglect / weak-goal rescue.
@@ -2143,7 +2138,8 @@ function Today({
       if (!h) return false;
       if (h.kind === 'task') return !h.completed && !(h.dueDate && h.dueDate <= today);
       return isHabitScheduledToday(h) && !isHabitDoneThisPeriod(h);
-    });
+    })
+    .slice(0, 3); // focus means 2–3 things, not a second to-do list
   const aiPickIds = new Set(aiPicks.map(({ item }) => item.id));
 
   // Heuristic urgency for the non-pinned, non-picked habits.
@@ -2333,50 +2329,38 @@ function Today({
               <span className="coach-progress-done">{done}</span>
               <span className="coach-progress-total"> / {totalCount} today</span>
             </div>
-            <div className="ring-legend">
-              {ringSegments.filter((s) => s.total > 0).map((s) => (
-                <span key={s.label} className="ring-legend-row">
-                  <i style={{ background: s.color }} />
-                  {s.label} {s.done}/{s.total}
-                </span>
-              ))}
-            </div>
-            {weekValue && (
-              <div className="week-value-chip">✦ This week's value: {weekValue}</div>
+            {coachFailed && !coachLoading && (
+              <button className="coach-retry-btn" onClick={fetchCoachCard}>
+                Retry coach ↺
+              </button>
+            )}
+            {coachCard && (
+              <>
+                <div className="coach-blurb">{coachCard.blurb}</div>
+                <div className="coach-feedback">
+                  <button
+                    className={`coach-feedback-btn up${coachRating === 'up' ? ' active' : ''}`}
+                    onClick={() => {
+                      if (coachRating === 'up') return;
+                      setCoachRating('up');
+                      saveCoachFeedback(today, coachCard.title, 'up', userId);
+                    }}
+                    aria-label="Helpful"
+                  >👍</button>
+                  <button
+                    className={`coach-feedback-btn down${coachRating === 'down' ? ' active' : ''}`}
+                    onClick={() => {
+                      if (coachRating === 'down') return;
+                      setCoachRating('down');
+                      saveCoachFeedback(today, coachCard.title, 'down', userId);
+                    }}
+                    aria-label="Not helpful"
+                  >👎</button>
+                </div>
+              </>
             )}
           </div>
         </div>
-        {coachFailed && !coachLoading && (
-          <button className="coach-retry-btn" onClick={fetchCoachCard}>
-            Retry coach card ↺
-          </button>
-        )}
-        {coachCard && (
-          <>
-            <div className="coach-title">{coachCard.title}</div>
-            <div className="coach-blurb">{coachCard.blurb}</div>
-            <div className="coach-feedback">
-              <button
-                className={`coach-feedback-btn up${coachRating === 'up' ? ' active' : ''}`}
-                onClick={() => {
-                  if (coachRating === 'up') return;
-                  setCoachRating('up');
-                  saveCoachFeedback(today, coachCard.title, 'up', userId);
-                }}
-                aria-label="Helpful"
-              >👍</button>
-              <button
-                className={`coach-feedback-btn down${coachRating === 'down' ? ' active' : ''}`}
-                onClick={() => {
-                  if (coachRating === 'down') return;
-                  setCoachRating('down');
-                  saveCoachFeedback(today, coachCard.title, 'down', userId);
-                }}
-                aria-label="Not helpful"
-              >👎</button>
-            </div>
-          </>
-        )}
       </div>
 
       {/* Today — ONE list: expired goals & overdue (actions inline), due
