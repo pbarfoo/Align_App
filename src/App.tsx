@@ -2148,7 +2148,6 @@ function Today({
   const pinnedTasks = [...overdueSorted, ...dueTodayTasks].slice(0, TASK_CAP);
   const pinnedOverdue = pinnedTasks.filter((t) => !!t.dueDate && t.dueDate < today);
   const pinnedDueToday = pinnedTasks.filter((t) => t.dueDate === today);
-  const aiPickIds = new Set(aiPicks.map(({ item }) => item.id));
 
   // Heuristic urgency for the non-pinned, non-picked habits.
   const focusGoalIds = (() => {
@@ -2182,9 +2181,10 @@ function Today({
     if (gh && gh.health <= 33) s += 15;           // rescue weak goals
     return s;
   };
-  const restOfToday = openHabits
-    .filter((h) => !aiPickIds.has(h.id))
-    .sort((a, b) => habitUrgency(b) - habitUrgency(a));
+  // ALL of today's open habits — the complete daily rhythm, urgency-sorted.
+  // (AI focus picks may repeat here: Focus says "start here", this is the
+  // full checklist.)
+  const habitsToday = [...openHabits].sort((a, b) => habitUrgency(b) - habitUrgency(a));
 
   // Everything not shown in Today (future tasks + capped overflow), by domain.
   const shownToday = new Set<string>([
@@ -2393,13 +2393,12 @@ function Today({
         </div>
       )}
 
-      {/* Today — expired goals & overdue (actions inline), due today, then
-          the day's habits. */}
-      {(expiredGoals.length > 0 || pinnedTasks.length > 0 || restOfToday.length > 0) && (
+      {/* Needs action — expired goals & overdue (actions inline), due today */}
+      {(expiredGoals.length > 0 || pinnedTasks.length > 0) && (
         <div className="today-section focus">
-          <div className="today-section-head">✦ Today</div>
+          <div className="today-section-head triage-head">⚑ Needs action</div>
           {(expiredGoals.length > 0 || pinnedOverdue.length > 0) && (
-            <div className="today-subhead red">⚑ Needs action · Overdue</div>
+            <div className="today-subhead red">Overdue</div>
           )}
           {expiredGoals.map((g) => {
             const deadline = goalDeadline(g)!;
@@ -2490,13 +2489,17 @@ function Today({
             );
           })}
           {pinnedDueToday.length > 0 && (
-            <div className="today-subhead red">⚑ Needs action · Due today</div>
+            <div className="today-subhead red">Due today</div>
           )}
           {pinnedDueToday.map((t) => renderRow(t))}
-          {restOfToday.length > 0 && (
-            <div className="today-subhead">Habits today</div>
-          )}
-          {restOfToday.map((h) => renderRow(h))}
+        </div>
+      )}
+
+      {/* Habits today — the complete daily rhythm, its own card */}
+      {habitsToday.length > 0 && (
+        <div className="today-section focus">
+          <div className="today-section-head">Habits today</div>
+          {habitsToday.map((h) => renderRow(h))}
         </div>
       )}
 
