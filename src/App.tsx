@@ -47,6 +47,12 @@ const TAB_KEY = 'align-tab-v1';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = Record<string, any>;
 
+/** Row from the goal_health view — server-computed, RLS-safe. */
+interface GoalHealthInfo {
+  health: number;   // 0–100
+  nItems: number;   // tasks + habits attached to the goal
+}
+
 function domainToRow(d: Domain, userId: string): Row {
   return { id: d.id, user_id: userId, name: d.name, blurb: d.blurb, values: d.values, vision: d.vision };
 }
@@ -227,6 +233,9 @@ export default function App() {
   const [habits, setHabits] = useState<Habit[]>([]);
   const [reflectOpen, setReflectOpen] = useState(false);
   const [reflections, setReflections] = useState<ReflectionEntry[]>([]);
+  // Server-computed health per goal (goal_health view is the source of truth;
+  // never recomputed client-side). Keyed by goal id; completed goals absent.
+  const [goalHealth, setGoalHealth] = useState<Record<string, GoalHealthInfo>>({});
 
   // True while applying data freshly loaded from the DB, so the sync effects
   // don't immediately re-upsert it (which could overwrite newer data written
@@ -249,7 +258,8 @@ export default function App() {
       supabase.from('goals').select('*').eq('user_id', userId),
       supabase.from('habits').select('*').eq('user_id', userId),
       supabase.from('reflections').select('*').eq('user_id', userId).order('date'),
-    ]).then(([d, g, h, r]) => {
+      supabase.from('goal_health').select('*'),
+    ]).then(([d, g, h, r, gh]) => {
       const dbError = d.error || g.error || h.error || r.error;
       if (dbError) {
         console.error('Supabase load error:', dbError.message);
@@ -293,6 +303,16 @@ export default function App() {
           if (!cur || e.date > cur.date) byKey.set(k, e);
         }
         setReflections([...byKey.values()]);
+      }
+
+      // Health badges are additive — a view error must never block the app.
+      if (gh.error) {
+        console.warn('goal_health load:', gh.error.message);
+      } else if (gh.data) {
+        setGoalHealth(Object.fromEntries(gh.data.map((row: Row) => [
+          row.goal_id,
+          { health: Number(row.health ?? 0), nItems: Number(row.n_items ?? 0) },
+        ])));
       }
 
       // Mark this account as seeded so we never reseed/overwrite again.
@@ -392,6 +412,7 @@ export default function App() {
             setGoals={setGoals}
             habits={habits}
             setHabits={setHabits}
+            goalHealth={goalHealth}
             flash={flash}
             onDeleteGoalFromDb={deleteGoalFromDb}
             onDeleteHabitFromDb={deleteHabitFromDb}
@@ -715,6 +736,7 @@ function Align({
   setGoals,
   habits,
   setHabits,
+  goalHealth,
   flash,
   onDeleteGoalFromDb,
   onDeleteHabitFromDb,
@@ -724,6 +746,7 @@ function Align({
   setGoals: React.Dispatch<React.SetStateAction<Goal[]>>;
   habits: Habit[];
   setHabits: React.Dispatch<React.SetStateAction<Habit[]>>;
+  goalHealth: Record<string, GoalHealthInfo>;
   flash: (m: string) => void;
   onDeleteGoalFromDb: (ids: string[]) => void;
   onDeleteHabitFromDb: (id: string) => void;
@@ -1001,6 +1024,7 @@ function Align({
               onToggleCollapse={hasChildren ? () => toggleCollapse(goal.id) : undefined}
               isFocus={isFocus}
               showDragHandle
+              health={goalHealth[goal.id]}
             />
             {!collapsedGoals.has(goal.id) && habits
               .filter((h) => {
@@ -1086,6 +1110,7 @@ function Align({
                   goal={sg}
                   displayValues={[]}
                   habits={habits}
+                  health={goalHealth[sg.id]}
                   cls={cls}
                   lit={lit}
                   setLit={setLit}
@@ -1149,6 +1174,7 @@ function ShortWithActions({
   goal,
   displayValues,
   habits,
+  health,
   cls,
   lit,
   setLit,
@@ -1177,6 +1203,7 @@ function ShortWithActions({
   goal: Goal;
   displayValues: string[];
   habits: Habit[];
+  health?: GoalHealthInfo;
   domainValues?: string[];
   domainVision?: string;
   cls: (id: string, base?: string) => string;
@@ -1237,6 +1264,7 @@ function ShortWithActions({
         onToggleCollapse={onToggleCollapse}
         isFocus={isFocus}
         showDragHandle={showDragHandle}
+        health={health}
       />
       {!isCollapsed && habits
         .filter((h) => {
@@ -1604,6 +1632,7 @@ function GoalNode({
   onToggleCollapse,
   isFocus,
   showDragHandle,
+  health,
 }: {
   goal: Goal;
   values?: string[];
@@ -1627,6 +1656,7 @@ function GoalNode({
   onToggleCollapse?: () => void;
   isFocus?: boolean;
   showDragHandle?: boolean;
+  health?: GoalHealthInfo;
 }) {
   const canEditValues = !!onEditValues;
   const idxs = valueIndexes ?? [];
@@ -1752,6 +1782,24 @@ function GoalNode({
             </button>
           )}
           <span className="goal-date">{getGoalCountdown(goal)}</span>
+          {health && !isComplete && (
+            health.health === 0 && health.nItems === 0 ? (
+              <span className="goal-health goal-health--empty">
+                No tasks or habits yet — add one
+              </span>
+            ) : (
+              <span
+                className={`goal-health ${
+                  health.health <= 33 ? 'goal-health--red'
+                  : health.health <= 66 ? 'goal-health--yellow'
+                  : 'goal-health--green'
+                }`}
+                title="Goal health (0–100)"
+              >
+                ♥ {health.health}
+              </span>
+            )
+          )}
         </div>
         {editValuesActive && domainValues && (
           <div

@@ -2523,3 +2523,25 @@ h1 {
   padding: 0;
   text-decoration: underline;
 }
+
+/* Goal health badge — fed by the goal_health view (server-computed) */
+.goal-health {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  padding: 2px 7px;
+  border: 1px solid;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+.goal-health--red    { color: #e05c5c; border-color: #e05c5c40; }
+.goal-health--yellow { color: #e8d44e; border-color: #e8d44e40; }
+.goal-health--green  { color: #72ce6a; border-color: #72ce6a40; }
+.goal-health--empty  {
+  color: var(--muted);
+  border-color: var(--line);
+  font-style: italic;
+  white-space: normal;
+}
