@@ -2778,6 +2778,21 @@ function computeDone(subGoals: Goal[], treeHabits: Habit[], now: number): number
   return done / total;
 }
 
+/**
+ * New-goal grace: health starts at 100% and glides down to the EARNED score
+ * over the first 14 days, so a brand-new goal isn't born red. Build the goal
+ * out and work it and the glide is invisible (earned rises to meet it);
+ * ignore it and the number visibly bleeds toward the honest score.
+ * Mirrored server-side in the goal_health view so the coach agrees.
+ */
+function applyNewGoalGrace(earned: number, createdAt: number): number {
+  const GRACE_DAYS = 14;
+  const ageDays = (Date.now() - (createdAt || 0)) / 86_400_000;
+  if (ageDays < 0 || ageDays >= GRACE_DAYS) return earned;
+  const grace = 1 - ageDays / GRACE_DAYS;
+  return Math.min(1, earned + (1 - earned) * grace);
+}
+
 function vitalityFor(
   lg: Goal,
   goals: Goal[],
@@ -2793,7 +2808,7 @@ function vitalityFor(
   const subtreeHabits = habits.filter((h) => subtree.has(h.goalId));
 
   const completion     = computeDone(subGoals, subtreeHabits, now);
-  const health         = computeHealth(subGoals, subtreeHabits, now, elapsed, isFocus);
+  const health         = applyNewGoalGrace(computeHealth(subGoals, subtreeHabits, now, elapsed, isFocus), lg.createdAt);
   const completionRate = completion;
   const recencyScore   = health;
   const momentum       = (completion + health) / 2;
@@ -2822,7 +2837,7 @@ function stGoalMetrics(sg: Goal, goals: Goal[], habits: Habit[], isFocus = false
   const sgHabits  = habits.filter((h) => subtree.has(h.goalId));
 
   const completion     = computeDone(subGoals, sgHabits, now);
-  const health         = computeHealth(subGoals, sgHabits, now, elapsed, isFocus);
+  const health         = applyNewGoalGrace(computeHealth(subGoals, sgHabits, now, elapsed, isFocus), sg.createdAt);
   const completionRate = completion;
   const recencyScore   = health;
   const momentum       = (completion + health) / 2;
@@ -2837,7 +2852,7 @@ function ongoingGoalMetrics(og: Goal, goals: Goal[], habits: Habit[], isFocus = 
   const ogHabits = habits.filter((h) => subtree.has(h.goalId));
 
   const completion     = computeDone(subGoals, ogHabits, now);
-  const health         = computeOngoingHealth(subGoals, ogHabits, isFocus);
+  const health         = applyNewGoalGrace(computeOngoingHealth(subGoals, ogHabits, isFocus), og.createdAt);
   const completionRate = completion;
   const recencyScore   = health;
   const momentum       = health;
@@ -3064,12 +3079,14 @@ function GoalsDashboard({
     <div className="dash-health-note">
       <div className="dash-health-note-title">How Health is calculated</div>
       <p>Pace (50%) · Habit consistency (30%) · Planning engagement (20%)</p>
+      <p>New goals start at 100% and settle to their earned score over the first 14 days.</p>
     </div>
   );
   const healthNoteOngoing = (
     <div className="dash-health-note">
       <div className="dash-health-note-title">How Health is calculated</div>
       <p>Habit consistency (60%) · Recent activity, last 7 days (20%) · Structure (20%) — no deadline, so no pace</p>
+      <p>New goals start at 100% and settle to their earned score over the first 14 days.</p>
     </div>
   );
 
