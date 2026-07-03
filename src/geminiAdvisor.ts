@@ -63,6 +63,27 @@ async function callGemini(body: unknown): Promise<GeminiResponse> {
   return data as GeminiResponse;
 }
 
+/**
+ * Server-computed coach grounding data (get_coach_context RPC, security
+ * invoker — scoped to the signed-in user): goal_health worst-first,
+ * recent_reflections, overdue_tasks, habits with 14-day completion counts,
+ * and recent_coach_ratings. Returns null on any failure so the coach can
+ * fall back to the ungrounded prompt.
+ */
+async function getCoachContext(): Promise<unknown | null> {
+  try {
+    const { data, error } = await supabase.rpc('get_coach_context');
+    if (error) {
+      console.warn('get_coach_context failed, coach runs ungrounded:', error.message);
+      return null;
+    }
+    return data ?? null;
+  } catch (err) {
+    console.warn('get_coach_context threw, coach runs ungrounded:', err);
+    return null;
+  }
+}
+
 function cacheKey(date: string) {
   return `gemini-focus-v3-${date}`;
 }
@@ -265,15 +286,15 @@ function valueFingerprint(domains: Domain[]): string {
 
 
 function coachCacheKey(date: string, domains: Domain[]) {
-  return `gemini-coach-v24-${date}-${valueFingerprint(domains)}`;
+  return `gemini-coach-v25-${date}-${valueFingerprint(domains)}`;
 }
 
 function yesterdayCardTitle(domains: Domain[]): string | null {
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
   const yStr = toDateStr(yesterday);
-  // Check v23 and v22 keys so we catch whatever ran yesterday
-  for (const v of ['v23', 'v22', 'v21', 'v20']) {
+  // Check recent key versions so we catch whatever ran yesterday
+  for (const v of ['v25', 'v24', 'v23', 'v22', 'v21', 'v20']) {
     const raw = localStorage.getItem(`gemini-coach-${v}-${yStr}-${valueFingerprint(domains)}`);
     if (raw) {
       try { return (JSON.parse(raw) as CoachCard).title; } catch { /* skip */ }
@@ -295,6 +316,10 @@ export async function getGeminiCoachCard(
   if (cached) {
     try { return JSON.parse(cached) as CoachCard; } catch { /* fall through */ }
   }
+
+  // Fetch server-computed grounding data before every generation; null → the
+  // prompt below simply omits the grounding block (ungrounded fallback).
+  const coachCtx = await getCoachContext();
 
   const now = new Date();
   const dayName = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][now.getDay()];
@@ -411,6 +436,17 @@ export async function getGeminiCoachCard(
     ? `- Today's card should primarily draw from the "${domainRota.name}" domain (but can mention others).`
     : '';
 
+  // Server-computed grounding block; empty string when the RPC failed so the
+  // rest of the prompt works exactly as before (ungrounded fallback).
+  const groundingBlock = coachCtx
+    ? `
+## Live data snapshot (server-computed, authoritative)
+${JSON.stringify(coachCtx)}
+
+Ground all feedback in this data. Reference specific goals by name and their health scores. Call out overdue tasks and habits whose completions_last_14d is far below expected. Goals with health 0 have no tasks/habits — suggest one concrete next action for each. Use recent_coach_ratings to calibrate tone: more 'down' ratings means be more concise and practical.
+`
+    : '';
+
   const prompt = `You are a personal coach. Write one daily coaching card grounded in the user's real data below.
 
 HARD RULES — violations mean the card is wrong:
@@ -432,7 +468,7 @@ Tone: direct, warm, no filler. Like a coach who actually read the data.
 Format:
 - Title: 4–6 words. Must contain a real habit or goal name.
 - Blurb: exactly 2 sentences. Sentence 1: specific encouragement from data. Sentence 2: one actionable nudge naming a real item.
-${feedbackLines}
+${feedbackLines}${groundingBlock}
 ${contextLines.join('\n')}
 
 Return JSON only: {"title": "...", "blurb": "..."}`;
