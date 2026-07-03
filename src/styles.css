@@ -2622,3 +2622,12 @@ h1 {
 .row-goal-health.g { color: #72ce6a; }
 
 .more-domain-group { margin-top: 10px; }
+
+/* Small phones: keep the ring header compact */
+@media (max-width: 420px) {
+  .coach-progress--ring { gap: 12px; }
+  .day-ring { width: 82px; height: 82px; }
+  .ring-legend { gap: 4px 10px; }
+  .ring-legend-row { font-size: 11px; }
+  .week-value-chip { font-size: 10.5px; }
+}
