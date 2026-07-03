@@ -2146,6 +2146,8 @@ function Today({
   // AI picks that are tasks only show while slots remain — habits always show.
   const TASK_CAP = 3;
   const pinnedTasks = [...overdueSorted, ...dueTodayTasks].slice(0, TASK_CAP);
+  const pinnedOverdue = pinnedTasks.filter((t) => !!t.dueDate && t.dueDate < today);
+  const pinnedDueToday = pinnedTasks.filter((t) => t.dueDate === today);
   let aiTaskSlots = TASK_CAP - pinnedTasks.length;
   const aiPicksShown = aiPicks.filter(({ item }) => {
     if (item.kind === 'habit') return true;
@@ -2383,6 +2385,9 @@ function Today({
             ✦ Today
             {aiFocusLoading && <span className="focus-loading">choosing focus…</span>}
           </div>
+          {(expiredGoals.length > 0 || pinnedOverdue.length > 0) && (
+            <div className="today-subhead red">⚑ Needs action · Overdue</div>
+          )}
           {expiredGoals.map((g) => {
             const deadline = goalDeadline(g)!;
             const daysOver = Math.max(1, Math.floor((Date.now() - deadline) / 86_400_000));
@@ -2417,9 +2422,7 @@ function Today({
               </div>
             );
           })}
-          {pinnedTasks.map((task) => {
-            const isOverdue = !!task.dueDate && task.dueDate < today;
-            if (!isOverdue) return renderRow(task);
+          {pinnedOverdue.map((task) => {
             const days = daysOverdueOf(task);
             return (
               <React.Fragment key={task.id}>
@@ -2473,7 +2476,17 @@ function Today({
               </React.Fragment>
             );
           })}
+          {pinnedDueToday.length > 0 && (
+            <div className="today-subhead red">⚑ Needs action · Due today</div>
+          )}
+          {pinnedDueToday.map((t) => renderRow(t))}
+          {aiPicksShown.length > 0 && (
+            <div className="today-subhead accent">✦ Focus picks</div>
+          )}
           {aiPicksShown.map(({ item, reason }) => renderRow(item, reason))}
+          {restOfToday.length > 0 && (
+            <div className="today-subhead">Habits today</div>
+          )}
           {restOfToday.map((h) => renderRow(h))}
         </div>
       )}

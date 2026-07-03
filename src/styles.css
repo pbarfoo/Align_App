@@ -2640,3 +2640,15 @@ h1 {
   color: var(--accent);
   opacity: 0.85;
 }
+
+/* Subheads inside the Today card */
+.today-subhead {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 16px 0 2px;
+}
+.today-subhead.red { color: #e05c5c; }
+.today-subhead.accent { color: var(--accent); }
