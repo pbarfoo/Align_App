@@ -2140,6 +2140,18 @@ function Today({
       return isHabitScheduledToday(h) && !isHabitDoneThisPeriod(h);
     })
     .slice(0, 3); // focus means 2–3 things, not a second to-do list
+
+  // Hard cap on task rows in the Today list: 3. Overdue (worst first) claim
+  // the slots ahead of due-today; the overflow stays reachable under More.
+  // AI picks that are tasks only show while slots remain — habits always show.
+  const TASK_CAP = 3;
+  const pinnedTasks = [...overdueSorted, ...dueTodayTasks].slice(0, TASK_CAP);
+  let aiTaskSlots = TASK_CAP - pinnedTasks.length;
+  const aiPicksShown = aiPicks.filter(({ item }) => {
+    if (item.kind === 'habit') return true;
+    if (aiTaskSlots > 0) { aiTaskSlots--; return true; }
+    return false;
+  });
   const aiPickIds = new Set(aiPicks.map(({ item }) => item.id));
 
   // Heuristic urgency for the non-pinned, non-picked habits.
@@ -2178,11 +2190,11 @@ function Today({
     .filter((h) => !aiPickIds.has(h.id))
     .sort((a, b) => habitUrgency(b) - habitUrgency(a));
 
-  // Everything not part of today (future / undated tasks), grouped by domain.
+  // Everything not shown in Today (future tasks + capped overflow), by domain.
   const shownToday = new Set<string>([
-    ...overdueTasks, ...dueTodayTasks, ...openHabits,
+    ...pinnedTasks, ...openHabits,
   ].map((h) => h.id));
-  aiPicks.forEach(({ item }) => shownToday.add(item.id));
+  aiPicksShown.forEach(({ item }) => shownToday.add(item.id));
   const moreByDomain = domains
     .map((d) => ({
       domain: d,
@@ -2365,7 +2377,7 @@ function Today({
 
       {/* Today — ONE list: expired goals & overdue (actions inline), due
           today, then Gemini's focus picks, then the rest of today's habits. */}
-      {(expiredGoals.length > 0 || overdueSorted.length > 0 || dueTodayTasks.length > 0 || aiPicks.length > 0 || restOfToday.length > 0) && (
+      {(expiredGoals.length > 0 || pinnedTasks.length > 0 || aiPicksShown.length > 0 || restOfToday.length > 0) && (
         <div className="today-section focus">
           <div className="today-section-head">
             ✦ Today
@@ -2405,7 +2417,9 @@ function Today({
               </div>
             );
           })}
-          {overdueSorted.map((task) => {
+          {pinnedTasks.map((task) => {
+            const isOverdue = !!task.dueDate && task.dueDate < today;
+            if (!isOverdue) return renderRow(task);
             const days = daysOverdueOf(task);
             return (
               <React.Fragment key={task.id}>
@@ -2459,8 +2473,7 @@ function Today({
               </React.Fragment>
             );
           })}
-          {dueTodayTasks.map((t) => renderRow(t))}
-          {aiPicks.map(({ item, reason }) => renderRow(item, reason))}
+          {aiPicksShown.map(({ item, reason }) => renderRow(item, reason))}
           {restOfToday.map((h) => renderRow(h))}
         </div>
       )}
