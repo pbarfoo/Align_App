@@ -2631,3 +2631,12 @@ h1 {
   .ring-legend-row { font-size: 11px; }
   .week-value-chip { font-size: 10.5px; }
 }
+
+/* Gemini focus pick — one-line reason under the row */
+.focus-reason {
+  margin-top: 4px;
+  font-size: 11.5px;
+  font-style: italic;
+  color: var(--accent);
+  opacity: 0.85;
+}

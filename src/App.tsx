@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { getGeminiCoachCard, saveCoachFeedback, getTodayCoachRating, type CoachCard } from './geminiAdvisor';
+import { getGeminiCoachCard, getGeminiFocusPicks, saveCoachFeedback, getTodayCoachRating, type CoachCard, type FocusPick } from './geminiAdvisor';
 import {
   DndContext, type DragEndEvent, MouseSensor, TouchSensor,
   useSensor, useSensors, closestCenter,
@@ -1919,6 +1919,9 @@ function Today({
   const [coachLoading, setCoachLoading] = useState(false);
   const [coachFailed, setCoachFailed] = useState(false);
   const [coachRating, setCoachRating] = useState<'up' | 'down' | null>(null);
+  // Gemini-chosen focus for today (daily-cached in getGeminiFocusPicks).
+  const [aiFocus, setAiFocus] = useState<FocusPick[] | null>(null);
+  const [aiFocusLoading, setAiFocusLoading] = useState(false);
   const today = toDateStr(new Date());
 
   const fetchCoachCard = () => {
@@ -2037,17 +2040,19 @@ function Today({
     return g.title;
   };
 
-  // --- Overdue-task triage ("Needs a decision") ---
-  // Pair each stale_tasks row with its live habits entry; a row drops out the
-  // moment the user decides: rescheduled (due date changed), deleted (gone),
-  // or otherwise resolved (completed). No snooze — decisions only.
+  // --- Overdue tasks: rendered inline in the Today list with their decision
+  // actions (check off / reschedule / break down / delete). Days-overdue comes
+  // from the stale_tasks view when available, else computed locally so nothing
+  // slips through between loads.
   const [breakdownFor, setBreakdownFor] = useState<string | null>(null);
-  const triageRows = staleTasks.flatMap((st) => {
-    const task = habits.find((h) => h.id === st.id);
-    if (!task || task.kind !== 'task' || task.completed) return [];
-    if (task.dueDate !== st.dueDate) return []; // rescheduled — decision made
-    return [{ st, task }];
-  });
+  const staleById = new Map(staleTasks.map((st) => [st.id, st]));
+  const daysOverdueOf = (task: Habit): number => {
+    const st = staleById.get(task.id);
+    if (st && st.dueDate === task.dueDate) return st.daysOverdue;
+    return Math.max(1, Math.floor(
+      (Date.now() - new Date((task.dueDate ?? today) + 'T12:00').getTime()) / 86_400_000,
+    ));
+  };
 
   const rescheduleTask = (id: string, newDate: string) => {
     if (!newDate) return;
@@ -2123,33 +2128,69 @@ function Today({
     ? allValues[getISOWeek(new Date()) % allValues.length]
     : null;
 
-  // --- Up next: ONE balanced list. Round-robin across domains so life-area
-  // balance is guaranteed by construction; each item appears in exactly one
-  // place on the page (triage items are excluded here).
-  const triageTaskIds = new Set(triageRows.map(({ st }) => st.id));
-  const domainQueues = domains.map((d) =>
-    todayItemsByDomain(d.id).filter((h) => !triageTaskIds.has(h.id)));
-  const upNext: Habit[] = [];
-  {
-    let pulled = true;
-    while (upNext.length < 6 && pulled) {
-      pulled = false;
-      for (const q of domainQueues) {
-        const item = q.shift();
-        if (item) {
-          upNext.push(item);
-          pulled = true;
-          if (upNext.length >= 6) break;
+  // --- The Today list: overdue first (with decision actions inline), then
+  // due-today tasks, then Gemini's focus picks, then the rest of today's
+  // habits ranked by focus / neglect / weak-goal rescue.
+  const overdueSorted = [...overdueTasks].sort((a, b) => daysOverdueOf(b) - daysOverdueOf(a));
+
+  // Gemini chooses today's focus from everything that ISN'T already pinned
+  // (overdue / due today pin themselves). Cached per day; heuristic order
+  // below is the fallback when the AI is unavailable.
+  const aiPicks = (aiFocus ?? [])
+    .map((p) => ({ reason: p.reason, item: habits.find((h) => h.id === p.id) }))
+    .filter((x): x is { reason: string; item: Habit } => {
+      const h = x.item;
+      if (!h) return false;
+      if (h.kind === 'task') return !h.completed && !(h.dueDate && h.dueDate <= today);
+      return isHabitScheduledToday(h) && !isHabitDoneThisPeriod(h);
+    });
+  const aiPickIds = new Set(aiPicks.map(({ item }) => item.id));
+
+  // Heuristic urgency for the non-pinned, non-picked habits.
+  const focusGoalIds = (() => {
+    const ids = new Set<string>();
+    (['long', 'short', 'ongoing'] as const).forEach((horizon) => {
+      const seen = new Set<string>();
+      goals.forEach((g) => {
+        if (g.horizon === horizon && !g.parentGoalId && !seen.has(g.domainId)) {
+          seen.add(g.domainId);
+          ids.add(g.id);
         }
-      }
-    }
-  }
-  const upNextIds = new Set(upNext.map((h) => h.id));
-  // Everything else, grouped by domain (excludes triage + up next).
+      });
+    });
+    return ids;
+  })();
+  const topAncestorId = (goalId: string): string | undefined => {
+    let g = goals.find((x) => x.id === goalId);
+    while (g?.parentGoalId) g = goals.find((x) => x.id === g!.parentGoalId);
+    return g?.id;
+  };
+  const habitUrgency = (h: Habit): number => {
+    let s = 0;
+    s += getGraceDays(h).length * 30;            // missed backlog
+    if (isNeglected(h)) s += 25;                  // neglected
+    const since = daysSinceLastDone(h);
+    const interval = naturalIntervalDays(h);
+    s += since === Infinity ? 10 : Math.min(15, (since / interval) * 5);
+    const top = topAncestorId(h.goalId);
+    if (top && focusGoalIds.has(top)) s += 20;    // high-focus goal thread
+    const gh = goalHealthMap[h.goalId];
+    if (gh && gh.health <= 33) s += 15;           // rescue weak goals
+    return s;
+  };
+  const restOfToday = openHabits
+    .filter((h) => !aiPickIds.has(h.id))
+    .sort((a, b) => habitUrgency(b) - habitUrgency(a));
+
+  // Everything not part of today (future / undated tasks), grouped by domain.
+  const shownToday = new Set<string>([
+    ...overdueTasks, ...dueTodayTasks, ...openHabits,
+  ].map((h) => h.id));
+  aiPicks.forEach(({ item }) => shownToday.add(item.id));
   const moreByDomain = domains
     .map((d) => ({
       domain: d,
-      items: todayItemsByDomain(d.id).filter((h) => !triageTaskIds.has(h.id) && !upNextIds.has(h.id)),
+      items: todayItemsByDomain(d.id).filter((h) => !shownToday.has(h.id)),
     }))
     .filter((x) => x.items.length > 0);
   const moreCount = moreByDomain.reduce((s, x) => s + x.items.length, 0);
@@ -2171,7 +2212,25 @@ function Today({
     fetchCoachCard();
   }, [!goals.length && !habits.length]); // re-runs once data arrives; stable after that
 
-  const renderRow = (h: Habit) => {
+  // Ask Gemini to choose today's focus from the non-pinned items (overdue and
+  // due-today pin themselves). Silent fallback: the heuristic order below.
+  useEffect(() => {
+    if (!goals.length && !habits.length) return;
+    const actionableIds = [...openHabits, ...openTasks]
+      .filter((h) => !(h.kind === 'task' && h.dueDate && h.dueDate <= today))
+      .map((h) => h.id);
+    if (!actionableIds.length) return;
+    setAiFocusLoading(true);
+    getGeminiFocusPicks(domains, goals, habits, actionableIds)
+      .then((picks) => setAiFocus(picks))
+      .catch((err) => {
+        console.warn('Gemini focus unavailable, using heuristic order:', err);
+        setAiFocus(null);
+      })
+      .finally(() => setAiFocusLoading(false));
+  }, [!goals.length && !habits.length]);
+
+  const renderRow = (h: Habit, aiReason?: string) => {
     const isDone = h.kind === 'task' ? !!h.completed : isHabitDoneThisPeriod(h);
     const dColor = DOMAIN_COLORS[domainOf(h.goalId) ?? ''] ?? 'var(--line)';
     const gh = goalHealthMap[h.goalId];
@@ -2208,6 +2267,7 @@ function Today({
             &nbsp;·&nbsp;
             {h.kind === 'task' ? getTaskCountdown(h) : getRecurrenceString(h)}
           </div>
+          {aiReason && <div className="focus-reason">✦ {aiReason}</div>}
           {(() => {
             if (h.kind === 'task') {
               if (!isDone && h.dueDate && h.dueDate < today) {
@@ -2319,66 +2379,14 @@ function Today({
         )}
       </div>
 
-      {/* Triage — overdue tasks and expired goals. No snooze, decisions only. */}
-      {(triageRows.length > 0 || expiredGoals.length > 0) && (
-        <div className="today-section triage">
-          <div className="today-section-head triage-head">⚑ Needs action</div>
-          <p className="triage-sub">
-            {triageRows.length > 0
-              ? 'These tasks slipped past their due date. Pick one: check it off, reschedule, break it down, or let it go.'
-              : 'These goals reached the end of their time window. Complete, extend, or let go.'}
-          </p>
-          {triageRows.map(({ st, task }) => (
-            <React.Fragment key={st.id}>
-              <div className="habit-row triage-row">
-                <button
-                  className="check"
-                  onClick={() => toggle(st.id)}
-                  aria-label="Mark complete"
-                  title="Done — mark complete"
-                >
-                  <Tick />
-                </button>
-                <div style={{ flex: 1 }}>
-                  <div className="habit-title">
-                    <span className="kind-icon task" title="One-off task"><TaskArrow /></span>
-                    {st.title}
-                  </div>
-                  <div className="habit-meta">
-                    <b>{st.goalTitle || lineage(task.goalId)}</b>
-                    &nbsp;·&nbsp;
-                    <span className="triage-overdue">
-                      {st.daysOverdue} day{st.daysOverdue === 1 ? '' : 's'} overdue
-                    </span>
-                  </div>
-                  <div className="triage-actions">
-                    <DateBtn
-                      value={task.dueDate ?? ''}
-                      onChange={(v) => rescheduleTask(st.id, v)}
-                      placeholder="Reschedule"
-                    />
-                    <button
-                      className="mini-ghost"
-                      onClick={() => setBreakdownFor(breakdownFor === st.id ? null : st.id)}
-                    >
-                      {breakdownFor === st.id ? 'Cancel' : 'Break down'}
-                    </button>
-                    <button className="mini-ghost triage-delete" onClick={() => deleteTask(st.id)}>
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              </div>
-              {breakdownFor === st.id && (
-                <AddActionForm
-                  goalId={task.goalId}
-                  defaultKind="task"
-                  onAdd={(goalId, title, kind, input) => { addAction(goalId, title, kind, input); setBreakdownFor(null); }}
-                  onClose={() => setBreakdownFor(null)}
-                />
-              )}
-            </React.Fragment>
-          ))}
+      {/* Today — ONE list: expired goals & overdue (actions inline), due
+          today, then Gemini's focus picks, then the rest of today's habits. */}
+      {(expiredGoals.length > 0 || overdueSorted.length > 0 || dueTodayTasks.length > 0 || aiPicks.length > 0 || restOfToday.length > 0) && (
+        <div className="today-section focus">
+          <div className="today-section-head">
+            ✦ Today
+            {aiFocusLoading && <span className="focus-loading">choosing focus…</span>}
+          </div>
           {expiredGoals.map((g) => {
             const deadline = goalDeadline(g)!;
             const daysOver = Math.max(1, Math.floor((Date.now() - deadline) / 86_400_000));
@@ -2413,14 +2421,63 @@ function Today({
               </div>
             );
           })}
-        </div>
-      )}
-
-      {/* Up next — one balanced list across all life areas */}
-      {upNext.length > 0 && (
-        <div className="today-section focus">
-          <div className="today-section-head">✦ Up next</div>
-          {upNext.map(renderRow)}
+          {overdueSorted.map((task) => {
+            const days = daysOverdueOf(task);
+            return (
+              <React.Fragment key={task.id}>
+                <div className="habit-row triage-row">
+                  <button
+                    className="check"
+                    onClick={() => toggle(task.id)}
+                    aria-label="Mark complete"
+                    title="Done — mark complete"
+                  >
+                    <Tick />
+                  </button>
+                  <div style={{ flex: 1 }}>
+                    <div className="habit-title">
+                      <span className="kind-icon task" title="One-off task"><TaskArrow /></span>
+                      {task.title}
+                    </div>
+                    <div className="habit-meta">
+                      <b>{lineage(task.goalId)}</b>
+                      &nbsp;·&nbsp;
+                      <span className="triage-overdue">
+                        {days} day{days === 1 ? '' : 's'} overdue
+                      </span>
+                    </div>
+                    <div className="triage-actions">
+                      <DateBtn
+                        value={task.dueDate ?? ''}
+                        onChange={(v) => rescheduleTask(task.id, v)}
+                        placeholder="Reschedule"
+                      />
+                      <button
+                        className="mini-ghost"
+                        onClick={() => setBreakdownFor(breakdownFor === task.id ? null : task.id)}
+                      >
+                        {breakdownFor === task.id ? 'Cancel' : 'Break down'}
+                      </button>
+                      <button className="mini-ghost triage-delete" onClick={() => deleteTask(task.id)}>
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                {breakdownFor === task.id && (
+                  <AddActionForm
+                    goalId={task.goalId}
+                    defaultKind="task"
+                    onAdd={(goalId, title, kind, input) => { addAction(goalId, title, kind, input); setBreakdownFor(null); }}
+                    onClose={() => setBreakdownFor(null)}
+                  />
+                )}
+              </React.Fragment>
+            );
+          })}
+          {dueTodayTasks.map((t) => renderRow(t))}
+          {aiPicks.map(({ item, reason }) => renderRow(item, reason))}
+          {restOfToday.map((h) => renderRow(h))}
         </div>
       )}
 
@@ -2437,7 +2494,7 @@ function Today({
               <div className="focus-domain-head" style={{ color: DOMAIN_COLORS[d.id] ?? 'var(--accent)' }}>
                 <span>{d.name}</span>
               </div>
-              {items.map(renderRow)}
+              {items.map((h) => renderRow(h))}
             </div>
           ))}
         </div>
@@ -2461,7 +2518,7 @@ function Today({
             Done today
             <span className="today-count">{doneItems.length}</span>
           </button>
-          {showDone && doneItems.map(renderRow)}
+          {showDone && doneItems.map((h) => renderRow(h))}
         </div>
       )}
 
