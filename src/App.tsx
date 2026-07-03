@@ -1904,13 +1904,17 @@ function Today({
   userId?: string;
 }) {
   const [showDone, setShowDone] = useState(false);
-  const [collapsedDomains, setCollapsedDomains] = useState<Set<DomainId>>(
-    () => new Set(domains.map((d) => d.id)),
-  );
-  const toggleDomain = (id: DomainId) =>
-    setCollapsedDomains(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+  // "More" (everything beyond Up next) — collapse state persists across visits.
+  const [moreOpen, setMoreOpen] = useState<boolean>(() => {
+    try { return JSON.parse(localStorage.getItem('today-more-open-v1') ?? 'false'); } catch { return false; }
+  });
+  useEffect(() => {
+    localStorage.setItem('today-more-open-v1', JSON.stringify(moreOpen));
+  }, [moreOpen]);
 
-  const [domainFocusOffsets, setDomainFocusOffsets] = useState<Record<string, number>>({});
+  // Shared health map: row chips + coach grounding all read the same numbers.
+  const goalHealthMap = useMemo(() => computeGoalHealthMap(goals, habits), [goals, habits]);
+
   const [coachCard, setCoachCard] = useState<CoachCard | null>(null);
   const [coachLoading, setCoachLoading] = useState(false);
   const [coachFailed, setCoachFailed] = useState(false);
@@ -1923,9 +1927,8 @@ function Today({
     setCoachFailed(false);
     // Feed the coach the SAME health numbers the user sees on their goal
     // cards (title-keyed; overrides the server view's figures).
-    const healthMap = computeGoalHealthMap(goals, habits);
     const appGoalHealth = Object.fromEntries(
-      goals.filter((g) => !g.completedAt).map((g) => [g.title, healthMap[g.id]?.health ?? 0]),
+      goals.filter((g) => !g.completedAt).map((g) => [g.title, goalHealthMap[g.id]?.health ?? 0]),
     );
     getGeminiCoachCard(domains, goals, habits, reflections, userId, appGoalHealth)
       .then(async (card) => {
@@ -1999,10 +2002,6 @@ function Today({
       ...openHabits.filter((h) => domainOf(h.goalId) === domainId),
       ...openTasks.filter((t) => domainOf(t.goalId) === domainId),
     ].sort(byPriority);
-  // Domains that have at least one active (non-completed) goal — used to
-  // surface neglect when such a domain has nothing scheduled today.
-  const domainHasGoals = (domainId: DomainId) =>
-    goals.some((g) => g.domainId === domainId && !g.completedAt);
 
   const toggle = (id: string) => {
     setHabits((prev) => prev.map((h) => {
@@ -2124,54 +2123,49 @@ function Today({
     ? allValues[getISOWeek(new Date()) % allValues.length]
     : null;
 
-  // --- Today's focus: pick the 3 most important, theme-aligned items ---
-  const goalAlignsWithTheme = (goalId: string): boolean => {
-    if (!weekValue) return false;
-    const g = goals.find((x) => x.id === goalId);
-    if (!g) return false;
-    const dom = domains.find((d) => d.id === g.domainId);
-    if (!dom) return false;
-    return g.valueIndexes.some((i) => dom.values[i] === weekValue);
-  };
-  const focusScore = (item: Habit): number => {
-    let s = 0;
-    if (goalAlignsWithTheme(item.goalId)) s += 50; // this week's theme
-    if (horizonOf(item.goalId) === 'short') s += 12; // active push
-    if (item.kind === 'task') {
-      if (item.dueDate) {
-        if (item.dueDate < today) s += 45; // overdue
-        else if (item.dueDate === today) s += 35; // due today
-        else {
-          const dLeft = Math.round(
-            (new Date(item.dueDate + 'T12:00').getTime() - Date.now()) / 86_400_000,
-          );
-          if (dLeft <= 3) s += 20;
-          else if (dLeft <= 7) s += 10;
+  // --- Up next: ONE balanced list. Round-robin across domains so life-area
+  // balance is guaranteed by construction; each item appears in exactly one
+  // place on the page (triage items are excluded here).
+  const triageTaskIds = new Set(triageRows.map(({ st }) => st.id));
+  const domainQueues = domains.map((d) =>
+    todayItemsByDomain(d.id).filter((h) => !triageTaskIds.has(h.id)));
+  const upNext: Habit[] = [];
+  {
+    let pulled = true;
+    while (upNext.length < 6 && pulled) {
+      pulled = false;
+      for (const q of domainQueues) {
+        const item = q.shift();
+        if (item) {
+          upNext.push(item);
+          pulled = true;
+          if (upNext.length >= 6) break;
         }
       }
-    } else {
-      if (isNeglected(item)) s += 25;
-      const since = daysSinceLastDone(item);
-      const interval = naturalIntervalDays(item);
-      s += since === Infinity ? 12 : Math.min(20, (since / interval) * 8);
-      if ((item.streak ?? 0) >= 3) s += 6; // protect a streak
     }
-    return s;
-  };
-  const getFocusForDomain = (domainId: string): Habit[] => {
-    const items = [...openHabits, ...openTasks].filter((h) => {
-      const g = goals.find((x) => x.id === h.goalId);
-      return g?.domainId === domainId;
-    });
-    if (!items.length) return [];
-    const scored = items
-      .map((item) => ({ item, score: focusScore(item) }))
-      .sort((a, b) => b.score - a.score);
-    const offset = ((domainFocusOffsets[domainId] ?? 0) * 3) % scored.length;
-    return Array.from({ length: Math.min(3, scored.length) }, (_, i) =>
-      scored[(offset + i) % scored.length].item,
-    );
-  };
+  }
+  const upNextIds = new Set(upNext.map((h) => h.id));
+  // Everything else, grouped by domain (excludes triage + up next).
+  const moreByDomain = domains
+    .map((d) => ({
+      domain: d,
+      items: todayItemsByDomain(d.id).filter((h) => !triageTaskIds.has(h.id) && !upNextIds.has(h.id)),
+    }))
+    .filter((x) => x.items.length > 0);
+  const moreCount = moreByDomain.reduce((s, x) => s + x.items.length, 0);
+
+  // Day ring: today's workload split by domain — completion AND balance in
+  // one glance. Same item set as the progress counter, so they always agree.
+  const ringSegments = domains.map((d) => {
+    const inDomain = (h: Habit) => domainOf(h.goalId) === d.id;
+    const total =
+      scheduledHabits.filter(inDomain).length +
+      overdueTasks.filter(inDomain).length +
+      dueTodayTasks.filter(inDomain).length +
+      completedToday.filter(inDomain).length;
+    const doneN = doneHabits.filter(inDomain).length + completedToday.filter(inDomain).length;
+    return { color: DOMAIN_COLORS[d.id] ?? 'var(--accent)', label: d.name.split(' ')[0] ?? d.name, done: doneN, total };
+  });
 
   useEffect(() => {
     fetchCoachCard();
@@ -2179,8 +2173,14 @@ function Today({
 
   const renderRow = (h: Habit) => {
     const isDone = h.kind === 'task' ? !!h.completed : isHabitDoneThisPeriod(h);
+    const dColor = DOMAIN_COLORS[domainOf(h.goalId) ?? ''] ?? 'var(--line)';
+    const gh = goalHealthMap[h.goalId];
     return (
-      <div className="habit-row" key={h.id}>
+      <div
+        className="habit-row domain-edged"
+        key={h.id}
+        style={{ '--row-domain': dColor } as React.CSSProperties}
+      >
         <button
           className={`check${isDone ? ' on' : ''}`}
           onClick={() => toggle(h.id)}
@@ -2200,6 +2200,11 @@ function Today({
           </div>
           <div className="habit-meta">
             <b>{lineage(h.goalId)}</b>
+            {gh && (
+              <span className={`row-goal-health ${gh.health <= 33 ? 'r' : gh.health <= 66 ? 'y' : 'g'}`}>
+                ♥ {gh.health}
+              </span>
+            )}
             &nbsp;·&nbsp;
             {h.kind === 'task' ? getTaskCountdown(h) : getRecurrenceString(h)}
           </div>
@@ -2261,13 +2266,24 @@ function Today({
           </span>
           <button className="reflect-mini-btn" onClick={onReflect} title="Weekly reflection">✦ Reflect</button>
         </div>
-        <div className="coach-progress">
-          <div className="coach-progress-num">
-            <span className="coach-progress-done">{done}</span>
-            <span className="coach-progress-total"> / {totalCount} today</span>
-          </div>
-          <div className="coach-progress-bar">
-            <i style={{ width: `${pct}%` }} />
+        <div className="coach-progress coach-progress--ring">
+          <DayRing segments={ringSegments} pct={pct} />
+          <div className="ring-side">
+            <div className="coach-progress-num">
+              <span className="coach-progress-done">{done}</span>
+              <span className="coach-progress-total"> / {totalCount} today</span>
+            </div>
+            <div className="ring-legend">
+              {ringSegments.filter((s) => s.total > 0).map((s) => (
+                <span key={s.label} className="ring-legend-row">
+                  <i style={{ background: s.color }} />
+                  {s.label} {s.done}/{s.total}
+                </span>
+              ))}
+            </div>
+            {weekValue && (
+              <div className="week-value-chip">✦ This week's value: {weekValue}</div>
+            )}
           </div>
         </div>
         {coachFailed && !coachLoading && (
@@ -2400,66 +2416,32 @@ function Today({
         </div>
       )}
 
-      {/* Today's focus — top 3 per domain */}
-      {domains.some((d) => getFocusForDomain(d.id).length > 0) && (
+      {/* Up next — one balanced list across all life areas */}
+      {upNext.length > 0 && (
         <div className="today-section focus">
-          <div className="today-section-head">✦ Today's focus</div>
-          {domains.map((d) => {
-            const focusItems = getFocusForDomain(d.id);
-            if (!focusItems.length) return null;
-            const domainColor = DOMAIN_COLORS[d.id] ?? 'var(--accent)';
-            return (
-              <div key={d.id} className="focus-domain-group">
-                <div className="focus-domain-head" style={{ color: domainColor }}>
-                  <span>{d.name}</span>
-                  <button
-                    className="focus-refresh-btn"
-                    onClick={() => setDomainFocusOffsets((prev) => ({
-                      ...prev,
-                      [d.id]: (prev[d.id] ?? 0) + 1,
-                    }))}
-                    title="Shuffle"
-                  >↺</button>
-                </div>
-                {focusItems.map(renderRow)}
-              </div>
-            );
-          })}
+          <div className="today-section-head">✦ Up next</div>
+          {upNext.map(renderRow)}
         </div>
       )}
 
-      {/* Today, grouped by domain */}
-      {domains.map((dom) => {
-        const items = todayItemsByDomain(dom.id);
-        if (items.length === 0 && !domainHasGoals(dom.id)) return null;
-        const collapsed = collapsedDomains.has(dom.id);
-        return (
-          <div className="today-section" key={dom.id}>
-            <button
-              className="today-domain-head"
-              onClick={() => toggleDomain(dom.id)}
-              aria-expanded={!collapsed}
-            >
-              {dom.name}
-              {items.length > 0 && (
-                <span className="today-count">{items.length}</span>
-              )}
-              <span className={`today-domain-chev${collapsed ? ' collapsed' : ''}`}>
-                <Chevron up={false} />
-              </span>
-            </button>
-            {!collapsed && (
-              items.length > 0
-                ? items.map(renderRow)
-                : (
-                  <div className="today-empty-domain">
-                    Nothing scheduled for {dom.name} today.
-                  </div>
-                )
-            )}
-          </div>
-        );
-      })}
+      {/* Everything else — one collapsed section, state persists */}
+      {moreCount > 0 && (
+        <div className="today-section">
+          <button className="today-done-toggle" onClick={() => setMoreOpen((v) => !v)}>
+            <Chevron up={moreOpen} />
+            More
+            <span className="today-count">{moreCount}</span>
+          </button>
+          {moreOpen && moreByDomain.map(({ domain: d, items }) => (
+            <div key={d.id} className="more-domain-group">
+              <div className="focus-domain-head" style={{ color: DOMAIN_COLORS[d.id] ?? 'var(--accent)' }}>
+                <span>{d.name}</span>
+              </div>
+              {items.map(renderRow)}
+            </div>
+          ))}
+        </div>
+      )}
 
       {!hasAnythingToday && doneItems.length === 0 && (
         <div className="today-allclear">Nothing on the list today.</div>
@@ -2894,6 +2876,62 @@ const THREAD_PALETTE = [
   '#e8883c', '#4eb8e8', '#72ce6a', '#c8a96a',
   '#a78be8', '#e87a8b', '#4ed8c8', '#e8d44e',
 ];
+
+/**
+ * Segmented progress ring for the Today header: each life area gets an arc
+ * proportional to its share of today's workload (balance), filled by how much
+ * of it is done (completion). Uses the same item set as the progress counter.
+ */
+function DayRing({
+  segments,
+  pct,
+}: {
+  segments: Array<{ color: string; label: string; done: number; total: number }>;
+  pct: number;
+}) {
+  const SIZE = 96, R = 40, CX = 48, CY = 48;
+  const C = 2 * Math.PI * R;
+  const live = segments.filter((s) => s.total > 0);
+  const totalItems = live.reduce((s, x) => s + x.total, 0);
+  const GAP = live.length > 1 ? 5 : 0;
+  const avail = C - GAP * live.length;
+  let acc = 0;
+  return (
+    <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`} className="day-ring" aria-label="Today's progress by life area">
+      <g transform={`rotate(-90 ${CX} ${CY})`}>
+        {totalItems === 0 && (
+          <circle cx={CX} cy={CY} r={R} fill="none" stroke="var(--line)" strokeWidth="7" />
+        )}
+        {live.map((s, i) => {
+          const len = avail * (s.total / totalItems);
+          const fill = len * (s.done / s.total);
+          const el = (
+            <g key={i}>
+              <circle
+                cx={CX} cy={CY} r={R} fill="none"
+                stroke={s.color} strokeOpacity="0.22" strokeWidth="7"
+                strokeDasharray={`${len} ${C - len}`} strokeDashoffset={-acc}
+              />
+              {fill > 0 && (
+                <circle
+                  cx={CX} cy={CY} r={R} fill="none"
+                  stroke={s.color} strokeWidth="7"
+                  strokeLinecap={fill < len ? 'round' : 'butt'}
+                  strokeDasharray={`${fill} ${C - fill}`} strokeDashoffset={-acc}
+                />
+              )}
+            </g>
+          );
+          acc += len + GAP;
+          return el;
+        })}
+      </g>
+      <text x={CX} y={CY + 1} textAnchor="middle" dominantBaseline="middle" className="day-ring-pct">
+        {pct}%
+      </text>
+    </svg>
+  );
+}
 
 
 function stGoalMetrics(sg: Goal, goals: Goal[], habits: Habit[], isFocus = false, graced = true): { time: number; completion: number; health: number; completionRate: number; recencyScore: number; momentum: number } {

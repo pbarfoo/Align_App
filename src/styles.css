@@ -2561,3 +2561,64 @@ h1 {
   flex-wrap: wrap;
 }
 .triage-delete { color: #e05c5c; border-color: #e05c5c40; }
+
+/* Day ring — completion & balance across life areas in one glance */
+.coach-progress--ring {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.day-ring { flex: none; }
+.day-ring-pct {
+  fill: var(--text, #ececec);
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.ring-side {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.ring-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 12px;
+}
+.ring-legend-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.ring-legend-row i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.week-value-chip {
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.03em;
+}
+
+/* Rows carry their life-area colour + the goal's health */
+.habit-row.domain-edged {
+  border-left: 3px solid var(--row-domain, var(--line));
+  padding-left: 10px;
+  border-radius: 2px;
+}
+.row-goal-health {
+  margin-left: 8px;
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.row-goal-health.r { color: #e05c5c; }
+.row-goal-health.y { color: #e8d44e; }
+.row-goal-health.g { color: #72ce6a; }
+
+.more-domain-group { margin-top: 10px; }
