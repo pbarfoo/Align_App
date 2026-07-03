@@ -286,7 +286,7 @@ function valueFingerprint(domains: Domain[]): string {
 
 
 function coachCacheKey(date: string, domains: Domain[]) {
-  return `gemini-coach-v25-${date}-${valueFingerprint(domains)}`;
+  return `gemini-coach-v26-${date}-${valueFingerprint(domains)}`;
 }
 
 function yesterdayCardTitle(domains: Domain[]): string | null {
@@ -294,7 +294,7 @@ function yesterdayCardTitle(domains: Domain[]): string | null {
   yesterday.setDate(yesterday.getDate() - 1);
   const yStr = toDateStr(yesterday);
   // Check recent key versions so we catch whatever ran yesterday
-  for (const v of ['v25', 'v24', 'v23', 'v22', 'v21', 'v20']) {
+  for (const v of ['v26', 'v25', 'v24', 'v23', 'v22', 'v21', 'v20']) {
     const raw = localStorage.getItem(`gemini-coach-${v}-${yStr}-${valueFingerprint(domains)}`);
     if (raw) {
       try { return (JSON.parse(raw) as CoachCard).title; } catch { /* skip */ }
@@ -357,7 +357,8 @@ export async function getGeminiCoachCard(
     return g.valueIndexes.filter((i) => i < dom.values.length).map((i) => dom.values[i]);
   });
 
-  // Values with low average reflection scores (below 3 on a 1–5 scale)
+  // Values with low average reflection scores. Scores are 0–3
+  // (Drifted/Some/Mostly/Aligned); below 1.5 means mostly drifting.
   const scoreAccum = new Map<string, number[]>();
   reflections.slice(-4).forEach((r) => {
     Object.entries(r.scores).forEach(([key, val]) => {
@@ -367,7 +368,7 @@ export async function getGeminiCoachCard(
   });
   const lowScoringValues = Array.from(scoreAccum.entries())
     .map(([key, vals]) => ({ name: key.slice(key.indexOf(':') + 1), avg: vals.reduce((a, b) => a + b, 0) / vals.length }))
-    .filter((v) => v.avg < 3)
+    .filter((v) => v.avg < 1.5)
     .sort((a, b) => a.avg - b.avg)
     .map((v) => v.name);
 
@@ -444,6 +445,7 @@ export async function getGeminiCoachCard(
 ${JSON.stringify(coachCtx)}
 
 Ground all feedback in this data. Reference specific goals by name and their health scores. Call out overdue tasks and habits whose completions_last_14d is far below expected. Goals with health 0 have no tasks/habits — suggest one concrete next action for each. Use recent_coach_ratings to calibrate tone: more 'down' ratings means be more concise and practical.
+Reflection scores in this data are stored 0–3 (0=Drifted, 1=Some, 2=Mostly, 3=Aligned) but the app NEVER shows that number to the user — it shows words or percentages. Never quote a raw reflection score. Say the label ("fully Aligned", "drifting") or convert to a percentage (0→0%, 1→33%, 2→67%, 3→100%). Goal health values ARE shown as-is (0–100), so those you may quote directly.
 `
     : '';
 
@@ -455,6 +457,7 @@ HARD RULES — violations mean the card is wrong:
 - NEVER open with day-of-week phrases like "It's Monday", "Fresh week", "Start your week", "New week", etc.
 - Do not invent topics. Only reference what's in the data.
 - Do not reinterpret values. "Service" = serving others. "Autonomy" = independence. Use them as-is.
+- Never say a raw reflection score like "score of 3" — the user never sees those numbers. Use the scale labels (Drifted / Some / Mostly / Aligned) or a percentage instead.
 ${rotateRule ? `- ${rotateRule}` : ''}
 ${focusDomainRule}
 
