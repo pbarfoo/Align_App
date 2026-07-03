@@ -286,7 +286,7 @@ function valueFingerprint(domains: Domain[]): string {
 
 
 function coachCacheKey(date: string, domains: Domain[]) {
-  return `gemini-coach-v26-${date}-${valueFingerprint(domains)}`;
+  return `gemini-coach-v27-${date}-${valueFingerprint(domains)}`;
 }
 
 function yesterdayCardTitle(domains: Domain[]): string | null {
@@ -294,7 +294,7 @@ function yesterdayCardTitle(domains: Domain[]): string | null {
   yesterday.setDate(yesterday.getDate() - 1);
   const yStr = toDateStr(yesterday);
   // Check recent key versions so we catch whatever ran yesterday
-  for (const v of ['v26', 'v25', 'v24', 'v23', 'v22', 'v21', 'v20']) {
+  for (const v of ['v27', 'v26', 'v25', 'v24', 'v23', 'v22', 'v21', 'v20']) {
     const raw = localStorage.getItem(`gemini-coach-${v}-${yStr}-${valueFingerprint(domains)}`);
     if (raw) {
       try { return (JSON.parse(raw) as CoachCard).title; } catch { /* skip */ }
@@ -309,6 +309,9 @@ export async function getGeminiCoachCard(
   habits: Habit[],
   reflections: ReflectionEntry[],
   userId?: string,
+  /** title → health 0–100 as shown on the goal cards; overrides the server
+   * view's numbers so the coach always quotes what the user actually sees. */
+  appGoalHealth?: Record<string, number>,
 ): Promise<CoachCard> {
 
   const today = toDateStr(new Date());
@@ -320,6 +323,20 @@ export async function getGeminiCoachCard(
   // Fetch server-computed grounding data before every generation; null → the
   // prompt below simply omits the grounding block (ungrounded fallback).
   const coachCtx = await getCoachContext();
+
+  // Unify health numbers: replace the view-computed goal_health scores with
+  // the app's own (matched by title), then re-sort worst-first, so the coach
+  // quotes exactly what the badges and dashboard show.
+  if (coachCtx && appGoalHealth && typeof coachCtx === 'object') {
+    const ctx = coachCtx as { goal_health?: Array<{ goal?: string; health?: number }> };
+    if (Array.isArray(ctx.goal_health)) {
+      ctx.goal_health = ctx.goal_health
+        .map((row) => (row.goal != null && appGoalHealth[row.goal] != null
+          ? { ...row, health: appGoalHealth[row.goal] }
+          : row))
+        .sort((a, b) => (a.health ?? 0) - (b.health ?? 0));
+    }
+  }
 
   const now = new Date();
   const dayName = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][now.getDay()];

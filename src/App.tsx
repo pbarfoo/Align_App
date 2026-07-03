@@ -438,6 +438,8 @@ export default function App() {
             reflections={reflections}
             staleTasks={staleTasks}
             onDeleteHabitFromDb={deleteHabitFromDb}
+            setGoals={setGoals}
+            onDeleteGoalFromDb={deleteGoalFromDb}
             onReflect={() => setReflectOpen(true)}
             userId={session?.user.id}
           />
@@ -832,35 +834,10 @@ function Align({
   const cls = (id: string, base = 'node') =>
     `${base}${litChain ? (litChain.has(id) ? ' lit' : ' dim') : ''}`;
 
-  // Health badge — same calculation (and focus rule) as the Goals Dashboard,
-  // so the badge on a card always matches the dashboard's Health bar. Live:
+  // Health badges — single shared calculation (computeGoalHealthMap) so the
+  // badge, the dashboard, and the coach all report the same number. Live:
   // recomputes as habits/tasks/goals change.
-  const focusIds = useMemo(() => {
-    const ids = new Set<string>();
-    (['long', 'short', 'ongoing'] as const).forEach((horizon) => {
-      const seen = new Set<string>();
-      goals.forEach((g) => {
-        if (g.horizon === horizon && !g.parentGoalId && !seen.has(g.domainId)) {
-          seen.add(g.domainId);
-          ids.add(g.id);
-        }
-      });
-    });
-    return ids;
-  }, [goals]);
-
-  const healthInfoFor = (g: Goal): GoalHealthInfo => {
-    const isFocus = focusIds.has(g.id);
-    const m = g.horizon === 'long'
-      ? vitalityFor(g, goals, habits, isFocus)
-      : g.horizon === 'ongoing'
-        ? ongoingGoalMetrics(g, goals, habits, isFocus)
-        : stGoalMetrics(g, goals, habits, isFocus);
-    const nItems =
-      habits.filter((h) => h.goalId === g.id).length +
-      goals.filter((x) => x.parentGoalId === g.id).length;
-    return { health: Math.round(m.health * 100), nItems };
-  };
+  const goalHealthMap = useMemo(() => computeGoalHealthMap(goals, habits), [goals, habits]);
 
   const addGoal = (
     valueIndexes: number[],
@@ -1065,7 +1042,7 @@ function Align({
               onToggleCollapse={hasChildren ? () => toggleCollapse(goal.id) : undefined}
               isFocus={isFocus}
               showDragHandle
-              health={healthInfoFor(goal)}
+              health={goalHealthMap[goal.id]}
             />
             {!collapsedGoals.has(goal.id) && habits
               .filter((h) => {
@@ -1151,7 +1128,7 @@ function Align({
                   goal={sg}
                   displayValues={[]}
                   habits={habits}
-                  health={healthInfoFor(sg)}
+                  health={goalHealthMap[sg.id]}
                   cls={cls}
                   lit={lit}
                   setLit={setLit}
@@ -1909,6 +1886,8 @@ function Today({
   reflections,
   staleTasks,
   onDeleteHabitFromDb,
+  setGoals,
+  onDeleteGoalFromDb,
   onReflect,
   userId,
 }: {
@@ -1919,6 +1898,8 @@ function Today({
   reflections: ReflectionEntry[];
   staleTasks: StaleTask[];
   onDeleteHabitFromDb: (id: string) => void;
+  setGoals: React.Dispatch<React.SetStateAction<Goal[]>>;
+  onDeleteGoalFromDb: (ids: string[]) => void;
   onReflect: () => void;
   userId?: string;
 }) {
@@ -1940,7 +1921,13 @@ function Today({
     if (!goals.length && !habits.length) return;
     setCoachLoading(true);
     setCoachFailed(false);
-    getGeminiCoachCard(domains, goals, habits, reflections, userId)
+    // Feed the coach the SAME health numbers the user sees on their goal
+    // cards (title-keyed; overrides the server view's figures).
+    const healthMap = computeGoalHealthMap(goals, habits);
+    const appGoalHealth = Object.fromEntries(
+      goals.filter((g) => !g.completedAt).map((g) => [g.title, healthMap[g.id]?.health ?? 0]),
+    );
+    getGeminiCoachCard(domains, goals, habits, reflections, userId, appGoalHealth)
       .then(async (card) => {
         setCoachCard(card);
         const rating = await getTodayCoachRating(today, card.title, userId);
@@ -2071,6 +2058,40 @@ function Today({
   const deleteTask = (id: string) => {
     setHabits((prev) => prev.filter((h) => h.id !== id));
     onDeleteHabitFromDb(id);
+  };
+
+  // Expired goals: deadline passed, still open — they need a decision too.
+  const goalDeadline = (g: Goal): number | null => {
+    if (g.horizon === 'ongoing') return null;
+    const t = new Date(g.createdAt || Date.now());
+    if (g.horizon === 'long') t.setFullYear(t.getFullYear() + (g.timeframe || 1));
+    else t.setMonth(t.getMonth() + (g.timeframe || 1));
+    return t.getTime();
+  };
+  const expiredGoals = goals.filter((g) => {
+    if (g.completedAt) return false;
+    const d = goalDeadline(g);
+    return d !== null && d < Date.now();
+  });
+
+  const completeGoal = (id: string) =>
+    setGoals((prev) => prev.map((g) => (g.id === id ? { ...g, completedAt: Date.now() } : g)));
+
+  // Extend by one unit of the goal's horizon (1 mo for short, 1 yr for long).
+  const extendGoal = (id: string) =>
+    setGoals((prev) => prev.map((g) =>
+      g.id === id ? { ...g, timeframe: (g.timeframe || 1) + 1 } : g
+    ));
+
+  // Same cascade as Align's deleteGoal: goal + sub-goals + their habits.
+  const deleteGoalCascade = (id: string) => {
+    const remove = new Set<string>([id]);
+    goals.forEach((g) => {
+      if (g.parentGoalId && remove.has(g.parentGoalId)) remove.add(g.id);
+    });
+    setGoals((prev) => prev.filter((g) => !remove.has(g.id)));
+    setHabits((ph) => ph.filter((h) => !remove.has(h.goalId)));
+    onDeleteGoalFromDb([...remove]);
   };
 
   // Mirrors Align's addAction — used by the "Break down" flow to add smaller
@@ -2282,12 +2303,14 @@ function Today({
         )}
       </div>
 
-      {/* Overdue-task triage — reschedule, break down, or delete. No snooze. */}
-      {triageRows.length > 0 && (
+      {/* Triage — overdue tasks and expired goals. No snooze, decisions only. */}
+      {(triageRows.length > 0 || expiredGoals.length > 0) && (
         <div className="today-section triage">
           <div className="today-section-head triage-head">⚑ Needs action</div>
           <p className="triage-sub">
-            These tasks slipped past their due date. Pick one: check it off, reschedule, break it down, or let it go.
+            {triageRows.length > 0
+              ? 'These tasks slipped past their due date. Pick one: check it off, reschedule, break it down, or let it go.'
+              : 'These goals reached the end of their time window. Complete, extend, or let go.'}
           </p>
           {triageRows.map(({ st, task }) => (
             <React.Fragment key={st.id}>
@@ -2340,6 +2363,40 @@ function Today({
               )}
             </React.Fragment>
           ))}
+          {expiredGoals.map((g) => {
+            const deadline = goalDeadline(g)!;
+            const daysOver = Math.max(1, Math.floor((Date.now() - deadline) / 86_400_000));
+            return (
+              <div className="habit-row triage-row" key={g.id}>
+                <button
+                  className="check"
+                  onClick={() => completeGoal(g.id)}
+                  aria-label="Mark goal complete"
+                  title="Done — mark the goal complete"
+                >
+                  <Tick />
+                </button>
+                <div style={{ flex: 1 }}>
+                  <div className="habit-title">{g.title}</div>
+                  <div className="habit-meta">
+                    <b>Goal · {g.horizon === 'long' ? `${g.timeframe} yr` : g.timeframe === 12 ? '1 yr' : `${g.timeframe} mo`}</b>
+                    &nbsp;·&nbsp;
+                    <span className="triage-overdue">
+                      window ended {daysOver} day{daysOver === 1 ? '' : 's'} ago
+                    </span>
+                  </div>
+                  <div className="triage-actions">
+                    <button className="mini-ghost" onClick={() => extendGoal(g.id)}>
+                      Extend +{g.horizon === 'long' ? '1 yr' : '1 mo'}
+                    </button>
+                    <button className="mini-ghost triage-delete" onClick={() => deleteGoalCascade(g.id)}>
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -2593,29 +2650,26 @@ function valueAlignmentScore(
   const tagged = goals.filter(
     (g) => g.domainId === domainId && vi >= 0 && g.valueIndexes.includes(vi),
   );
-  // Sub-goals of tagged long-term goals (inherit the value)
-  const taggedLtIds = new Set(tagged.filter((g) => g.horizon === 'long').map((g) => g.id));
+  // Sub-goals inherit the value from ANY tagged parent (long, short, ongoing)
+  const taggedParentIds = new Set(tagged.map((g) => g.id));
   const inherited = goals.filter(
-    (g) => g.horizon === 'short' && g.parentGoalId && taggedLtIds.has(g.parentGoalId)
+    (g) => g.parentGoalId && taggedParentIds.has(g.parentGoalId)
       && !tagged.some((t) => t.id === g.id),
   );
   const allTagged = [...tagged, ...inherited];
-  const taggedIds = new Set(allTagged.map((g) => g.id));
 
-  // Activity score (0–1): average health across tagged goals + their habits
+  // Activity score (0–1): average EARNED health across tagged goals (graced=
+  // false so creating an empty goal can't inflate alignment). Goal health
+  // already folds in habit consistency, so habits are not counted a second
+  // time here.
   let actSum = 0, actCount = 0;
   for (const g of allTagged) {
     const h = g.horizon === 'long'
-      ? vitalityFor(g, goals, habits).health
+      ? vitalityFor(g, goals, habits, false, false).health
       : g.horizon === 'ongoing'
-        ? ongoingGoalMetrics(g, goals, habits).health
-        : stGoalMetrics(g, goals, habits).health;
+        ? ongoingGoalMetrics(g, goals, habits, false, false).health
+        : stGoalMetrics(g, goals, habits, false, false).health;
     actSum += h; actCount++;
-  }
-  for (const h of habits.filter((h) => h.goalId && taggedIds.has(h.goalId))) {
-    const streak = h.streak ?? 0;
-    const recent = isHabitDoneThisPeriod(h) ? 1 : Math.max(0, 1 - streak / 14);
-    actSum += Math.min(1, recent); actCount++;
   }
   const activityComponent = actCount > 0 ? actSum / actCount : null;
 
@@ -2655,6 +2709,7 @@ function valueAlignmentScore(
 function computeHealth(
   subGoals: Goal[],
   treeHabits: Habit[],
+  allHabits: Habit[],
   now: number,
   timeElapsed: number,
   isFocus = false,
@@ -2675,7 +2730,11 @@ function computeHealth(
   let pace = 0;
   if (totalWeight > 0) {
     const taskDone    = tasks.filter((h) => !!h.completed).length;
-    const subDone     = subGoals.filter((g) => !!g.completedAt).length * SUB_W;
+    // Sub-goals credit fractionally: a finished sub-goal counts in full, an
+    // in-progress one contributes its own done-ratio — child work is never
+    // invisible to the parent until the checkbox.
+    const subDone     = subGoals.reduce((s, g) =>
+      s + (g.completedAt ? 1 : computeDone([], allHabits.filter((h) => h.goalId === g.id), allHabits, now)), 0) * SUB_W;
     const habitDoneW  = habits
       .filter((h) => (h.completions ?? []).some((d) => d >= lookback))
       .reduce((s, h) => s + habitW(h), 0);
@@ -2716,9 +2775,11 @@ function computeHealth(
  * Ongoing (no-deadline) goals measure UPKEEP, not progress toward a finish,
  * so pace is meaningless. Dedicated formula:
  *   with habits:  0.6 × habit_consistency + 0.2 × recent_activity + 0.2 × structure
- *   tasks only:   0.6 × recent_activity + 0.4 × structure
+ *   tasks only:   0.6 × task_activity + 0.4 × structure
  *   nothing yet:  0
  * recent_activity = any habit completion or task finished in the last 7 days;
+ * task_activity = tasks finished in the last 28 days / 4 (≈ one a week = full
+ *   marks) — a ratio, not a boolean, so tasks-only goals don't whipsaw weekly;
  * habit_consistency = 28-day cadence fidelity (streak-weighted), as elsewhere;
  * structure = items/5 capped at 1, same engagement signal as deadline goals.
  */
@@ -2747,9 +2808,14 @@ function computeOngoingHealth(subGoals: Goal[], treeHabits: Habit[], isFocus = f
   });
   const consistency = totalW > 0 ? scoreW / totalW : 0;
 
+  const doneLast28 = tasks.filter(
+    (t) => t.completed && t.completedAt && now - t.completedAt <= 28 * 86_400_000,
+  ).length;
+  const taskActivity = Math.min(1, doneLast28 / 4); // ≈ one task/week = full marks
+
   const base = habits.length > 0
     ? 0.6 * consistency + 0.2 * (active7d ? 1 : 0) + 0.2 * engagement
-    : 0.6 * (active7d ? 1 : 0) + 0.4 * engagement;
+    : 0.6 * taskActivity + 0.4 * engagement;
 
   // Same ±10% focus adjustment as deadline goals: raises the bar when
   // neglected, rewards when delivering.
@@ -2763,7 +2829,7 @@ function computeOngoingHealth(subGoals: Goal[], treeHabits: Habit[], isFocus = f
  * Habits: done at least once in the last 28 days — weight 1 each.
  * Tasks: completed (h.completed true) — weight 1 each.
  */
-function computeDone(subGoals: Goal[], treeHabits: Habit[], now: number): number {
+function computeDone(subGoals: Goal[], treeHabits: Habit[], allHabits: Habit[], now: number): number {
   const SUB_W = 5;
   const habitW = (h: Habit) => Math.min(1 + (h.streak || 0) * 0.2, 4.0);
   const lookbackDate = toDateStr(new Date(now - 28 * 86_400_000));
@@ -2772,7 +2838,8 @@ function computeDone(subGoals: Goal[], treeHabits: Habit[], now: number): number
   const total  = subGoals.length * SUB_W + tasks.length + habits.reduce((s, h) => s + habitW(h), 0);
   if (total === 0) return 0;
   const done =
-    subGoals.filter((g) => !!g.completedAt).length * SUB_W +
+    subGoals.reduce((s, g) =>
+      s + (g.completedAt ? 1 : computeDone([], allHabits.filter((h) => h.goalId === g.id), allHabits, now)), 0) * SUB_W +
     tasks.filter((h) => !!h.completed).length +
     habits.filter((h) => (h.completions ?? []).some((d) => d >= lookbackDate)).reduce((s, h) => s + habitW(h), 0);
   return done / total;
@@ -2798,6 +2865,7 @@ function vitalityFor(
   goals: Goal[],
   habits: Habit[],
   isFocus = false,
+  graced = true, // pass false for signals (e.g. value alignment) that must not be inflated by the new-goal grace
 ): { time: number; completion: number; health: number; completionRate: number; recencyScore: number; momentum: number } {
   const now     = Date.now();
   const totalMs = (lg.timeframe || 1) * 365.25 * 86_400_000;
@@ -2807,8 +2875,9 @@ function vitalityFor(
   const subtree       = new Set<string>([lg.id, ...subGoals.map((g) => g.id)]);
   const subtreeHabits = habits.filter((h) => subtree.has(h.goalId));
 
-  const completion     = computeDone(subGoals, subtreeHabits, now);
-  const health         = applyNewGoalGrace(computeHealth(subGoals, subtreeHabits, now, elapsed, isFocus), lg.createdAt);
+  const completion     = computeDone(subGoals, subtreeHabits, habits, now);
+  const earned         = computeHealth(subGoals, subtreeHabits, habits, now, elapsed, isFocus);
+  const health         = graced ? applyNewGoalGrace(earned, lg.createdAt) : earned;
   const completionRate = completion;
   const recencyScore   = health;
   const momentum       = (completion + health) / 2;
@@ -2827,7 +2896,7 @@ const THREAD_PALETTE = [
 ];
 
 
-function stGoalMetrics(sg: Goal, goals: Goal[], habits: Habit[], isFocus = false): { time: number; completion: number; health: number; completionRate: number; recencyScore: number; momentum: number } {
+function stGoalMetrics(sg: Goal, goals: Goal[], habits: Habit[], isFocus = false, graced = true): { time: number; completion: number; health: number; completionRate: number; recencyScore: number; momentum: number } {
   const now     = Date.now();
   const totalMs = (sg.timeframe || 1) * 30.44 * 86_400_000;
   const elapsed = Math.min(1, Math.max(0, (now - sg.createdAt) / totalMs));
@@ -2836,8 +2905,9 @@ function stGoalMetrics(sg: Goal, goals: Goal[], habits: Habit[], isFocus = false
   const subtree   = new Set<string>([sg.id, ...subGoals.map((g) => g.id)]);
   const sgHabits  = habits.filter((h) => subtree.has(h.goalId));
 
-  const completion     = computeDone(subGoals, sgHabits, now);
-  const health         = applyNewGoalGrace(computeHealth(subGoals, sgHabits, now, elapsed, isFocus), sg.createdAt);
+  const completion     = computeDone(subGoals, sgHabits, habits, now);
+  const earned         = computeHealth(subGoals, sgHabits, habits, now, elapsed, isFocus);
+  const health         = graced ? applyNewGoalGrace(earned, sg.createdAt) : earned;
   const completionRate = completion;
   const recencyScore   = health;
   const momentum       = (completion + health) / 2;
@@ -2845,18 +2915,52 @@ function stGoalMetrics(sg: Goal, goals: Goal[], habits: Habit[], isFocus = false
 }
 
 
-function ongoingGoalMetrics(og: Goal, goals: Goal[], habits: Habit[], isFocus = false): { time: number; completion: number; health: number; completionRate: number; recencyScore: number; momentum: number } {
+function ongoingGoalMetrics(og: Goal, goals: Goal[], habits: Habit[], isFocus = false, graced = true): { time: number; completion: number; health: number; completionRate: number; recencyScore: number; momentum: number } {
   const now    = Date.now();
   const subGoals = goals.filter((g) => g.parentGoalId === og.id);
   const subtree  = new Set<string>([og.id, ...subGoals.map((g) => g.id)]);
   const ogHabits = habits.filter((h) => subtree.has(h.goalId));
 
-  const completion     = computeDone(subGoals, ogHabits, now);
-  const health         = applyNewGoalGrace(computeOngoingHealth(subGoals, ogHabits, isFocus), og.createdAt);
+  const completion     = computeDone(subGoals, ogHabits, habits, now);
+  const earned         = computeOngoingHealth(subGoals, ogHabits, isFocus);
+  const health         = graced ? applyNewGoalGrace(earned, og.createdAt) : earned;
   const completionRate = completion;
   const recencyScore   = health;
   const momentum       = health;
   return { time: 0, completion, health, completionRate, recencyScore, momentum };
+}
+
+/**
+ * Health for every goal, keyed by id — the single source behind the Align
+ * badges AND the numbers fed to the coach, so every surface agrees. Applies
+ * the dashboard's first-top-level-goal-per-domain focus rule and the
+ * new-goal grace.
+ */
+function computeGoalHealthMap(goals: Goal[], habits: Habit[]): Record<string, GoalHealthInfo> {
+  const focusIds = new Set<string>();
+  (['long', 'short', 'ongoing'] as const).forEach((horizon) => {
+    const seen = new Set<string>();
+    goals.forEach((g) => {
+      if (g.horizon === horizon && !g.parentGoalId && !seen.has(g.domainId)) {
+        seen.add(g.domainId);
+        focusIds.add(g.id);
+      }
+    });
+  });
+  const map: Record<string, GoalHealthInfo> = {};
+  goals.forEach((g) => {
+    const isFocus = focusIds.has(g.id);
+    const m = g.horizon === 'long'
+      ? vitalityFor(g, goals, habits, isFocus)
+      : g.horizon === 'ongoing'
+        ? ongoingGoalMetrics(g, goals, habits, isFocus)
+        : stGoalMetrics(g, goals, habits, isFocus);
+    const nItems =
+      habits.filter((h) => h.goalId === g.id).length +
+      goals.filter((x) => x.parentGoalId === g.id).length;
+    map[g.id] = { health: Math.round(m.health * 100), nItems };
+  });
+  return map;
 }
 
 
