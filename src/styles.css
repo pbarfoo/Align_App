@@ -2539,9 +2539,25 @@ h1 {
 .goal-health--red    { color: #e05c5c; border-color: #e05c5c40; }
 .goal-health--yellow { color: #e8d44e; border-color: #e8d44e40; }
 .goal-health--green  { color: #72ce6a; border-color: #72ce6a40; }
-.goal-health--empty  {
-  color: var(--muted);
-  border-color: var(--line);
-  font-style: italic;
-  white-space: normal;
+
+/* Overdue-task triage — "Needs a decision" */
+.today-section.triage {
+  border: 1px solid #e05c5c33;
+  border-radius: 12px;
+  padding: 12px 14px;
 }
+.triage-head { color: #e05c5c; }
+.triage-sub {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 4px 0 10px;
+}
+.triage-overdue { color: #e05c5c; }
+.triage-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.triage-delete { color: #e05c5c; border-color: #e05c5c40; }

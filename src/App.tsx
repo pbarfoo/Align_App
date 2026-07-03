@@ -53,6 +53,15 @@ interface GoalHealthInfo {
   nItems: number;   // direct habits/tasks + sub-goals attached to the goal
 }
 
+/** Row from the stale_tasks view (RLS-safe, sorted worst-first). */
+interface StaleTask {
+  id: string;
+  title: string;
+  dueDate: string;      // YYYY-MM-DD
+  goalTitle: string;
+  daysOverdue: number;
+}
+
 function domainToRow(d: Domain, userId: string): Row {
   return { id: d.id, user_id: userId, name: d.name, blurb: d.blurb, values: d.values, vision: d.vision };
 }
@@ -233,6 +242,9 @@ export default function App() {
   const [habits, setHabits] = useState<Habit[]>([]);
   const [reflectOpen, setReflectOpen] = useState(false);
   const [reflections, setReflections] = useState<ReflectionEntry[]>([]);
+  // Overdue tasks needing triage (stale_tasks view, worst-first). Snapshot
+  // from load; rows drop out client-side once the user acts on them.
+  const [staleTasks, setStaleTasks] = useState<StaleTask[]>([]);
 
   // True while applying data freshly loaded from the DB, so the sync effects
   // don't immediately re-upsert it (which could overwrite newer data written
@@ -255,7 +267,8 @@ export default function App() {
       supabase.from('goals').select('*').eq('user_id', userId),
       supabase.from('habits').select('*').eq('user_id', userId),
       supabase.from('reflections').select('*').eq('user_id', userId).order('date'),
-    ]).then(([d, g, h, r]) => {
+      supabase.from('stale_tasks').select('*'),
+    ]).then(([d, g, h, r, st]) => {
       const dbError = d.error || g.error || h.error || r.error;
       if (dbError) {
         console.error('Supabase load error:', dbError.message);
@@ -299,6 +312,19 @@ export default function App() {
           if (!cur || e.date > cur.date) byKey.set(k, e);
         }
         setReflections([...byKey.values()]);
+      }
+
+      // Triage list is additive — a view error must never block the app.
+      if (st.error) {
+        console.warn('stale_tasks load:', st.error.message);
+      } else if (st.data) {
+        setStaleTasks(st.data.map((row: Row) => ({
+          id: row.id,
+          title: row.title,
+          dueDate: row.due_date,
+          goalTitle: row.goal_title ?? '',
+          daysOverdue: Number(row.days_overdue ?? 0),
+        })));
       }
 
       // Mark this account as seeded so we never reseed/overwrite again.
@@ -410,6 +436,8 @@ export default function App() {
             goals={goals}
             domains={domains}
             reflections={reflections}
+            staleTasks={staleTasks}
+            onDeleteHabitFromDb={deleteHabitFromDb}
             onReflect={() => setReflectOpen(true)}
             userId={session?.user.id}
           />
@@ -1381,14 +1409,16 @@ function AddActionForm({
   onSave,
   onClose,
   initial,
+  defaultKind,
 }: {
   goalId: string;
   onAdd?: (goalId: string, title: string, kind: ActionKind, input: ActionInput) => void;
   onSave?: (updates: Partial<Habit>) => void;
   onClose: () => void;
   initial?: Habit;
+  defaultKind?: ActionKind;
 }) {
-  const [kind, setKind] = useState<ActionKind>(initial?.kind ?? 'habit');
+  const [kind, setKind] = useState<ActionKind>(initial?.kind ?? defaultKind ?? 'habit');
   const [title, setTitle] = useState(initial?.title ?? '');
   const [recurrence, setRecurrence] = useState<Recurrence>(initial?.recurrence ?? 'daily');
   const [customInterval, setCustomInterval] = useState(String(initial?.customInterval ?? 1));
@@ -1796,22 +1826,16 @@ function GoalNode({
           )}
           <span className="goal-date">{getGoalCountdown(goal)}</span>
           {health && !isComplete && (
-            health.health === 0 && health.nItems === 0 ? (
-              <span className="goal-health goal-health--empty">
-                No tasks or habits yet — add one
-              </span>
-            ) : (
-              <span
-                className={`goal-health ${
-                  health.health <= 33 ? 'goal-health--red'
-                  : health.health <= 66 ? 'goal-health--yellow'
-                  : 'goal-health--green'
-                }`}
-                title="Goal health (0–100)"
-              >
-                ♥ {health.health}
-              </span>
-            )
+            <span
+              className={`goal-health ${
+                health.health <= 33 ? 'goal-health--red'
+                : health.health <= 66 ? 'goal-health--yellow'
+                : 'goal-health--green'
+              }`}
+              title={health.nItems === 0 ? 'No tasks or habits yet — add one to build health' : 'Goal health (0–100)'}
+            >
+              ♥ {health.health}
+            </span>
           )}
         </div>
         {editValuesActive && domainValues && (
@@ -1883,6 +1907,8 @@ function Today({
   goals,
   domains,
   reflections,
+  staleTasks,
+  onDeleteHabitFromDb,
   onReflect,
   userId,
 }: {
@@ -1891,6 +1917,8 @@ function Today({
   goals: Goal[];
   domains: Domain[];
   reflections: ReflectionEntry[];
+  staleTasks: StaleTask[];
+  onDeleteHabitFromDb: (id: string) => void;
   onReflect: () => void;
   userId?: string;
 }) {
@@ -2021,6 +2049,52 @@ function Today({
       return parent ? `${parent.title} → ${g.title}` : g.title;
     }
     return g.title;
+  };
+
+  // --- Overdue-task triage ("Needs a decision") ---
+  // Pair each stale_tasks row with its live habits entry; a row drops out the
+  // moment the user decides: rescheduled (due date changed), deleted (gone),
+  // or otherwise resolved (completed). No snooze — decisions only.
+  const [breakdownFor, setBreakdownFor] = useState<string | null>(null);
+  const triageRows = staleTasks.flatMap((st) => {
+    const task = habits.find((h) => h.id === st.id);
+    if (!task || task.kind !== 'task' || task.completed) return [];
+    if (task.dueDate !== st.dueDate) return []; // rescheduled — decision made
+    return [{ st, task }];
+  });
+
+  const rescheduleTask = (id: string, newDate: string) => {
+    if (!newDate) return;
+    setHabits((prev) => prev.map((h) => (h.id === id ? { ...h, dueDate: newDate } : h)));
+  };
+
+  const deleteTask = (id: string) => {
+    setHabits((prev) => prev.filter((h) => h.id !== id));
+    onDeleteHabitFromDb(id);
+  };
+
+  // Mirrors Align's addAction — used by the "Break down" flow to add smaller
+  // tasks/habits onto the same goal as the stale task.
+  const addAction = (goalId: string, title: string, kind: ActionKind, input: ActionInput) => {
+    setHabits((prev) => [...prev, {
+      id: uid('h'),
+      goalId,
+      title,
+      kind,
+      doneToday: false,
+      ...(kind === 'habit'
+        ? {
+            startDate: input.startDate || toDateStr(new Date()),
+            recurrence: input.recurrence ?? 'daily',
+            customInterval: input.customInterval ?? 1,
+            customUnit: input.customUnit ?? 'weeks',
+            specificDays: input.specificDays ?? undefined,
+          }
+        : {
+            dueDate: input.dueDate || undefined,
+            dueTime: input.dueTime || undefined,
+          }),
+    }]);
   };
 
 
@@ -2207,6 +2281,59 @@ function Today({
           </>
         )}
       </div>
+
+      {/* Overdue-task triage — reschedule, break down, or delete. No snooze. */}
+      {triageRows.length > 0 && (
+        <div className="today-section triage">
+          <div className="today-section-head triage-head">⚑ Needs a decision</div>
+          <p className="triage-sub">
+            These tasks slipped past their due date. Pick one: reschedule, break it down, or let it go.
+          </p>
+          {triageRows.map(({ st, task }) => (
+            <React.Fragment key={st.id}>
+              <div className="habit-row triage-row">
+                <div style={{ flex: 1 }}>
+                  <div className="habit-title">
+                    <span className="kind-icon task" title="One-off task"><TaskArrow /></span>
+                    {st.title}
+                  </div>
+                  <div className="habit-meta">
+                    <b>{st.goalTitle || lineage(task.goalId)}</b>
+                    &nbsp;·&nbsp;
+                    <span className="triage-overdue">
+                      {st.daysOverdue} day{st.daysOverdue === 1 ? '' : 's'} overdue
+                    </span>
+                  </div>
+                  <div className="triage-actions">
+                    <DateBtn
+                      value={task.dueDate ?? ''}
+                      onChange={(v) => rescheduleTask(st.id, v)}
+                      placeholder="Reschedule"
+                    />
+                    <button
+                      className="mini-ghost"
+                      onClick={() => setBreakdownFor(breakdownFor === st.id ? null : st.id)}
+                    >
+                      {breakdownFor === st.id ? 'Cancel' : 'Break down'}
+                    </button>
+                    <button className="mini-ghost triage-delete" onClick={() => deleteTask(st.id)}>
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </div>
+              {breakdownFor === st.id && (
+                <AddActionForm
+                  goalId={task.goalId}
+                  defaultKind="task"
+                  onAdd={(goalId, title, kind, input) => { addAction(goalId, title, kind, input); setBreakdownFor(null); }}
+                  onClose={() => setBreakdownFor(null)}
+                />
+              )}
+            </React.Fragment>
+          ))}
+        </div>
+      )}
 
       {/* Today's focus — top 3 per domain */}
       {domains.some((d) => getFocusForDomain(d.id).length > 0) && (
