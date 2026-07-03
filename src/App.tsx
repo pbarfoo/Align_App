@@ -47,10 +47,10 @@ const TAB_KEY = 'align-tab-v1';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = Record<string, any>;
 
-/** Row from the goal_health view — server-computed, RLS-safe. */
+/** Health badge data for a goal card — same calculation as the dashboard. */
 interface GoalHealthInfo {
   health: number;   // 0–100
-  nItems: number;   // tasks + habits attached to the goal
+  nItems: number;   // direct habits/tasks + sub-goals attached to the goal
 }
 
 function domainToRow(d: Domain, userId: string): Row {
@@ -233,9 +233,6 @@ export default function App() {
   const [habits, setHabits] = useState<Habit[]>([]);
   const [reflectOpen, setReflectOpen] = useState(false);
   const [reflections, setReflections] = useState<ReflectionEntry[]>([]);
-  // Server-computed health per goal (goal_health view is the source of truth;
-  // never recomputed client-side). Keyed by goal id; completed goals absent.
-  const [goalHealth, setGoalHealth] = useState<Record<string, GoalHealthInfo>>({});
 
   // True while applying data freshly loaded from the DB, so the sync effects
   // don't immediately re-upsert it (which could overwrite newer data written
@@ -258,8 +255,7 @@ export default function App() {
       supabase.from('goals').select('*').eq('user_id', userId),
       supabase.from('habits').select('*').eq('user_id', userId),
       supabase.from('reflections').select('*').eq('user_id', userId).order('date'),
-      supabase.from('goal_health').select('*'),
-    ]).then(([d, g, h, r, gh]) => {
+    ]).then(([d, g, h, r]) => {
       const dbError = d.error || g.error || h.error || r.error;
       if (dbError) {
         console.error('Supabase load error:', dbError.message);
@@ -303,16 +299,6 @@ export default function App() {
           if (!cur || e.date > cur.date) byKey.set(k, e);
         }
         setReflections([...byKey.values()]);
-      }
-
-      // Health badges are additive — a view error must never block the app.
-      if (gh.error) {
-        console.warn('goal_health load:', gh.error.message);
-      } else if (gh.data) {
-        setGoalHealth(Object.fromEntries(gh.data.map((row: Row) => [
-          row.goal_id,
-          { health: Number(row.health ?? 0), nItems: Number(row.n_items ?? 0) },
-        ])));
       }
 
       // Mark this account as seeded so we never reseed/overwrite again.
@@ -412,7 +398,6 @@ export default function App() {
             setGoals={setGoals}
             habits={habits}
             setHabits={setHabits}
-            goalHealth={goalHealth}
             flash={flash}
             onDeleteGoalFromDb={deleteGoalFromDb}
             onDeleteHabitFromDb={deleteHabitFromDb}
@@ -736,7 +721,6 @@ function Align({
   setGoals,
   habits,
   setHabits,
-  goalHealth,
   flash,
   onDeleteGoalFromDb,
   onDeleteHabitFromDb,
@@ -746,7 +730,6 @@ function Align({
   setGoals: React.Dispatch<React.SetStateAction<Goal[]>>;
   habits: Habit[];
   setHabits: React.Dispatch<React.SetStateAction<Habit[]>>;
-  goalHealth: Record<string, GoalHealthInfo>;
   flash: (m: string) => void;
   onDeleteGoalFromDb: (ids: string[]) => void;
   onDeleteHabitFromDb: (id: string) => void;
@@ -820,6 +803,36 @@ function Align({
 
   const cls = (id: string, base = 'node') =>
     `${base}${litChain ? (litChain.has(id) ? ' lit' : ' dim') : ''}`;
+
+  // Health badge — same calculation (and focus rule) as the Goals Dashboard,
+  // so the badge on a card always matches the dashboard's Health bar. Live:
+  // recomputes as habits/tasks/goals change.
+  const focusIds = useMemo(() => {
+    const ids = new Set<string>();
+    (['long', 'short', 'ongoing'] as const).forEach((horizon) => {
+      const seen = new Set<string>();
+      goals.forEach((g) => {
+        if (g.horizon === horizon && !g.parentGoalId && !seen.has(g.domainId)) {
+          seen.add(g.domainId);
+          ids.add(g.id);
+        }
+      });
+    });
+    return ids;
+  }, [goals]);
+
+  const healthInfoFor = (g: Goal): GoalHealthInfo => {
+    const isFocus = focusIds.has(g.id);
+    const m = g.horizon === 'long'
+      ? vitalityFor(g, goals, habits, isFocus)
+      : g.horizon === 'ongoing'
+        ? ongoingGoalMetrics(g, goals, habits, isFocus)
+        : stGoalMetrics(g, goals, habits, isFocus);
+    const nItems =
+      habits.filter((h) => h.goalId === g.id).length +
+      goals.filter((x) => x.parentGoalId === g.id).length;
+    return { health: Math.round(m.health * 100), nItems };
+  };
 
   const addGoal = (
     valueIndexes: number[],
@@ -1024,7 +1037,7 @@ function Align({
               onToggleCollapse={hasChildren ? () => toggleCollapse(goal.id) : undefined}
               isFocus={isFocus}
               showDragHandle
-              health={goalHealth[goal.id]}
+              health={healthInfoFor(goal)}
             />
             {!collapsedGoals.has(goal.id) && habits
               .filter((h) => {
@@ -1110,7 +1123,7 @@ function Align({
                   goal={sg}
                   displayValues={[]}
                   habits={habits}
-                  health={goalHealth[sg.id]}
+                  health={healthInfoFor(sg)}
                   cls={cls}
                   lit={lit}
                   setLit={setLit}
