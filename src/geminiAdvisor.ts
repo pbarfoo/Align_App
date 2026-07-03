@@ -85,7 +85,7 @@ async function getCoachContext(): Promise<unknown | null> {
 }
 
 function cacheKey(date: string) {
-  return `gemini-focus-v4-${date}`;
+  return `gemini-focus-v5-${date}`;
 }
 
 /**
@@ -153,6 +153,9 @@ export async function getGeminiFocusPicks(
   goals: Goal[],
   habits: Habit[],
   actionableIds: string[],
+  /** App-computed scores so picks are grounded in what the user sees:
+   * goal title → health 0–100, and "Domain/Value" → alignment 0–100. */
+  extras?: { appGoalHealth?: Record<string, number>; valueAlignment?: Record<string, number> },
   bust = false,
 ): Promise<FocusPick[]> {
 
@@ -214,6 +217,17 @@ export async function getGeminiFocusPicks(
         return `- ${g.id} | "${g.title}" | ${g.horizon} | ${g.timeframe}${g.horizon === 'long' ? 'yr' : 'mo'} | [${vals}]${focus}`;
       }),
     '',
+    ...(extras?.appGoalHealth ? [
+      '',
+      '## Goal health (0–100, exactly what the user sees; LOW = needs rescue)',
+      ...Object.entries(extras.appGoalHealth).map(([t, h]) => `- "${t}": ${h}`),
+    ] : []),
+    ...(extras?.valueAlignment ? [
+      '',
+      '## Value alignment (0–100; LOW = this value is being neglected lately)',
+      ...Object.entries(extras.valueAlignment).map(([v, s]) => `- ${v}: ${s}`),
+    ] : []),
+    '',
     '## Actionable items today (id | kind | title | goal | recurrence/due | streak | days since last done)',
     ...actionable.map((h) => {
       const g = goalMap.get(h.goalId);
@@ -237,6 +251,7 @@ Selection criteria (weigh all of these):
 5. Short-term goals are the active push; long-term goal items need periodic attention to avoid neglect.
 6. Focus: if any goal is marked "IN FOCUS", strongly favor items tied to that goal — the user has declared it their top commitment right now.
 7. Neglected value: items that serve the most neglected value (listed above) should be favoured to rebalance attention.
+8. Rescue: prefer items that lift LOW goal-health scores and LOW value-alignment scores — that is the whole point of a focus pick. Mention the score or the value in the reason when it drove the choice.
 
 For each pick, write a reason that is: 5–10 words, specific (reference the goal or value), and motivating.
 

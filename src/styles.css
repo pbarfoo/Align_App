@@ -2652,3 +2652,10 @@ h1 {
 }
 .today-subhead.red { color: #e05c5c; }
 .today-subhead.accent { color: var(--accent); }
+
+/* Focus card — Gemini's daily picks, distinct gold-edged card */
+.today-section.focus-card {
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-radius: 12px;
+  padding: 12px 14px;
+}

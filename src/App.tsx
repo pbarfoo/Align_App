@@ -2148,12 +2148,6 @@ function Today({
   const pinnedTasks = [...overdueSorted, ...dueTodayTasks].slice(0, TASK_CAP);
   const pinnedOverdue = pinnedTasks.filter((t) => !!t.dueDate && t.dueDate < today);
   const pinnedDueToday = pinnedTasks.filter((t) => t.dueDate === today);
-  let aiTaskSlots = TASK_CAP - pinnedTasks.length;
-  const aiPicksShown = aiPicks.filter(({ item }) => {
-    if (item.kind === 'habit') return true;
-    if (aiTaskSlots > 0) { aiTaskSlots--; return true; }
-    return false;
-  });
   const aiPickIds = new Set(aiPicks.map(({ item }) => item.id));
 
   // Heuristic urgency for the non-pinned, non-picked habits.
@@ -2196,7 +2190,7 @@ function Today({
   const shownToday = new Set<string>([
     ...pinnedTasks, ...openHabits,
   ].map((h) => h.id));
-  aiPicksShown.forEach(({ item }) => shownToday.add(item.id));
+  aiPicks.forEach(({ item }) => shownToday.add(item.id));
   const moreByDomain = domains
     .map((d) => ({
       domain: d,
@@ -2231,7 +2225,17 @@ function Today({
       .map((h) => h.id);
     if (!actionableIds.length) return;
     setAiFocusLoading(true);
-    getGeminiFocusPicks(domains, goals, habits, actionableIds)
+    // Full context: the same goal-health numbers the badges show, plus each
+    // value's alignment rating, so the pick can say WHY in real terms.
+    const appGoalHealth = Object.fromEntries(
+      goals.filter((g) => !g.completedAt).map((g) => [g.title, goalHealthMap[g.id]?.health ?? 0]),
+    );
+    const valueAlignment: Record<string, number> = {};
+    domains.forEach((d) => d.values.forEach((v) => {
+      valueAlignment[`${d.name}/${v}`] =
+        Math.round(valueAlignmentScore(`${d.id}:${v}`, goals, habits, reflections, domains) * 10);
+    }));
+    getGeminiFocusPicks(domains, goals, habits, actionableIds, { appGoalHealth, valueAlignment })
       .then((picks) => setAiFocus(picks))
       .catch((err) => {
         console.warn('Gemini focus unavailable, using heuristic order:', err);
@@ -2377,14 +2381,23 @@ function Today({
         </div>
       </div>
 
-      {/* Today — ONE list: expired goals & overdue (actions inline), due
-          today, then Gemini's focus picks, then the rest of today's habits. */}
-      {(expiredGoals.length > 0 || pinnedTasks.length > 0 || aiPicksShown.length > 0 || restOfToday.length > 0) && (
-        <div className="today-section focus">
+      {/* Focus — Gemini's 2–3 picks, grounded in goal health and value
+          alignment. Its own card so it never competes with the task cap. */}
+      {(aiPicks.length > 0 || aiFocusLoading) && (
+        <div className="today-section focus focus-card">
           <div className="today-section-head">
-            ✦ Today
-            {aiFocusLoading && <span className="focus-loading">choosing focus…</span>}
+            ✦ Focus
+            {aiFocusLoading && <span className="focus-loading">choosing…</span>}
           </div>
+          {aiPicks.map(({ item, reason }) => renderRow(item, reason))}
+        </div>
+      )}
+
+      {/* Today — expired goals & overdue (actions inline), due today, then
+          the day's habits. */}
+      {(expiredGoals.length > 0 || pinnedTasks.length > 0 || restOfToday.length > 0) && (
+        <div className="today-section focus">
+          <div className="today-section-head">✦ Today</div>
           {(expiredGoals.length > 0 || pinnedOverdue.length > 0) && (
             <div className="today-subhead red">⚑ Needs action · Overdue</div>
           )}
@@ -2480,10 +2493,6 @@ function Today({
             <div className="today-subhead red">⚑ Needs action · Due today</div>
           )}
           {pinnedDueToday.map((t) => renderRow(t))}
-          {aiPicksShown.length > 0 && (
-            <div className="today-subhead accent">✦ Focus picks</div>
-          )}
-          {aiPicksShown.map(({ item, reason }) => renderRow(item, reason))}
           {restOfToday.length > 0 && (
             <div className="today-subhead">Habits today</div>
           )}
