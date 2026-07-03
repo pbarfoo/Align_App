@@ -2287,11 +2287,19 @@ function Today({
         <div className="today-section triage">
           <div className="today-section-head triage-head">⚑ Needs a decision</div>
           <p className="triage-sub">
-            These tasks slipped past their due date. Pick one: reschedule, break it down, or let it go.
+            These tasks slipped past their due date. Pick one: check it off, reschedule, break it down, or let it go.
           </p>
           {triageRows.map(({ st, task }) => (
             <React.Fragment key={st.id}>
               <div className="habit-row triage-row">
+                <button
+                  className="check"
+                  onClick={() => toggle(st.id)}
+                  aria-label="Mark complete"
+                  title="Done — mark complete"
+                >
+                  <Tick />
+                </button>
                 <div style={{ flex: 1 }}>
                   <div className="habit-title">
                     <span className="kind-icon task" title="One-off task"><TaskArrow /></span>
@@ -2700,14 +2708,53 @@ function computeHealth(
   });
   const habitConsistency = totalW > 0 ? scoreW / totalW : 0;
 
-  // Ongoing goals: no pace component — health is purely consistency + engagement
-  if (timeElapsed < 0) {
-    if (habits.length === 0) return applyFocus(engagement);
-    return applyFocus(0.7 * habitConsistency + 0.3 * engagement);
-  }
-
   if (habits.length === 0) return applyFocus(0.7 * adjustedPace + 0.3 * engagement);
   return applyFocus(0.5 * adjustedPace + 0.3 * habitConsistency + 0.2 * engagement);
+}
+
+/**
+ * Ongoing (no-deadline) goals measure UPKEEP, not progress toward a finish,
+ * so pace is meaningless. Dedicated formula:
+ *   with habits:  0.6 × habit_consistency + 0.2 × recent_activity + 0.2 × structure
+ *   tasks only:   0.6 × recent_activity + 0.4 × structure
+ *   nothing yet:  0
+ * recent_activity = any habit completion or task finished in the last 7 days;
+ * habit_consistency = 28-day cadence fidelity (streak-weighted), as elsewhere;
+ * structure = items/5 capped at 1, same engagement signal as deadline goals.
+ */
+function computeOngoingHealth(subGoals: Goal[], treeHabits: Habit[], isFocus = false): number {
+  const habits = treeHabits.filter((h) => h.kind === 'habit');
+  const tasks  = treeHabits.filter((h) => h.kind === 'task');
+  const itemCount = subGoals.length + tasks.length + habits.length;
+  if (itemCount === 0) return 0;
+
+  const engagement = Math.min(itemCount / 5, 1.0);
+  const now = Date.now();
+  const weekAgoStr = toDateStr(new Date(now - 7 * 86_400_000));
+  const active7d =
+    habits.some((h) => (h.completions ?? []).some((d) => d >= weekAgoStr)) ||
+    tasks.some((t) => t.completed && t.completedAt && now - t.completedAt <= 7 * 86_400_000);
+
+  const habitW = (h: Habit) => Math.min(1 + (h.streak || 0) * 0.2, 4.0);
+  const lookback = toDateStr(new Date(now - 28 * 86_400_000));
+  let totalW = 0, scoreW = 0;
+  habits.forEach((h) => {
+    const expected = Math.max(1, 28 / naturalIntervalDays(h));
+    const actual   = (h.completions ?? []).filter((d) => d >= lookback).length;
+    const w = habitW(h);
+    scoreW += Math.min(actual / expected, 1) * w;
+    totalW += w;
+  });
+  const consistency = totalW > 0 ? scoreW / totalW : 0;
+
+  const base = habits.length > 0
+    ? 0.6 * consistency + 0.2 * (active7d ? 1 : 0) + 0.2 * engagement
+    : 0.6 * (active7d ? 1 : 0) + 0.4 * engagement;
+
+  // Same ±10% focus adjustment as deadline goals: raises the bar when
+  // neglected, rewards when delivering.
+  const focusAdj = isFocus ? (base - 0.5) * 0.2 : 0;
+  return Math.max(0, Math.min(base + focusAdj, 1.0));
 }
 
 /**
@@ -2790,7 +2837,7 @@ function ongoingGoalMetrics(og: Goal, goals: Goal[], habits: Habit[], isFocus = 
   const ogHabits = habits.filter((h) => subtree.has(h.goalId));
 
   const completion     = computeDone(subGoals, ogHabits, now);
-  const health         = computeHealth(subGoals, ogHabits, now, -1 /* ongoing sentinel */, isFocus);
+  const health         = computeOngoingHealth(subGoals, ogHabits, isFocus);
   const completionRate = completion;
   const recencyScore   = health;
   const momentum       = health;
@@ -2916,19 +2963,36 @@ function GoalStrip({
         <div className="health-popup">
           <div className="health-popup-row">
             <span className="health-popup-formula">
-              pace · habit consistency · planning engagement
+              {goal.horizon === 'ongoing'
+                ? 'habit consistency · recent activity · structure'
+                : 'pace · habit consistency · planning engagement'}
             </span>
             <span className="health-popup-result" style={{ color: domainColor }}>{healthPct}%</span>
           </div>
           <div className="health-popup-divider" />
-          <div className="health-popup-weights">
-            <span>Are you on track for the time spent? (50%)</span>
-            <span>Are your habits consistent? (30%)</span>
-            <span>Have you built out your plan? (20%)</span>
-          </div>
-          <div className="health-popup-note">
-            Pace × 50% + habit consistency × 30% + planning engagement × 20%
-          </div>
+          {goal.horizon === 'ongoing' ? (
+            <>
+              <div className="health-popup-weights">
+                <span>Are your habits consistent? (60%)</span>
+                <span>Anything done in the last 7 days? (20%)</span>
+                <span>Is the goal built out? (20%)</span>
+              </div>
+              <div className="health-popup-note">
+                No deadline, so no pace — health measures upkeep. Habit consistency × 60% + recent activity × 20% + structure × 20%
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="health-popup-weights">
+                <span>Are you on track for the time spent? (50%)</span>
+                <span>Are your habits consistent? (30%)</span>
+                <span>Have you built out your plan? (20%)</span>
+              </div>
+              <div className="health-popup-note">
+                Pace × 50% + habit consistency × 30% + planning engagement × 20%
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>
@@ -3005,7 +3069,7 @@ function GoalsDashboard({
   const healthNoteOngoing = (
     <div className="dash-health-note">
       <div className="dash-health-note-title">How Health is calculated</div>
-      <p>Habit consistency (70%) · Planning engagement (30%) — no deadline</p>
+      <p>Habit consistency (60%) · Recent activity, last 7 days (20%) · Structure (20%) — no deadline, so no pace</p>
     </div>
   );
 
