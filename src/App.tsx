@@ -1931,7 +1931,13 @@ function Today({
     // Feed the coach the SAME health numbers the user sees on their goal
     // cards (title-keyed; overrides the server view's figures).
     const appGoalHealth = Object.fromEntries(
-      goals.filter((g) => !g.completedAt).map((g) => [g.title, goalHealthMap[g.id]?.health ?? 0]),
+      goals.filter((g) => !g.completedAt).map((g) => {
+        const gh = goalHealthMap[g.id];
+        // Empty goals report their EARNED health (0) to the AI even during
+        // the new-goal grace, so it nudges a first action from day one while
+        // the badge stays green.
+        return [g.title, gh ? (gh.nItems === 0 ? 0 : gh.health) : 0];
+      }),
     );
     getGeminiCoachCard(domains, goals, habits, reflections, userId, appGoalHealth)
       .then(async (card) => {
@@ -2229,7 +2235,13 @@ function Today({
     // Full context: the same goal-health numbers the badges show, plus each
     // value's alignment rating, so the pick can say WHY in real terms.
     const appGoalHealth = Object.fromEntries(
-      goals.filter((g) => !g.completedAt).map((g) => [g.title, goalHealthMap[g.id]?.health ?? 0]),
+      goals.filter((g) => !g.completedAt).map((g) => {
+        const gh = goalHealthMap[g.id];
+        // Empty goals report their EARNED health (0) to the AI even during
+        // the new-goal grace, so it nudges a first action from day one while
+        // the badge stays green.
+        return [g.title, gh ? (gh.nItems === 0 ? 0 : gh.health) : 0];
+      }),
     );
     const valueAlignment: Record<string, number> = {};
     domains.forEach((d) => d.values.forEach((v) => {
