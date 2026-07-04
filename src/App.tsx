@@ -2285,8 +2285,11 @@ function Today({
     return taskUrgencyScore(h) + habitScore + healthGap * 0.25 + (h.kind === 'task' ? 18 : 12);
   };
 
+  // Only the 3 most needed/effective actions for the chosen goal — a focused
+  // shortlist, not the whole backlog.
   const recommendedPlanItems = [...planCandidates]
-    .sort((a, b) => planScore(b) - planScore(a) || byPriority(a, b));
+    .sort((a, b) => planScore(b) - planScore(a) || byPriority(a, b))
+    .slice(0, 3);
 
   const planReason = (h: Habit): string => {
     const days = dueDiffDays(h);
