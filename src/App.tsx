@@ -1924,6 +1924,21 @@ function Today({
   const [aiFocusLoading, setAiFocusLoading] = useState(false);
   const today = toDateStr(new Date());
 
+  // Hand-picked focus for today (overrides Gemini). Stored per-day so a
+  // stale selection never leaks into tomorrow.
+  const [manualFocusIds, setManualFocusIds] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(`align-focus-manual-${toDateStr(new Date())}`) ?? '[]');
+    } catch { return []; }
+  });
+  useEffect(() => {
+    localStorage.setItem(`align-focus-manual-${today}`, JSON.stringify(manualFocusIds));
+  }, [manualFocusIds, today]);
+  const [pickingFocus, setPickingFocus] = useState(false);
+  const toggleManualFocus = (id: string) =>
+    setManualFocusIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : prev.length < 3 ? [...prev, id] : prev);
+
   const fetchCoachCard = () => {
     if (!goals.length && !habits.length) return;
     setCoachLoading(true);
@@ -2147,6 +2162,18 @@ function Today({
     })
     .slice(0, 3); // focus means 2–3 things, not a second to-do list
 
+  // Manual focus: same pool as Gemini's (open tasks not already pinned by
+  // overdue/due-today). Any manual selection overrides the AI picks.
+  const focusCandidates = openTasks
+    .filter((t) => !(t.dueDate && t.dueDate <= today))
+    .sort(byPriority);
+  const manualFocus = manualFocusIds
+    .map((id) => habits.find((h) => h.id === id))
+    .filter((h): h is Habit =>
+      !!h && h.kind === 'task' && !h.completed && !(h.dueDate && h.dueDate <= today));
+  const displayFocus: Array<{ item: Habit; reason?: string }> =
+    manualFocus.length > 0 ? manualFocus.map((item) => ({ item })) : aiPicks;
+
   // Hard cap on task rows in the Today list: 3. Overdue (worst first) claim
   // the slots ahead of due-today; the overflow stays reachable under More.
   // AI picks that are tasks only show while slots remain — habits always show.
@@ -2196,7 +2223,7 @@ function Today({
   const shownToday = new Set<string>([
     ...pinnedTasks, ...openHabits,
   ].map((h) => h.id));
-  aiPicks.forEach(({ item }) => shownToday.add(item.id));
+  displayFocus.forEach(({ item }) => shownToday.add(item.id));
   const moreByDomain = domains
     .map((d) => ({
       domain: d,
@@ -2394,15 +2421,55 @@ function Today({
         </div>
       </div>
 
-      {/* Focus — Gemini's 2–3 picks, grounded in goal health and value
-          alignment. Its own card so it never competes with the task cap. */}
-      {(aiPicks.length > 0 || aiFocusLoading) && (
+      {/* Focus — hand-picked (overrides) or Gemini's 2–3 task picks. */}
+      {(displayFocus.length > 0 || aiFocusLoading || focusCandidates.length > 0) && (
         <div className="today-section focus focus-card">
-          <div className="today-section-head">
-            ✦ Focus
-            {aiFocusLoading && <span className="focus-loading">choosing…</span>}
+          <div className="today-section-head focus-head-row">
+            <span>
+              ✦ Focus
+              {manualFocus.length > 0 && <span className="focus-loading">your picks</span>}
+              {manualFocus.length === 0 && aiFocusLoading && <span className="focus-loading">choosing…</span>}
+            </span>
+            {focusCandidates.length > 0 && (
+              <button className="reflect-mini-btn" onClick={() => setPickingFocus((v) => !v)}>
+                {pickingFocus ? 'Close' : manualFocus.length > 0 ? 'Edit' : 'Choose'}
+              </button>
+            )}
           </div>
-          {aiPicks.map(({ item, reason }) => renderRow(item, reason))}
+          {pickingFocus && (
+            <div className="focus-picker">
+              <p className="triage-sub">Pick up to 3 tasks as today's focus.</p>
+              {focusCandidates.map((t) => {
+                const on = manualFocusIds.includes(t.id);
+                return (
+                  <button
+                    key={t.id}
+                    className={`focus-pick-row${on ? ' on' : ''}`}
+                    onClick={() => toggleManualFocus(t.id)}
+                  >
+                    <span className="focus-pick-check">{on ? '✓' : ''}</span>
+                    <span className="focus-pick-main">
+                      <span className="focus-pick-title">{t.title}</span>
+                      <span className="focus-pick-goal">{lineage(t.goalId)}</span>
+                    </span>
+                  </button>
+                );
+              })}
+              <div className="add-actions">
+                <button className="mini-primary" onClick={() => setPickingFocus(false)}>Done</button>
+                <button
+                  className="mini-ghost"
+                  onClick={() => { setManualFocusIds([]); setPickingFocus(false); }}
+                >
+                  Use Gemini picks
+                </button>
+              </div>
+            </div>
+          )}
+          {!pickingFocus && displayFocus.map(({ item, reason }) => renderRow(item, reason))}
+          {!pickingFocus && displayFocus.length === 0 && !aiFocusLoading && (
+            <p className="triage-sub">Nothing picked yet — tap Choose, or let Gemini decide tomorrow.</p>
+          )}
         </div>
       )}
 
@@ -2920,18 +2987,21 @@ function computeDone(subGoals: Goal[], treeHabits: Habit[], allHabits: Habit[], 
 }
 
 /**
- * New-goal grace: health starts at 100% and glides down to the EARNED score
- * over the first 14 days, so a brand-new goal isn't born red. Build the goal
- * out and work it and the glide is invisible (earned rises to meet it);
- * ignore it and the number visibly bleeds toward the honest score.
+ * New-goal grace: health starts at 50% (neutral yellow — not failing, not
+ * thriving) and glides down to the EARNED score over the first 14 days, so a
+ * brand-new goal isn't born red. Build the goal out and work it and earned
+ * health takes over as soon as it beats the grace floor; ignore it and the
+ * number bleeds toward the honest score.
  * Mirrored server-side in the goal_health view so the coach agrees.
  */
 function applyNewGoalGrace(earned: number, createdAt: number): number {
   const GRACE_DAYS = 14;
+  const START = 0.5;
+  if (earned >= START) return earned; // real progress always wins
   const ageDays = (Date.now() - (createdAt || 0)) / 86_400_000;
   if (ageDays < 0 || ageDays >= GRACE_DAYS) return earned;
   const grace = 1 - ageDays / GRACE_DAYS;
-  return Math.min(1, earned + (1 - earned) * grace);
+  return earned + (START - earned) * grace;
 }
 
 function vitalityFor(
@@ -3313,14 +3383,14 @@ function GoalsDashboard({
     <div className="dash-health-note">
       <div className="dash-health-note-title">How Health is calculated</div>
       <p>Pace (50%) · Habit consistency (30%) · Planning engagement (20%)</p>
-      <p>New goals start at 100% and settle to their earned score over the first 14 days.</p>
+      <p>New goals start at 50% and settle to their earned score over the first 14 days.</p>
     </div>
   );
   const healthNoteOngoing = (
     <div className="dash-health-note">
       <div className="dash-health-note-title">How Health is calculated</div>
       <p>Habit consistency (60%) · Recent activity, last 7 days (20%) · Structure (20%) — no deadline, so no pace</p>
-      <p>New goals start at 100% and settle to their earned score over the first 14 days.</p>
+      <p>New goals start at 50% and settle to their earned score over the first 14 days.</p>
     </div>
   );
 
