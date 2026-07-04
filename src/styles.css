@@ -2674,23 +2674,59 @@ h1 {
   border-color: var(--pill-color, var(--accent));
 }
 
-/* Goal pills wrap, size to content, and don't stretch */
+/* Goal pills: one streamlined horizontal-scroll row, size to content */
 .plan-goal-pills {
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 2px;
+  /* fade the right edge to hint there's more to swipe */
+  mask-image: linear-gradient(to right, #000 88%, transparent);
 }
+.plan-goal-pills::-webkit-scrollbar { display: none; }
 .plan-goal-pills .goal-pill {
-  flex: 0 1 auto;
+  flex: 0 0 auto;
+  max-width: 220px;
   padding: 8px 13px;
   font-size: 13px;
   font-weight: 500;
-  text-align: left;
   line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.plan-goal-pills .goal-pill.active {
+.goal-pill.active {
   color: var(--pill-color, var(--accent));
   border-color: var(--pill-color, var(--accent));
   background: color-mix(in srgb, var(--pill-color, var(--accent)) 14%, transparent);
+}
+
+/* Collapsed: just the picked goal + a Change affordance */
+.plan-goal-selected {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.plan-goal-selected .goal-pill {
+  flex: 0 1 auto;
+  min-width: 0;
+  padding: 8px 13px;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.plan-goal-change {
+  flex: none;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 .plan-recommendations {

@@ -1942,11 +1942,12 @@ function Today({
   const [coachRating, setCoachRating] = useState<'up' | 'down' | null>(null);
   const today = toDateStr(new Date());
   const initialPlan = readTodayPlanPrefs(today);
-  const [selectedDomainId, setSelectedDomainId] = useState<DomainId>(() => {
-    if (initialPlan.domainId && domains.some((d) => d.id === initialPlan.domainId)) return initialPlan.domainId;
-    return domains[0]?.id ?? 'career';
-  });
+  // Start blank — no domain chosen — so the card is clean until you pick one.
+  const [selectedDomainId, setSelectedDomainId] = useState<DomainId | ''>(() =>
+    initialPlan.domainId && domains.some((d) => d.id === initialPlan.domainId) ? initialPlan.domainId : '');
   const [selectedGoalId, setSelectedGoalId] = useState<string>(initialPlan.goalId ?? '');
+  // Goal list collapses to just the picked goal; expand to change.
+  const [expandGoals, setExpandGoals] = useState(false);
 
   const fetchCoachCard = () => {
     if (!goals.length && !habits.length) return;
@@ -2000,16 +2001,16 @@ function Today({
   const doneItems = [...doneHabits, ...completedToday];
 
   useEffect(() => {
-    if (domains.length && !domains.some((d) => d.id === selectedDomainId)) {
-      setSelectedDomainId(domains[0].id);
+    // Drop a stale non-blank domain, but never auto-select one — blank is a
+    // valid resting state.
+    if (selectedDomainId && domains.length && !domains.some((d) => d.id === selectedDomainId)) {
+      setSelectedDomainId('');
     }
   }, [domains, selectedDomainId]);
 
   useEffect(() => {
-    const nextGoalId = goalsForPlanDomain[0]?.id ?? '';
-    if (goalsForPlanDomain.length && !goalsForPlanDomain.some((g) => g.id === selectedGoalId)) {
-      setSelectedGoalId(nextGoalId);
-    } else if (!goalsForPlanDomain.length && selectedGoalId) {
+    // Clear the goal if it no longer belongs to the chosen domain.
+    if (selectedGoalId && !goalsForPlanDomain.some((g) => g.id === selectedGoalId)) {
       setSelectedGoalId('');
     }
   }, [goalsForPlanDomain, selectedGoalId]);
@@ -2184,8 +2185,8 @@ function Today({
   // due-today tasks, then a chosen plan, then the rest of today's habits
   // ranked by focus / neglect / weak-goal rescue.
   const overdueSorted = [...overdueTasks].sort((a, b) => daysOverdueOf(b) - daysOverdueOf(a));
-  const selectedDomain = domains.find((d) => d.id === selectedDomainId) ?? domains[0];
-  const selectedGoal = goalsForPlanDomain.find((g) => g.id === selectedGoalId) ?? goalsForPlanDomain[0] ?? null;
+  const selectedDomain = selectedDomainId ? domains.find((d) => d.id === selectedDomainId) ?? null : null;
+  const selectedGoal = goalsForPlanDomain.find((g) => g.id === selectedGoalId) ?? null;
 
   // Hard cap on task rows in the Today list: 3. Overdue (worst first) claim
   // the slots ahead of due-today; the overflow stays reachable under More.
@@ -2471,8 +2472,10 @@ function Today({
                 className={`pill${d.id === selectedDomainId ? ' active' : ''}`}
                 style={{ '--pill-color': DOMAIN_COLORS[d.id] ?? 'var(--accent)' } as React.CSSProperties}
                 onClick={() => {
-                  setSelectedDomainId(d.id);
-                  setSelectedGoalId(activeGoals.find((g) => g.domainId === d.id)?.id ?? '');
+                  const turningOff = d.id === selectedDomainId;
+                  setSelectedDomainId(turningOff ? '' : d.id);
+                  setSelectedGoalId('');
+                  setExpandGoals(!turningOff);
                 }}
               >
                 {d.name.split(' ')[0]}
@@ -2480,26 +2483,44 @@ function Today({
             ))}
           </div>
 
-          {/* Goal pills for the chosen domain */}
-          {goalsForPlanDomain.length > 0 ? (
-            <div className="pills plan-goal-pills">
-              {goalsForPlanDomain.map((g) => (
-                <button
-                  key={g.id}
-                  className={`pill goal-pill${g.id === selectedGoal?.id ? ' active' : ''}`}
-                  style={{ '--pill-color': DOMAIN_COLORS[g.domainId] ?? 'var(--accent)' } as React.CSSProperties}
-                  onClick={() => setSelectedGoalId(g.id)}
+          {/* Blank until a domain is chosen */}
+          {!selectedDomainId && (
+            <p className="plan-empty">Pick a life area to focus on today.</p>
+          )}
+
+          {/* Goals for the chosen domain — one scrollable row; collapses to the
+              picked goal once chosen (tap Change to reopen). */}
+          {selectedDomainId && (
+            goalsForPlanDomain.length === 0 ? (
+              <p className="plan-empty">No active goals in {selectedDomain?.name ?? 'this domain'} yet.</p>
+            ) : selectedGoal && !expandGoals ? (
+              <div className="plan-goal-selected">
+                <span
+                  className="pill goal-pill active"
+                  style={{ '--pill-color': DOMAIN_COLORS[selectedGoal.domainId] ?? 'var(--accent)' } as React.CSSProperties}
                 >
-                  {g.title}
-                </button>
-              ))}
-            </div>
-          ) : (
-            <p className="plan-empty">No active goals in {selectedDomain?.name ?? 'this domain'} yet.</p>
+                  {selectedGoal.title}
+                </span>
+                <button className="plan-goal-change" onClick={() => setExpandGoals(true)}>Change</button>
+              </div>
+            ) : (
+              <div className="pills plan-goal-pills">
+                {goalsForPlanDomain.map((g) => (
+                  <button
+                    key={g.id}
+                    className={`pill goal-pill${g.id === selectedGoal?.id ? ' active' : ''}`}
+                    style={{ '--pill-color': DOMAIN_COLORS[g.domainId] ?? 'var(--accent)' } as React.CSSProperties}
+                    onClick={() => { setSelectedGoalId(g.id); setExpandGoals(false); }}
+                  >
+                    {g.title}
+                  </button>
+                ))}
+              </div>
+            )
           )}
 
           {/* The chosen goal's actions, one clear order to work top-down */}
-          {selectedGoal && (
+          {selectedGoal && !expandGoals && (
             recommendedPlanItems.length > 0 ? (
               <div className="plan-recommendations">
                 {recommendedPlanItems.map((item) => renderRow(item, planReason(item)))}
