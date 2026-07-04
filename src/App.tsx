@@ -2022,6 +2022,18 @@ function Today({
     }));
   }, [today, selectedDomainId, selectedGoalId]);
 
+  // Once a day, drop stale per-day keys (today's plan + leftovers from earlier
+  // picker experiments) so localStorage doesn't accumulate one entry per day.
+  useEffect(() => {
+    const prefixes = ['align-today-plan-', 'align-focus-scope-', 'align-focus-manual-'];
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const key = localStorage.key(i);
+      if (!key) continue;
+      const p = prefixes.find((pre) => key.startsWith(pre));
+      if (p && key.slice(p.length) !== today) localStorage.removeItem(key);
+    }
+  }, [today]);
+
   // Progress: today's habits + urgent tasks + tasks finished today
   const totalCount =
     scheduledHabits.length + overdueTasks.length + dueTodayTasks.length + completedToday.length;
