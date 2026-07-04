@@ -30,10 +30,8 @@ import { supabase } from './supabase';
 import type { Session } from '@supabase/supabase-js';
 
 type Tab = 'foundation' | 'align' | 'today';
-type TodayFocusMode = 'priority' | 'urgent' | 'momentum' | 'rhythm' | 'balance';
 
 interface TodayPlanPrefs {
-  focus: TodayFocusMode;
   domainId: DomainId;
   goalId: string;
 }
@@ -49,17 +47,6 @@ interface ActionInput {
 }
 
 const TAB_KEY = 'align-tab-v1';
-const TODAY_FOCUS_OPTIONS: Array<{ id: TodayFocusMode; label: string; note: string }> = [
-  { id: 'priority', label: 'Most important', note: 'The action with the best mix of urgency, alignment, and goal health.' },
-  { id: 'urgent', label: 'Clear urgent', note: 'Overdue, due-today, and time-sensitive commitments rise first.' },
-  { id: 'momentum', label: 'Build momentum', note: 'Small wins and active streaks get extra weight.' },
-  { id: 'rhythm', label: 'Keep rhythm', note: 'Scheduled habits come before one-off tasks.' },
-  { id: 'balance', label: 'Restore balance', note: 'Weak or neglected goals get the strongest nudge.' },
-];
-
-function isTodayFocusMode(value: unknown): value is TodayFocusMode {
-  return TODAY_FOCUS_OPTIONS.some((option) => option.id === value);
-}
 
 function isDomainIdValue(value: unknown): value is DomainId {
   return value === 'career' || value === 'self' || value === 'community';
@@ -69,7 +56,6 @@ function readTodayPlanPrefs(date: string): Partial<TodayPlanPrefs> {
   try {
     const parsed = JSON.parse(localStorage.getItem(`align-today-plan-${date}`) ?? '{}') as Partial<TodayPlanPrefs>;
     return {
-      focus: isTodayFocusMode(parsed.focus) ? parsed.focus : undefined,
       domainId: isDomainIdValue(parsed.domainId) ? parsed.domainId : undefined,
       goalId: typeof parsed.goalId === 'string' ? parsed.goalId : undefined,
     };
@@ -1956,7 +1942,6 @@ function Today({
   const [coachRating, setCoachRating] = useState<'up' | 'down' | null>(null);
   const today = toDateStr(new Date());
   const initialPlan = readTodayPlanPrefs(today);
-  const [todayFocus, setTodayFocus] = useState<TodayFocusMode>(initialPlan.focus ?? 'priority');
   const [selectedDomainId, setSelectedDomainId] = useState<DomainId>(() => {
     if (initialPlan.domainId && domains.some((d) => d.id === initialPlan.domainId)) return initialPlan.domainId;
     return domains[0]?.id ?? 'career';
@@ -2031,11 +2016,10 @@ function Today({
 
   useEffect(() => {
     localStorage.setItem(`align-today-plan-${today}`, JSON.stringify({
-      focus: todayFocus,
       domainId: selectedDomainId,
       goalId: selectedGoalId,
     }));
-  }, [today, todayFocus, selectedDomainId, selectedGoalId]);
+  }, [today, selectedDomainId, selectedGoalId]);
 
   // Progress: today's habits + urgent tasks + tasks finished today
   const totalCount =
@@ -2202,7 +2186,6 @@ function Today({
   const overdueSorted = [...overdueTasks].sort((a, b) => daysOverdueOf(b) - daysOverdueOf(a));
   const selectedDomain = domains.find((d) => d.id === selectedDomainId) ?? domains[0];
   const selectedGoal = goalsForPlanDomain.find((g) => g.id === selectedGoalId) ?? goalsForPlanDomain[0] ?? null;
-  const selectedFocusOption = TODAY_FOCUS_OPTIONS.find((option) => option.id === todayFocus) ?? TODAY_FOCUS_OPTIONS[0];
 
   // Hard cap on task rows in the Today list: 3. Overdue (worst first) claim
   // the slots ahead of due-today; the overflow stays reachable under More.
@@ -2280,36 +2263,17 @@ function Today({
     return selectedDomain ? domainOf(h.goalId) === selectedDomain.id : true;
   });
 
+  // Rank the selected goal's open actions by urgency + how much they'd lift a
+  // struggling goal — one clear order to work top-down.
   const planScore = (h: Habit): number => {
     const gh = goalHealthMap[h.goalId];
     const healthGap = gh ? 100 - gh.health : 0;
     const habitScore = h.kind === 'habit' ? habitUrgency(h) : 0;
-    let score = taskUrgencyScore(h) + habitScore + healthGap * 0.15;
-
-    switch (todayFocus) {
-      case 'urgent':
-        score += taskUrgencyScore(h) * 0.8 + (h.kind === 'habit' ? getGraceDays(h).length * 30 : 0);
-        break;
-      case 'momentum':
-        score += h.kind === 'habit' ? Math.min(32, (h.streak ?? 0) * 4) + 20 : 12;
-        break;
-      case 'rhythm':
-        score += h.kind === 'habit' ? 55 : -5;
-        break;
-      case 'balance':
-        score += healthGap * 0.45 + (isNeglected(h) ? 30 : 0);
-        break;
-      case 'priority':
-        score += healthGap * 0.25 + (h.kind === 'task' ? 18 : 12);
-        break;
-    }
-
-    return score;
+    return taskUrgencyScore(h) + habitScore + healthGap * 0.25 + (h.kind === 'task' ? 18 : 12);
   };
 
   const recommendedPlanItems = [...planCandidates]
-    .sort((a, b) => planScore(b) - planScore(a) || byPriority(a, b))
-    .slice(0, 3);
+    .sort((a, b) => planScore(b) - planScore(a) || byPriority(a, b));
 
   const planReason = (h: Habit): string => {
     const days = dueDiffDays(h);
@@ -2322,10 +2286,7 @@ function Today({
     if (h.kind === 'habit' && getGraceDays(h).length > 0) return 'Missed recently, protect the streak';
     if (h.kind === 'habit' && isNeglected(h)) return 'Neglected lately, rebuild momentum';
     if (gh && gh.health <= 33) return 'Lifts a goal that needs attention';
-    if (todayFocus === 'rhythm') return 'Keeps today steady and repeatable';
-    if (todayFocus === 'momentum') return 'A clean win toward this goal';
-    if (todayFocus === 'balance') return 'Restores attention where it is thin';
-    return 'Best next move for this focus';
+    return 'Next move for this goal';
   };
 
   // Everything not shown in Today (future tasks + capped overflow), by domain.
@@ -2495,75 +2456,57 @@ function Today({
         </div>
       </div>
 
-      {/* Plan — choose the lens, domain, and goal; then show the next actions. */}
+      {/* Focus — pick a domain, then a goal; work its actions one at a time. */}
       {domains.length > 0 && (
         <div className="today-section focus focus-card today-planner-card">
           <div className="today-section-head focus-head-row">
-            <span>Today plan</span>
+            <span>✦ Focus</span>
           </div>
-          <div className="plan-controls">
-            <label className="plan-field">
-              <span>Today focus</span>
-              <select
-                value={todayFocus}
-                onChange={(e) => {
-                  if (isTodayFocusMode(e.target.value)) setTodayFocus(e.target.value);
+
+          {/* Domain pills */}
+          <div className="pills plan-pills">
+            {domains.map((d) => (
+              <button
+                key={d.id}
+                className={`pill${d.id === selectedDomainId ? ' active' : ''}`}
+                style={{ '--pill-color': DOMAIN_COLORS[d.id] ?? 'var(--accent)' } as React.CSSProperties}
+                onClick={() => {
+                  setSelectedDomainId(d.id);
+                  setSelectedGoalId(activeGoals.find((g) => g.domainId === d.id)?.id ?? '');
                 }}
               >
-                {TODAY_FOCUS_OPTIONS.map((option) => (
-                  <option key={option.id} value={option.id}>{option.label}</option>
-                ))}
-              </select>
-            </label>
-            <label className="plan-field">
-              <span>Domain</span>
-              <select
-                value={selectedDomainId}
-                onChange={(e) => {
-                  const next = e.target.value;
-                  if (!isDomainIdValue(next)) return;
-                  setSelectedDomainId(next);
-                  setSelectedGoalId(activeGoals.find((g) => g.domainId === next)?.id ?? '');
-                }}
-              >
-                {domains.map((d) => (
-                  <option key={d.id} value={d.id}>{d.name}</option>
-                ))}
-              </select>
-            </label>
-            <label className="plan-field plan-field--wide">
-              <span>Goal</span>
-              <select
-                value={selectedGoal?.id ?? ''}
-                onChange={(e) => setSelectedGoalId(e.target.value)}
-                disabled={!goalsForPlanDomain.length}
-              >
-                {goalsForPlanDomain.length ? goalsForPlanDomain.map((g) => (
-                  <option key={g.id} value={g.id}>{g.title}</option>
-                )) : (
-                  <option value="">No active goals</option>
-                )}
-              </select>
-            </label>
+                {d.name.split(' ')[0]}
+              </button>
+            ))}
           </div>
-          <div className="plan-focus-note">
-            {selectedFocusOption.note}
-          </div>
-          {selectedGoal && (
-            <div className="plan-context" style={{ '--plan-domain': DOMAIN_COLORS[selectedGoal.domainId] ?? 'var(--accent)' } as React.CSSProperties}>
-              <span>{selectedDomain?.name ?? 'Domain'}</span>
-              <span>{selectedGoal.title}</span>
-            </div>
-          )}
-          {recommendedPlanItems.length > 0 ? (
-            <div className="plan-recommendations">
-              <div className="today-subhead accent">Do next</div>
-              {recommendedPlanItems.map((item) => renderRow(item, planReason(item)))}
+
+          {/* Goal pills for the chosen domain */}
+          {goalsForPlanDomain.length > 0 ? (
+            <div className="pills plan-goal-pills">
+              {goalsForPlanDomain.map((g) => (
+                <button
+                  key={g.id}
+                  className={`pill goal-pill${g.id === selectedGoal?.id ? ' active' : ''}`}
+                  style={{ '--pill-color': DOMAIN_COLORS[g.domainId] ?? 'var(--accent)' } as React.CSSProperties}
+                  onClick={() => setSelectedGoalId(g.id)}
+                >
+                  {g.title}
+                </button>
+              ))}
             </div>
           ) : (
-            <p className="plan-empty">
-              {selectedGoal ? 'No open actions for this goal.' : 'No active goals in this domain.'}
-            </p>
+            <p className="plan-empty">No active goals in {selectedDomain?.name ?? 'this domain'} yet.</p>
+          )}
+
+          {/* The chosen goal's actions, one clear order to work top-down */}
+          {selectedGoal && (
+            recommendedPlanItems.length > 0 ? (
+              <div className="plan-recommendations">
+                {recommendedPlanItems.map((item) => renderRow(item, planReason(item)))}
+              </div>
+            ) : (
+              <p className="plan-empty">Nothing open for “{selectedGoal.title}” today. ✦</p>
+            )
           )}
         </div>
       )}
