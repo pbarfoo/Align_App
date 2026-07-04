@@ -2660,6 +2660,109 @@ h1 {
   padding: 12px 14px;
 }
 
+.today-planner-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.plan-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.plan-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.plan-field--wide {
+  grid-column: 1 / -1;
+}
+
+.plan-field > span {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.plan-field select {
+  width: 100%;
+  min-height: 42px;
+  background: color-mix(in srgb, var(--surface-2) 88%, black);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.2;
+  padding: 10px 34px 10px 12px;
+  color-scheme: dark;
+}
+
+.plan-field select:focus {
+  outline: 1px solid var(--accent);
+}
+
+.plan-field select:disabled {
+  color: var(--muted);
+  opacity: 0.75;
+}
+
+.plan-focus-note {
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.plan-context {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.plan-context span {
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid color-mix(in srgb, var(--plan-domain) 32%, var(--line));
+  border-radius: 999px;
+  padding: 3px 9px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plan-context span:first-child {
+  color: var(--plan-domain);
+}
+
+.plan-recommendations {
+  margin-top: 2px;
+}
+
+.plan-recommendations .today-subhead {
+  margin-top: 2px;
+}
+
+.plan-recommendations .habit-row:last-child {
+  border-bottom: none;
+}
+
+.plan-empty {
+  font-size: 13px;
+  color: var(--muted);
+  padding: 8px 2px 4px;
+}
+
 /* Focus picker — choose today's focus by hand */
 .focus-head-row {
   display: flex;
@@ -2697,3 +2800,13 @@ h1 {
 .focus-pick-row.on .focus-pick-title { color: var(--accent); }
 .focus-pick-goal { font-size: 11px; color: var(--muted); }
 .focus-picker .add-actions { margin-top: 10px; }
+
+@media (max-width: 380px) {
+  .plan-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .plan-field--wide {
+    grid-column: auto;
+  }
+}

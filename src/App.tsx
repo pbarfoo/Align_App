@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { getGeminiCoachCard, getGeminiFocusPicks, saveCoachFeedback, getTodayCoachRating, type CoachCard, type FocusPick } from './geminiAdvisor';
+import { getGeminiCoachCard, saveCoachFeedback, getTodayCoachRating, type CoachCard } from './geminiAdvisor';
 import {
   DndContext, type DragEndEvent, MouseSensor, TouchSensor,
   useSensor, useSensors, closestCenter,
@@ -30,6 +30,13 @@ import { supabase } from './supabase';
 import type { Session } from '@supabase/supabase-js';
 
 type Tab = 'foundation' | 'align' | 'today';
+type TodayFocusMode = 'priority' | 'urgent' | 'momentum' | 'rhythm' | 'balance';
+
+interface TodayPlanPrefs {
+  focus: TodayFocusMode;
+  domainId: DomainId;
+  goalId: string;
+}
 
 interface ActionInput {
   startDate?: string;
@@ -42,6 +49,34 @@ interface ActionInput {
 }
 
 const TAB_KEY = 'align-tab-v1';
+const TODAY_FOCUS_OPTIONS: Array<{ id: TodayFocusMode; label: string; note: string }> = [
+  { id: 'priority', label: 'Most important', note: 'The action with the best mix of urgency, alignment, and goal health.' },
+  { id: 'urgent', label: 'Clear urgent', note: 'Overdue, due-today, and time-sensitive commitments rise first.' },
+  { id: 'momentum', label: 'Build momentum', note: 'Small wins and active streaks get extra weight.' },
+  { id: 'rhythm', label: 'Keep rhythm', note: 'Scheduled habits come before one-off tasks.' },
+  { id: 'balance', label: 'Restore balance', note: 'Weak or neglected goals get the strongest nudge.' },
+];
+
+function isTodayFocusMode(value: unknown): value is TodayFocusMode {
+  return TODAY_FOCUS_OPTIONS.some((option) => option.id === value);
+}
+
+function isDomainIdValue(value: unknown): value is DomainId {
+  return value === 'career' || value === 'self' || value === 'community';
+}
+
+function readTodayPlanPrefs(date: string): Partial<TodayPlanPrefs> {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(`align-today-plan-${date}`) ?? '{}') as Partial<TodayPlanPrefs>;
+    return {
+      focus: isTodayFocusMode(parsed.focus) ? parsed.focus : undefined,
+      domainId: isDomainIdValue(parsed.domainId) ? parsed.domainId : undefined,
+      goalId: typeof parsed.goalId === 'string' ? parsed.goalId : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
 
 /* ---- Supabase row mappers ---- */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1919,25 +1954,14 @@ function Today({
   const [coachLoading, setCoachLoading] = useState(false);
   const [coachFailed, setCoachFailed] = useState(false);
   const [coachRating, setCoachRating] = useState<'up' | 'down' | null>(null);
-  // Gemini-chosen focus for today (daily-cached in getGeminiFocusPicks).
-  const [aiFocus, setAiFocus] = useState<FocusPick[] | null>(null);
-  const [aiFocusLoading, setAiFocusLoading] = useState(false);
   const today = toDateStr(new Date());
-
-  // Hand-picked focus for today (overrides Gemini). Stored per-day so a
-  // stale selection never leaks into tomorrow.
-  const [manualFocusIds, setManualFocusIds] = useState<string[]>(() => {
-    try {
-      return JSON.parse(localStorage.getItem(`align-focus-manual-${toDateStr(new Date())}`) ?? '[]');
-    } catch { return []; }
+  const initialPlan = readTodayPlanPrefs(today);
+  const [todayFocus, setTodayFocus] = useState<TodayFocusMode>(initialPlan.focus ?? 'priority');
+  const [selectedDomainId, setSelectedDomainId] = useState<DomainId>(() => {
+    if (initialPlan.domainId && domains.some((d) => d.id === initialPlan.domainId)) return initialPlan.domainId;
+    return domains[0]?.id ?? 'career';
   });
-  useEffect(() => {
-    localStorage.setItem(`align-focus-manual-${today}`, JSON.stringify(manualFocusIds));
-  }, [manualFocusIds, today]);
-  const [pickingFocus, setPickingFocus] = useState(false);
-  const toggleManualFocus = (id: string) =>
-    setManualFocusIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : prev.length < 3 ? [...prev, id] : prev);
+  const [selectedGoalId, setSelectedGoalId] = useState<string>(initialPlan.goalId ?? '');
 
   const fetchCoachCard = () => {
     if (!goals.length && !habits.length) return;
@@ -1982,8 +2006,36 @@ function Today({
   const completedToday = tasks.filter(
     (t) => t.completed && t.completedAt && toDateStr(new Date(t.completedAt)) === today,
   );
+  const activeGoals = useMemo(() => goals.filter((g) => !g.completedAt), [goals]);
+  const goalsForPlanDomain = useMemo(
+    () => activeGoals.filter((g) => g.domainId === selectedDomainId),
+    [activeGoals, selectedDomainId],
+  );
 
   const doneItems = [...doneHabits, ...completedToday];
+
+  useEffect(() => {
+    if (domains.length && !domains.some((d) => d.id === selectedDomainId)) {
+      setSelectedDomainId(domains[0].id);
+    }
+  }, [domains, selectedDomainId]);
+
+  useEffect(() => {
+    const nextGoalId = goalsForPlanDomain[0]?.id ?? '';
+    if (goalsForPlanDomain.length && !goalsForPlanDomain.some((g) => g.id === selectedGoalId)) {
+      setSelectedGoalId(nextGoalId);
+    } else if (!goalsForPlanDomain.length && selectedGoalId) {
+      setSelectedGoalId('');
+    }
+  }, [goalsForPlanDomain, selectedGoalId]);
+
+  useEffect(() => {
+    localStorage.setItem(`align-today-plan-${today}`, JSON.stringify({
+      focus: todayFocus,
+      domainId: selectedDomainId,
+      goalId: selectedGoalId,
+    }));
+  }, [today, todayFocus, selectedDomainId, selectedGoalId]);
 
   // Progress: today's habits + urgent tasks + tasks finished today
   const totalCount =
@@ -2145,34 +2197,12 @@ function Today({
 
 
   // --- The Today list: overdue first (with decision actions inline), then
-  // due-today tasks, then Gemini's focus picks, then the rest of today's
-  // habits ranked by focus / neglect / weak-goal rescue.
+  // due-today tasks, then a chosen plan, then the rest of today's habits
+  // ranked by focus / neglect / weak-goal rescue.
   const overdueSorted = [...overdueTasks].sort((a, b) => daysOverdueOf(b) - daysOverdueOf(a));
-
-  // Gemini chooses today's focus from everything that ISN'T already pinned
-  // (overdue / due today pin themselves). Cached per day; heuristic order
-  // below is the fallback when the AI is unavailable.
-  const aiPicks = (aiFocus ?? [])
-    .map((p) => ({ reason: p.reason, item: habits.find((h) => h.id === p.id) }))
-    .filter((x): x is { reason: string; item: Habit } => {
-      const h = x.item;
-      // Tasks only: habits have their own card below.
-      if (!h || h.kind !== 'task') return false;
-      return !h.completed && !(h.dueDate && h.dueDate <= today);
-    })
-    .slice(0, 3); // focus means 2–3 things, not a second to-do list
-
-  // Manual focus: same pool as Gemini's (open tasks not already pinned by
-  // overdue/due-today). Any manual selection overrides the AI picks.
-  const focusCandidates = openTasks
-    .filter((t) => !(t.dueDate && t.dueDate <= today))
-    .sort(byPriority);
-  const manualFocus = manualFocusIds
-    .map((id) => habits.find((h) => h.id === id))
-    .filter((h): h is Habit =>
-      !!h && h.kind === 'task' && !h.completed && !(h.dueDate && h.dueDate <= today));
-  const displayFocus: Array<{ item: Habit; reason?: string }> =
-    manualFocus.length > 0 ? manualFocus.map((item) => ({ item })) : aiPicks;
+  const selectedDomain = domains.find((d) => d.id === selectedDomainId) ?? domains[0];
+  const selectedGoal = goalsForPlanDomain.find((g) => g.id === selectedGoalId) ?? goalsForPlanDomain[0] ?? null;
+  const selectedFocusOption = TODAY_FOCUS_OPTIONS.find((option) => option.id === todayFocus) ?? TODAY_FOCUS_OPTIONS[0];
 
   // Hard cap on task rows in the Today list: 3. Overdue (worst first) claim
   // the slots ahead of due-today; the overflow stays reachable under More.
@@ -2182,7 +2212,7 @@ function Today({
   const pinnedOverdue = pinnedTasks.filter((t) => !!t.dueDate && t.dueDate < today);
   const pinnedDueToday = pinnedTasks.filter((t) => t.dueDate === today);
 
-  // Heuristic urgency for the non-pinned, non-picked habits.
+  // Heuristic urgency for habits.
   const focusGoalIds = (() => {
     const ids = new Set<string>();
     (['long', 'short', 'ongoing'] as const).forEach((horizon) => {
@@ -2215,15 +2245,94 @@ function Today({
     return s;
   };
   // ALL of today's open habits — the complete daily rhythm, urgency-sorted.
-  // (AI focus picks may repeat here: Focus says "start here", this is the
-  // full checklist.)
   const habitsToday = [...openHabits].sort((a, b) => habitUrgency(b) - habitUrgency(a));
+
+  const goalIsInSelectedThread = (goalId: string): boolean => {
+    if (!selectedGoal) return false;
+    let g = goals.find((x) => x.id === goalId);
+    while (g) {
+      if (g.id === selectedGoal.id) return true;
+      g = g.parentGoalId ? goals.find((x) => x.id === g!.parentGoalId) : undefined;
+    }
+    return false;
+  };
+
+  const dueDiffDays = (h: Habit): number | null => {
+    if (h.kind !== 'task' || !h.dueDate) return null;
+    return Math.ceil(
+      (new Date(h.dueDate + 'T12:00').getTime() - new Date(today + 'T12:00').getTime()) / 86_400_000,
+    );
+  };
+
+  const taskUrgencyScore = (h: Habit): number => {
+    const days = dueDiffDays(h);
+    if (h.kind !== 'task') return 0;
+    if (days === null) return 10;
+    if (days < 0) return 100 + Math.min(40, Math.abs(days) * 5);
+    if (days === 0) return 90;
+    if (days <= 3) return 58 - days * 8;
+    if (days <= 14) return 25;
+    return 10;
+  };
+
+  const planCandidates = [...openHabits, ...openTasks].filter((h) => {
+    if (selectedGoal) return goalIsInSelectedThread(h.goalId);
+    return selectedDomain ? domainOf(h.goalId) === selectedDomain.id : true;
+  });
+
+  const planScore = (h: Habit): number => {
+    const gh = goalHealthMap[h.goalId];
+    const healthGap = gh ? 100 - gh.health : 0;
+    const habitScore = h.kind === 'habit' ? habitUrgency(h) : 0;
+    let score = taskUrgencyScore(h) + habitScore + healthGap * 0.15;
+
+    switch (todayFocus) {
+      case 'urgent':
+        score += taskUrgencyScore(h) * 0.8 + (h.kind === 'habit' ? getGraceDays(h).length * 30 : 0);
+        break;
+      case 'momentum':
+        score += h.kind === 'habit' ? Math.min(32, (h.streak ?? 0) * 4) + 20 : 12;
+        break;
+      case 'rhythm':
+        score += h.kind === 'habit' ? 55 : -5;
+        break;
+      case 'balance':
+        score += healthGap * 0.45 + (isNeglected(h) ? 30 : 0);
+        break;
+      case 'priority':
+        score += healthGap * 0.25 + (h.kind === 'task' ? 18 : 12);
+        break;
+    }
+
+    return score;
+  };
+
+  const recommendedPlanItems = [...planCandidates]
+    .sort((a, b) => planScore(b) - planScore(a) || byPriority(a, b))
+    .slice(0, 3);
+
+  const planReason = (h: Habit): string => {
+    const days = dueDiffDays(h);
+    const gh = goalHealthMap[h.goalId];
+    if (h.kind === 'task' && days !== null) {
+      if (days < 0) return 'Overdue, clear the drag first';
+      if (days === 0) return 'Due today, finish the loop';
+      if (days <= 3) return 'Coming up soon for this goal';
+    }
+    if (h.kind === 'habit' && getGraceDays(h).length > 0) return 'Missed recently, protect the streak';
+    if (h.kind === 'habit' && isNeglected(h)) return 'Neglected lately, rebuild momentum';
+    if (gh && gh.health <= 33) return 'Lifts a goal that needs attention';
+    if (todayFocus === 'rhythm') return 'Keeps today steady and repeatable';
+    if (todayFocus === 'momentum') return 'A clean win toward this goal';
+    if (todayFocus === 'balance') return 'Restores attention where it is thin';
+    return 'Best next move for this focus';
+  };
 
   // Everything not shown in Today (future tasks + capped overflow), by domain.
   const shownToday = new Set<string>([
     ...pinnedTasks, ...openHabits,
   ].map((h) => h.id));
-  displayFocus.forEach(({ item }) => shownToday.add(item.id));
+  recommendedPlanItems.forEach((item) => shownToday.add(item.id));
   const moreByDomain = domains
     .map((d) => ({
       domain: d,
@@ -2248,41 +2357,6 @@ function Today({
   useEffect(() => {
     fetchCoachCard();
   }, [!goals.length && !habits.length]); // re-runs once data arrives; stable after that
-
-  // Ask Gemini to choose today's focus from the non-pinned items (overdue and
-  // due-today pin themselves). Silent fallback: the heuristic order below.
-  useEffect(() => {
-    if (!goals.length && !habits.length) return;
-    // Tasks only — habits have their own card; overdue/due-today pin themselves.
-    const actionableIds = openTasks
-      .filter((h) => !(h.dueDate && h.dueDate <= today))
-      .map((h) => h.id);
-    if (!actionableIds.length) return;
-    setAiFocusLoading(true);
-    // Full context: the same goal-health numbers the badges show, plus each
-    // value's alignment rating, so the pick can say WHY in real terms.
-    const appGoalHealth = Object.fromEntries(
-      goals.filter((g) => !g.completedAt).map((g) => {
-        const gh = goalHealthMap[g.id];
-        // Empty goals report their EARNED health (0) to the AI even during
-        // the new-goal grace, so it nudges a first action from day one while
-        // the badge stays green.
-        return [g.title, gh ? (gh.nItems === 0 ? 0 : gh.health) : 0];
-      }),
-    );
-    const valueAlignment: Record<string, number> = {};
-    domains.forEach((d) => d.values.forEach((v) => {
-      valueAlignment[`${d.name}/${v}`] =
-        Math.round(valueAlignmentScore(`${d.id}:${v}`, goals, habits, reflections, domains) * 10);
-    }));
-    getGeminiFocusPicks(domains, goals, habits, actionableIds, { appGoalHealth, valueAlignment })
-      .then((picks) => setAiFocus(picks))
-      .catch((err) => {
-        console.warn('Gemini focus unavailable, using heuristic order:', err);
-        setAiFocus(null);
-      })
-      .finally(() => setAiFocusLoading(false));
-  }, [!goals.length && !habits.length]);
 
   const renderRow = (h: Habit, aiReason?: string) => {
     const isDone = h.kind === 'task' ? !!h.completed : isHabitDoneThisPeriod(h);
@@ -2421,54 +2495,75 @@ function Today({
         </div>
       </div>
 
-      {/* Focus — hand-picked (overrides) or Gemini's 2–3 task picks. */}
-      {(displayFocus.length > 0 || aiFocusLoading || focusCandidates.length > 0) && (
-        <div className="today-section focus focus-card">
+      {/* Plan — choose the lens, domain, and goal; then show the next actions. */}
+      {domains.length > 0 && (
+        <div className="today-section focus focus-card today-planner-card">
           <div className="today-section-head focus-head-row">
-            <span>
-              ✦ Focus
-              {manualFocus.length > 0 && <span className="focus-loading">your picks</span>}
-              {manualFocus.length === 0 && aiFocusLoading && <span className="focus-loading">choosing…</span>}
-            </span>
-            {focusCandidates.length > 0 && (
-              <button className="reflect-mini-btn" onClick={() => setPickingFocus((v) => !v)}>
-                {pickingFocus ? 'Close' : manualFocus.length > 0 ? 'Edit' : 'Choose'}
-              </button>
-            )}
+            <span>Today plan</span>
           </div>
-          {pickingFocus && (
-            <div className="focus-picker">
-              <p className="triage-sub">Pick up to 3 tasks as today's focus.</p>
-              {focusCandidates.map((t) => {
-                const on = manualFocusIds.includes(t.id);
-                return (
-                  <button
-                    key={t.id}
-                    className={`focus-pick-row${on ? ' on' : ''}`}
-                    onClick={() => toggleManualFocus(t.id)}
-                  >
-                    <span className="focus-pick-check">{on ? '✓' : ''}</span>
-                    <span className="focus-pick-main">
-                      <span className="focus-pick-title">{t.title}</span>
-                      <span className="focus-pick-goal">{lineage(t.goalId)}</span>
-                    </span>
-                  </button>
-                );
-              })}
-              <div className="add-actions">
-                <button className="mini-primary" onClick={() => setPickingFocus(false)}>Done</button>
-                <button
-                  className="mini-ghost"
-                  onClick={() => { setManualFocusIds([]); setPickingFocus(false); }}
-                >
-                  Use Gemini picks
-                </button>
-              </div>
+          <div className="plan-controls">
+            <label className="plan-field">
+              <span>Today focus</span>
+              <select
+                value={todayFocus}
+                onChange={(e) => {
+                  if (isTodayFocusMode(e.target.value)) setTodayFocus(e.target.value);
+                }}
+              >
+                {TODAY_FOCUS_OPTIONS.map((option) => (
+                  <option key={option.id} value={option.id}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="plan-field">
+              <span>Domain</span>
+              <select
+                value={selectedDomainId}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  if (!isDomainIdValue(next)) return;
+                  setSelectedDomainId(next);
+                  setSelectedGoalId(activeGoals.find((g) => g.domainId === next)?.id ?? '');
+                }}
+              >
+                {domains.map((d) => (
+                  <option key={d.id} value={d.id}>{d.name}</option>
+                ))}
+              </select>
+            </label>
+            <label className="plan-field plan-field--wide">
+              <span>Goal</span>
+              <select
+                value={selectedGoal?.id ?? ''}
+                onChange={(e) => setSelectedGoalId(e.target.value)}
+                disabled={!goalsForPlanDomain.length}
+              >
+                {goalsForPlanDomain.length ? goalsForPlanDomain.map((g) => (
+                  <option key={g.id} value={g.id}>{g.title}</option>
+                )) : (
+                  <option value="">No active goals</option>
+                )}
+              </select>
+            </label>
+          </div>
+          <div className="plan-focus-note">
+            {selectedFocusOption.note}
+          </div>
+          {selectedGoal && (
+            <div className="plan-context" style={{ '--plan-domain': DOMAIN_COLORS[selectedGoal.domainId] ?? 'var(--accent)' } as React.CSSProperties}>
+              <span>{selectedDomain?.name ?? 'Domain'}</span>
+              <span>{selectedGoal.title}</span>
             </div>
           )}
-          {!pickingFocus && displayFocus.map(({ item, reason }) => renderRow(item, reason))}
-          {!pickingFocus && displayFocus.length === 0 && !aiFocusLoading && (
-            <p className="triage-sub">Nothing picked yet — tap Choose, or let Gemini decide tomorrow.</p>
+          {recommendedPlanItems.length > 0 ? (
+            <div className="plan-recommendations">
+              <div className="today-subhead accent">Do next</div>
+              {recommendedPlanItems.map((item) => renderRow(item, planReason(item)))}
+            </div>
+          ) : (
+            <p className="plan-empty">
+              {selectedGoal ? 'No open actions for this goal.' : 'No active goals in this domain.'}
+            </p>
           )}
         </div>
       )}
