@@ -808,7 +808,11 @@ function Align({
   const [hideCompleted, setHideCompleted] = useState<boolean>(() => {
     try { return JSON.parse(localStorage.getItem('align-hide-completed-v1') ?? 'false'); } catch { return false; }
   });
-  const [collapsedGoals, setCollapsedGoals] = useState<Set<string>>(new Set());
+  // Open the Align tab with every top-level goal collapsed — a clean overview
+  // you expand into, rather than a fully unrolled tree.
+  const [collapsedGoals, setCollapsedGoals] = useState<Set<string>>(
+    () => new Set(goals.filter((g) => !g.parentGoalId).map((g) => g.id)),
+  );
   const [editingHabitId, setEditingHabitId] = useState<string | null>(null);
 
   const toggleCollapse = (id: string) =>
