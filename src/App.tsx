@@ -257,7 +257,7 @@ export default function App() {
   }, []);
 
   // App state
-  const [tab, setTab] = useState<Tab>('today');
+  const [tab, setTab] = useState<Tab>('align');
   const [domains, setDomains] = useState<Domain[]>(seedDomains);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [habits, setHabits] = useState<Habit[]>([]);
