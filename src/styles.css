@@ -631,6 +631,7 @@ h1 {
 }
 .date-btn--empty { color: var(--muted); }
 .date-btn { cursor: pointer; position: relative; }
+.date-btn-text { pointer-events: none; }
 
 .node {
   position: relative;
