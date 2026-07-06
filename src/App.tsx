@@ -550,31 +550,46 @@ export default function App() {
 }
 
 /* ---------------- Date / Time Button ---------------- */
+// A label reliably forwards taps to its nested input (unlike a <button>, which
+// swallowed them on mobile and left the native picker unable to open). We also
+// call showPicker() on tap where supported, as belt-and-suspenders.
+const PICKER_INPUT_STYLE: React.CSSProperties = {
+  position: 'absolute', inset: 0, opacity: 0, width: '100%', height: '100%',
+  border: 0, padding: 0, margin: 0, cursor: 'pointer', colorScheme: 'dark',
+};
+
+function openPicker(el: HTMLInputElement | null) {
+  if (!el) return;
+  try { (el as HTMLInputElement & { showPicker?: () => void }).showPicker?.(); } catch { /* ignore */ }
+}
+
 function DateBtn({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
+  const ref = useRef<HTMLInputElement>(null);
   const display = value
     ? new Date(value + 'T00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
     : placeholder;
   return (
-    <button type="button" className={`date-btn${value ? '' : ' date-btn--empty'}`}>
+    <label className={`date-btn${value ? '' : ' date-btn--empty'}`} onClick={() => openPicker(ref.current)}>
       {display}
-      <input type="date" value={value}
+      <input ref={ref} type="date" value={value}
         onChange={(e) => onChange(e.target.value)}
-        style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', width: '100%', height: '100%', colorScheme: 'dark' }} />
-    </button>
+        style={PICKER_INPUT_STYLE} />
+    </label>
   );
 }
 
 function TimeBtn({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
+  const ref = useRef<HTMLInputElement>(null);
   const display = value
     ? (() => { const [h, m] = value.split(':'); const d = new Date(); d.setHours(+h, +m); return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }); })()
     : placeholder;
   return (
-    <button type="button" className={`date-btn${value ? '' : ' date-btn--empty'}`}>
+    <label className={`date-btn${value ? '' : ' date-btn--empty'}`} onClick={() => openPicker(ref.current)}>
       {display}
-      <input type="time" value={value}
+      <input ref={ref} type="time" value={value}
         onChange={(e) => onChange(e.target.value)}
-        style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', width: '100%', height: '100%', colorScheme: 'dark' }} />
-    </button>
+        style={PICKER_INPUT_STYLE} />
+    </label>
   );
 }
 
