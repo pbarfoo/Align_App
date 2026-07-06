@@ -550,54 +550,29 @@ export default function App() {
 }
 
 /* ---------------- Date / Time Button ---------------- */
-// The native date/time input sits ON TOP as a transparent full-size overlay so
-// the tap lands on it directly and opens the native picker — a wrapping
-// <button> (steals the tap) or <label> (misdirects focus on iOS) both broke
-// this. We also call showPicker() on tap/focus where supported, as backup.
-const PICKER_INPUT_STYLE: React.CSSProperties = {
-  position: 'absolute', inset: 0, opacity: 0, width: '100%', height: '100%',
-  border: 0, padding: 0, margin: 0, cursor: 'pointer', colorScheme: 'dark',
-  WebkitAppearance: 'none', appearance: 'none', background: 'transparent',
-};
-
-function openPicker(el: HTMLInputElement | null) {
-  if (!el) return;
-  try { (el as HTMLInputElement & { showPicker?: () => void }).showPicker?.(); } catch { /* ignore */ }
-}
-
+// Real, visible native inputs — the only thing that reliably opens the picker
+// on iOS. No overlay/opacity tricks (those failed to open on mobile).
 function DateBtn({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
-  const ref = useRef<HTMLInputElement>(null);
-  const display = value
-    ? new Date(value + 'T00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
-    : placeholder;
   return (
-    <span className={`date-btn${value ? '' : ' date-btn--empty'}`}>
-      <span className="date-btn-text">{display}</span>
-      <input ref={ref} type="date" value={value}
-        aria-label={placeholder}
-        onChange={(e) => onChange(e.target.value)}
-        onClick={() => openPicker(ref.current)}
-        onFocus={() => openPicker(ref.current)}
-        style={PICKER_INPUT_STYLE} />
-    </span>
+    <input
+      type="date"
+      value={value}
+      aria-label={placeholder}
+      onChange={(e) => onChange(e.target.value)}
+      className={`date-input${value ? '' : ' date-input--empty'}`}
+    />
   );
 }
 
 function TimeBtn({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
-  const ref = useRef<HTMLInputElement>(null);
-  const display = value
-    ? (() => { const [h, m] = value.split(':'); const d = new Date(); d.setHours(+h, +m); return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }); })()
-    : placeholder;
   return (
-    <span className={`date-btn${value ? '' : ' date-btn--empty'}`}>
-      <span className="date-btn-text">{display}</span>
-      <input ref={ref} type="time" value={value}
-        aria-label={placeholder}
-        onChange={(e) => onChange(e.target.value)}
-        onClick={() => openPicker(ref.current)}
-        onFocus={() => openPicker(ref.current)}
-        style={PICKER_INPUT_STYLE} />
-    </span>
+    <input
+      type="time"
+      value={value}
+      aria-label={placeholder}
+      onChange={(e) => onChange(e.target.value)}
+      className={`date-input${value ? '' : ' date-input--empty'}`}
+    />
   );
 }
 

@@ -2796,3 +2796,30 @@ h1 {
     grid-column: auto;
   }
 }
+
+/* Native date/time inputs — visible & tappable, styled to match the form */
+.date-input {
+  flex: 1;
+  min-width: 120px;
+  min-height: 44px;
+  box-sizing: border-box;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 16px; /* >=16px stops iOS zoom-on-focus */
+  font-family: inherit;
+  color: var(--text);
+  color-scheme: dark;
+  -webkit-appearance: none;
+  appearance: none;
+  text-align: left;
+}
+.date-input--empty { color: var(--muted); }
+.date-input:focus { outline: 1px solid var(--accent); }
+/* Nudge the native calendar/clock indicator to the right edge */
+.date-input::-webkit-calendar-picker-indicator {
+  margin-left: auto;
+  filter: invert(0.7);
+  cursor: pointer;
+}
