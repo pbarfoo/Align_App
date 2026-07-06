@@ -1942,9 +1942,11 @@ function Today({
   const [coachRating, setCoachRating] = useState<'up' | 'down' | null>(null);
   const today = toDateStr(new Date());
   const initialPlan = readTodayPlanPrefs(today);
+
   // Start blank — no domain chosen — so the card is clean until you pick one.
   const [selectedDomainId, setSelectedDomainId] = useState<DomainId | ''>(() =>
     initialPlan.domainId && domains.some((d) => d.id === initialPlan.domainId) ? initialPlan.domainId : '');
+
   const [selectedGoalId, setSelectedGoalId] = useState<string>(initialPlan.goalId ?? '');
   // Goal list collapses to just the picked goal; expand to change.
   const [expandGoals, setExpandGoals] = useState(false);
@@ -2022,6 +2024,7 @@ function Today({
     }));
   }, [today, selectedDomainId, selectedGoalId]);
 
+
   // Once a day, drop stale per-day keys (today's plan + leftovers from earlier
   // picker experiments) so localStorage doesn't accumulate one entry per day.
   useEffect(() => {
@@ -2033,6 +2036,7 @@ function Today({
       if (p && key.slice(p.length) !== today) localStorage.removeItem(key);
     }
   }, [today]);
+
 
   // Progress: today's habits + urgent tasks + tasks finished today
   const totalCount =
@@ -2197,8 +2201,10 @@ function Today({
   // due-today tasks, then a chosen plan, then the rest of today's habits
   // ranked by focus / neglect / weak-goal rescue.
   const overdueSorted = [...overdueTasks].sort((a, b) => daysOverdueOf(b) - daysOverdueOf(a));
+
   const selectedDomain = selectedDomainId ? domains.find((d) => d.id === selectedDomainId) ?? null : null;
   const selectedGoal = goalsForPlanDomain.find((g) => g.id === selectedGoalId) ?? null;
+
 
   // Hard cap on task rows in the Today list: 3. Overdue (worst first) claim
   // the slots ahead of due-today; the overflow stays reachable under More.
@@ -2282,7 +2288,9 @@ function Today({
     const gh = goalHealthMap[h.goalId];
     const healthGap = gh ? 100 - gh.health : 0;
     const habitScore = h.kind === 'habit' ? habitUrgency(h) : 0;
+
     return taskUrgencyScore(h) + habitScore + healthGap * 0.25 + (h.kind === 'task' ? 18 : 12);
+
   };
 
   // Only the 3 most needed/effective actions for the chosen goal — a focused
@@ -2302,7 +2310,9 @@ function Today({
     if (h.kind === 'habit' && getGraceDays(h).length > 0) return 'Missed recently, protect the streak';
     if (h.kind === 'habit' && isNeglected(h)) return 'Neglected lately, rebuild momentum';
     if (gh && gh.health <= 33) return 'Lifts a goal that needs attention';
+
     return 'Next move for this goal';
+
   };
 
   // Everything not shown in Today (future tasks + capped overflow), by domain.
@@ -2476,6 +2486,7 @@ function Today({
       {domains.length > 0 && (
         <div className="today-section focus focus-card today-planner-card">
           <div className="today-section-head focus-head-row">
+
             <span>✦ Focus</span>
           </div>
 
@@ -2491,12 +2502,14 @@ function Today({
                   setSelectedDomainId(turningOff ? '' : d.id);
                   setSelectedGoalId('');
                   setExpandGoals(!turningOff);
+
                 }}
               >
                 {d.name.split(' ')[0]}
               </button>
             ))}
           </div>
+
 
           {/* Blank until a domain is chosen */}
           {!selectedDomainId && (
@@ -2542,6 +2555,7 @@ function Today({
               </div>
             ) : (
               <p className="plan-empty">Nothing open for “{selectedGoal.title}” today. ✦</p>
+
             )
           )}
         </div>
@@ -2987,16 +3001,13 @@ function computeHealth(
 }
 
 /**
- * Ongoing (no-deadline) goals measure UPKEEP, not progress toward a finish,
- * so pace is meaningless. Dedicated formula:
- *   with habits:  0.6 × habit_consistency + 0.2 × recent_activity + 0.2 × structure
- *   tasks only:   0.6 × task_activity + 0.4 × structure
- *   nothing yet:  0
- * recent_activity = any habit completion or task finished in the last 7 days;
- * task_activity = tasks finished in the last 28 days / 4 (≈ one a week = full
- *   marks) — a ratio, not a boolean, so tasks-only goals don't whipsaw weekly;
- * habit_consistency = 28-day cadence fidelity (streak-weighted), as elsewhere;
- * structure = items/5 capped at 1, same engagement signal as deadline goals.
+ * Ongoing (no-deadline) goals measure UPKEEP, not progress toward a finish.
+ * Health is the best current maintenance signal, blended with light structure:
+ *   - active task focus: open, not-overdue tasks keep the goal visibly alive;
+ *   - recurring habit completions: cadence fidelity over the last 28 days;
+ *   - recent touch: completed tasks/subgoals or habit completions decay over time.
+ * This avoids showing a nonsense zero when an ongoing role has a live task but
+ * no recent checkbox yet.
  */
 function computeOngoingHealth(subGoals: Goal[], treeHabits: Habit[], isFocus = false): number {
   const habits = treeHabits.filter((h) => h.kind === 'habit');
@@ -3006,10 +3017,6 @@ function computeOngoingHealth(subGoals: Goal[], treeHabits: Habit[], isFocus = f
 
   const engagement = Math.min(itemCount / 5, 1.0);
   const now = Date.now();
-  const weekAgoStr = toDateStr(new Date(now - 7 * 86_400_000));
-  const active7d =
-    habits.some((h) => (h.completions ?? []).some((d) => d >= weekAgoStr)) ||
-    tasks.some((t) => t.completed && t.completedAt && now - t.completedAt <= 7 * 86_400_000);
 
   const habitW = (h: Habit) => Math.min(1 + (h.streak || 0) * 0.2, 4.0);
   const lookback = toDateStr(new Date(now - 28 * 86_400_000));
@@ -3023,20 +3030,35 @@ function computeOngoingHealth(subGoals: Goal[], treeHabits: Habit[], isFocus = f
   });
   const consistency = totalW > 0 ? scoreW / totalW : 0;
 
-  const doneLast28 = tasks.filter(
-    (t) => t.completed && t.completedAt && now - t.completedAt <= 28 * 86_400_000,
-  ).length;
-  const taskActivity = Math.min(1, doneLast28 / 4); // ≈ one task/week = full marks
+  const openTasks = tasks.filter((t) => !t.completed);
+  const taskFocus = openTasks.length === 0 ? 0 : Math.max(...openTasks.map((t) => {
+    if (!t.dueDate) return 0.65;
+    const daysUntilDue = Math.ceil((new Date(t.dueDate + 'T12:00').getTime() - now) / 86_400_000);
+    if (daysUntilDue >= 0) return daysUntilDue <= 7 ? 0.85 : 0.7;
+    // Overdue ongoing tasks decay gently instead of instantly poisoning the role.
+    return Math.max(0.2, 0.6 - Math.min(Math.abs(daysUntilDue), 28) / 28 * 0.4);
+  }));
 
-  const base = habits.length > 0
-    ? 0.6 * consistency + 0.2 * (active7d ? 1 : 0) + 0.2 * engagement
-    : 0.6 * taskActivity + 0.4 * engagement;
+  const touchTimes: number[] = [
+    ...habits.flatMap((h) => (h.completions ?? []).map((d) => new Date(d + 'T12:00').getTime())),
+    ...tasks.filter((t) => t.completed && t.completedAt).map((t) => t.completedAt!),
+    ...subGoals.filter((g) => g.completedAt).map((g) => g.completedAt!),
+  ].filter((t) => Number.isFinite(t));
+  const lastTouch = touchTimes.length ? Math.max(...touchTimes) : 0;
+  const daysSinceTouch = lastTouch ? Math.max(0, (now - lastTouch) / 86_400_000) : Infinity;
+  // Starts high for a recent touch and decays over ~60 days to a small floor.
+  const recentTouch = lastTouch ? Math.max(0.1, 1 - daysSinceTouch / 60) : 0;
+
+  const strongestSignal = Math.max(taskFocus, consistency, recentTouch);
+  const base = Math.min(1, 0.85 * strongestSignal + 0.15 * engagement);
 
   // Same ±10% focus adjustment as deadline goals: raises the bar when
   // neglected, rewards when delivering.
   const focusAdj = isFocus ? (base - 0.5) * 0.2 : 0;
   return Math.max(0, Math.min(base + focusAdj, 1.0));
 }
+
+export const __test_computeOngoingHealth = computeOngoingHealth;
 
 /**
  * Done = simple count ratio across sub-goals, habits, and tasks.
