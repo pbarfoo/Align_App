@@ -3076,10 +3076,12 @@ function computeOngoingHealth(subGoals: Goal[], treeHabits: Habit[], isFocus = f
     if (!t.completed || !t.completedAt) return false;
     return now - t.completedAt <= WINDOW * 86_400_000;
   });
-  // Ongoing tasks are throughput, not a finite checklist. Cap at three recent
-  // completions so adding a new open task doesn't dilute work already done, and
-  // each completed task is large enough to move the rounded badge.
-  const taskCompletion = Math.min(1, recentCompletedTasks.length / 3);
+  // Ongoing tasks are throughput, not a finite checklist. Count recent
+  // completions over a wider band so repeated checkoffs keep moving the badge.
+  const taskCompletion = Math.min(1, recentCompletedTasks.length / 6);
+  // Adding a task should register as structure, not disappear behind a max()
+  // focus signal. This caps gently so a huge task pile cannot peg health alone.
+  const taskStructure = Math.min(1, tasks.length / 10);
 
   const touchTimes: number[] = [
     ...habits.flatMap((h) => (h.completions ?? []).map((d) => new Date(d + 'T12:00').getTime())),
@@ -3096,9 +3098,10 @@ function computeOngoingHealth(subGoals: Goal[], treeHabits: Habit[], isFocus = f
   // to actually be happening. A recent touch or a live task keep the goal off
   // the floor but can't alone peg it to 100.
   const base = Math.min(1,
-    0.53 * consistency +
-    0.25 * taskCompletion +
+    0.55 * consistency +
+    0.40 * taskCompletion +
     0.22 * recentTouch +
+    0.10 * taskStructure +
     0.05 * taskFocus +
     0.05 * engagement);
 

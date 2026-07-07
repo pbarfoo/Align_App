@@ -111,4 +111,28 @@ describe('ongoing goal health', () => {
 
     expect(withOpenTask).toBeGreaterThanOrEqual(completedOnly);
   });
+
+  it('keeps moving the score after several ongoing task completions', () => {
+    vi.setSystemTime(now);
+
+    const completed = [0, 1, 2, 3].map((i) =>
+      task({ id: `h-done-${i}`, completed: true, completedAt: now - i * day }),
+    );
+    const openTasks = [0, 1, 2].map((i) => task({ id: `h-open-${i}`, dueDate: '2026-07-10' }));
+
+    const before = __test_computeOngoingHealth([], [...completed, ...openTasks], true);
+    const afterAdd = __test_computeOngoingHealth([], [
+      ...completed,
+      ...openTasks,
+      task({ id: 'h-new-open' }),
+    ], true);
+    const afterComplete = __test_computeOngoingHealth([], [
+      ...completed,
+      task({ id: 'h-new-done', completed: true, completedAt: now }),
+      ...openTasks,
+    ], true);
+
+    expect(afterAdd - before).toBeGreaterThan(0.009);
+    expect(afterComplete - before).toBeGreaterThan(0.05);
+  });
 });
