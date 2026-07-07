@@ -2982,9 +2982,13 @@ function computeHealth(
       .filter((h) => (h.completions ?? []).some((d) => d >= lookback))
       .reduce((s, h) => s + habitW(h), 0);
     const doneFraction = (taskDone + subDone + habitDoneW) / totalWeight;
-    pace = timeElapsed < 0.1
+    // Blend absolute progress with the ahead-of-schedule ratio so a single
+    // early completion doesn't peg pace to 100%. Early on (< 10% elapsed) the
+    // ratio is unstable, so lean fully on absolute progress there.
+    const aheadRatio = timeElapsed < 0.1
       ? Math.min(doneFraction, 1.0)
       : Math.min(doneFraction / timeElapsed, 1.0);
+    pace = 0.5 * Math.min(doneFraction, 1.0) + 0.5 * aheadRatio;
   }
 
   // Time-maturity: pace credit scales with how far into the goal's life we are.
