@@ -791,10 +791,10 @@ function Align({
   const [hideCompleted, setHideCompleted] = useState<boolean>(() => {
     try { return JSON.parse(localStorage.getItem('align-hide-completed-v1') ?? 'false'); } catch { return false; }
   });
-  // Open the Align tab with every top-level goal collapsed — a clean overview
-  // you expand into, rather than a fully unrolled tree.
+  // Open the Align tab fully collapsed — every goal AND sub-goal starts closed,
+  // a clean overview you expand into rather than a fully unrolled tree.
   const [collapsedGoals, setCollapsedGoals] = useState<Set<string>>(
-    () => new Set(goals.filter((g) => !g.parentGoalId).map((g) => g.id)),
+    () => new Set(goals.map((g) => g.id)),
   );
   const [editingHabitId, setEditingHabitId] = useState<string | null>(null);
 
@@ -1168,6 +1168,8 @@ function Align({
                   hideCompleted={hideCompleted}
                   domainValues={domain.values}
                   domainVision={domain.vision}
+                  isCollapsed={collapsedGoals.has(sg.id)}
+                  onToggleCollapse={habits.some((h) => h.goalId === sg.id) ? () => toggleCollapse(sg.id) : undefined}
                 />
               ))}
             {!collapsedGoals.has(goal.id) && addingFor === goal.id && (
