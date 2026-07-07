@@ -46,15 +46,18 @@ function subGoal(overrides: Partial<Goal> = {}): Goal {
 }
 
 describe('ongoing goal health', () => {
-  it('treats an active not-overdue task as healthy focus instead of zero', () => {
+  it('keeps an active task off the floor but modest without a recurring habit', () => {
     vi.setSystemTime(now);
 
+    // A queued task alone no longer reads as "healthy maintenance" — a higher
+    // bar means sustained recurring work is required to score high.
     const health = __test_computeOngoingHealth([], [task({ dueDate: '2026-07-10' })], true);
 
-    expect(health).toBeGreaterThanOrEqual(0.6);
+    expect(health).toBeGreaterThan(0);
+    expect(health).toBeLessThan(0.4);
   });
 
-  it('uses recurring habit completions as a strong maintenance signal', () => {
+  it('rewards a consistently-kept recurring habit (age-aware) as the top signal', () => {
     vi.setSystemTime(now);
 
     const health = __test_computeOngoingHealth([], [habit({
@@ -65,13 +68,14 @@ describe('ongoing goal health', () => {
     expect(health).toBeGreaterThan(0.75);
   });
 
-  it('decays after a recent touch instead of dropping straight to zero', () => {
+  it('does not let a lone recent touch reach the top, and decays over time', () => {
     vi.setSystemTime(now);
 
     const touchedRecently = __test_computeOngoingHealth([subGoal({ completedAt: now - 3 * day })], [], true);
     const touchedLongAgo = __test_computeOngoingHealth([subGoal({ completedAt: now - 45 * day })], [], true);
 
-    expect(touchedRecently).toBeGreaterThan(0.5);
+    expect(touchedRecently).toBeGreaterThan(0.15); // off the floor
+    expect(touchedRecently).toBeLessThan(0.6);      // but not "great maintenance"
     expect(touchedLongAgo).toBeLessThan(touchedRecently);
     expect(touchedLongAgo).toBeGreaterThan(0);
   });

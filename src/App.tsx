@@ -3037,11 +3037,21 @@ function computeOngoingHealth(subGoals: Goal[], treeHabits: Habit[], isFocus = f
   const now = Date.now();
 
   const habitW = (h: Habit) => Math.min(1 + (h.streak || 0) * 0.2, 4.0);
-  const lookback = toDateStr(new Date(now - 28 * 86_400_000));
+  const WINDOW = 28;
+  const lookback = toDateStr(new Date(now - WINDOW * 86_400_000));
   let totalW = 0, scoreW = 0;
   habits.forEach((h) => {
-    const expected = Math.max(1, 28 / naturalIntervalDays(h));
-    const actual   = (h.completions ?? []).filter((d) => d >= lookback).length;
+    const comps = h.completions ?? [];
+    // Age-aware expectation: a brand-new habit done every day reads as
+    // consistent instead of being penalised for lacking 28 days of history.
+    const startMs = h.startDate
+      ? new Date(h.startDate + 'T12:00').getTime()
+      : comps.length
+        ? Math.min(...comps.map((d) => new Date(d + 'T12:00').getTime()))
+        : now - WINDOW * 86_400_000;
+    const ageDays  = Math.min(WINDOW, Math.max(1, (now - startMs) / 86_400_000));
+    const expected = Math.max(1, ageDays / naturalIntervalDays(h));
+    const actual   = comps.filter((d) => d >= lookback).length;
     const w = habitW(h);
     scoreW += Math.min(actual / expected, 1) * w;
     totalW += w;
@@ -3067,8 +3077,12 @@ function computeOngoingHealth(subGoals: Goal[], treeHabits: Habit[], isFocus = f
   // Starts high for a recent touch and decays over ~60 days to a small floor.
   const recentTouch = lastTouch ? Math.max(0.1, 1 - daysSinceTouch / 60) : 0;
 
-  const strongestSignal = Math.max(taskFocus, consistency, recentTouch);
-  const base = Math.min(1, 0.85 * strongestSignal + 0.15 * engagement);
+  // Weighted blend — habit consistency is the true maintenance signal and
+  // carries the most weight, so reaching the top requires the recurring work
+  // to actually be happening. A recent touch or a live task keep the goal off
+  // the floor but can't alone peg it to 100.
+  const base = Math.min(1,
+    0.45 * consistency + 0.30 * recentTouch + 0.15 * taskFocus + 0.10 * engagement);
 
   // Same ±10% focus adjustment as deadline goals: raises the bar when
   // neglected, rewards when delivering.
