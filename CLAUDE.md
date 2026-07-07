@@ -1,5 +1,8 @@
 # Align App — Claude guidance
 
+Read `AGENTS.md` first for active handoff context, changed files, verification
+commands, and Supabase notes.
+
 ## Skill hygiene
 When you notice you've carried out the same multi-step workflow more than
 twice in this project (a recurring ticket format, a build/deploy sequence,

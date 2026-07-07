@@ -113,6 +113,7 @@ function goalFromRow(row: Row): Goal {
 }
 
 function habitToRow(h: Habit, userId: string): Row {
+  const completions = Array.isArray(h.completions) ? h.completions : [];
   return {
     id: h.id, user_id: userId, goal_id: h.goalId,
     title: h.title, kind: h.kind, done_today: h.doneToday,
@@ -122,10 +123,11 @@ function habitToRow(h: Habit, userId: string): Row {
     due_date: h.dueDate ?? null, due_time: h.dueTime ?? null,
     completed: h.completed ?? null, completed_at: h.completedAt ?? null,
     streak: h.streak ?? 0,
-    completions: h.completions ?? [],
+    completions,
   };
 }
 function habitFromRow(row: Row): Habit {
+  const completions = Array.isArray(row.completions) ? row.completions : [];
   return {
     id: row.id, goalId: row.goal_id,
     title: row.title, kind: row.kind as 'habit' | 'task',
@@ -137,10 +139,10 @@ function habitFromRow(row: Row): Habit {
     specificDays: row.specific_days ?? undefined,
     dueDate: row.due_date ?? undefined,
     dueTime: row.due_time ?? undefined,
-    completed: row.completed ?? undefined,
+    completed: row.kind === 'task' ? !!row.completed : row.completed ?? undefined,
     completedAt: row.completed_at ?? undefined,
     streak: row.streak ?? 0,
-    completions: row.completions ?? [],
+    completions,
   };
 }
 
@@ -286,7 +288,7 @@ export default function App() {
     Promise.all([
       supabase.from('domains').select('*').eq('user_id', userId),
       supabase.from('goals').select('*').eq('user_id', userId),
-      supabase.from('habits').select('*').eq('user_id', userId),
+      supabase.from('habits').select('*').eq('user_id', userId).order('id'),
       supabase.from('reflections').select('*').eq('user_id', userId).order('date'),
       supabase.from('stale_tasks').select('*'),
     ]).then(([d, g, h, r, st]) => {
@@ -906,6 +908,7 @@ function Align({
       title,
       kind,
       doneToday: false,
+      completions: [],
       ...(kind === 'habit'
         ? {
             // Anchor every habit to a start date so missed-day detection knows
@@ -2195,6 +2198,7 @@ function Today({
       title,
       kind,
       doneToday: false,
+      completions: [],
       ...(kind === 'habit'
         ? {
             startDate: input.startDate || toDateStr(new Date()),
@@ -3067,6 +3071,12 @@ function computeOngoingHealth(subGoals: Goal[], treeHabits: Habit[], isFocus = f
     return Math.max(0.2, 0.6 - Math.min(Math.abs(daysUntilDue), 28) / 28 * 0.4);
   }));
 
+  const recentCompletedTasks = tasks.filter((t) => {
+    if (!t.completed || !t.completedAt) return false;
+    return now - t.completedAt <= WINDOW * 86_400_000;
+  });
+  const taskCompletion = tasks.length === 0 ? 0 : recentCompletedTasks.length / tasks.length;
+
   const touchTimes: number[] = [
     ...habits.flatMap((h) => (h.completions ?? []).map((d) => new Date(d + 'T12:00').getTime())),
     ...tasks.filter((t) => t.completed && t.completedAt).map((t) => t.completedAt!),
@@ -3082,12 +3092,17 @@ function computeOngoingHealth(subGoals: Goal[], treeHabits: Habit[], isFocus = f
   // to actually be happening. A recent touch or a live task keep the goal off
   // the floor but can't alone peg it to 100.
   const base = Math.min(1,
-    0.45 * consistency + 0.30 * recentTouch + 0.15 * taskFocus + 0.10 * engagement);
+    0.45 * consistency +
+    0.25 * recentTouch +
+    0.15 * taskCompletion +
+    0.10 * taskFocus +
+    0.05 * engagement);
 
   // Same ±10% focus adjustment as deadline goals: raises the bar when
   // neglected, rewards when delivering.
   const focusAdj = isFocus ? (base - 0.5) * 0.2 : 0;
-  return Math.max(0, Math.min(base + focusAdj, 1.0));
+  const scored = Math.max(0, Math.min(base + focusAdj, 1.0));
+  return base > 0 ? Math.max(0.02, scored) : 0;
 }
 
 export const __test_computeOngoingHealth = computeOngoingHealth;

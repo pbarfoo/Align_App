@@ -79,4 +79,23 @@ describe('ongoing goal health', () => {
     expect(touchedLongAgo).toBeLessThan(touchedRecently);
     expect(touchedLongAgo).toBeGreaterThan(0);
   });
+
+  it('rewards completing an ongoing task more than merely adding another open task', () => {
+    vi.setSystemTime(now);
+
+    const open = task({ id: 'h-open', dueDate: '2026-07-10' });
+    const completed = task({
+      id: 'h-done',
+      dueDate: '2026-07-10',
+      completed: true,
+      completedAt: now,
+    });
+
+    const openOnly = __test_computeOngoingHealth([], [open], true);
+    const withCompleted = __test_computeOngoingHealth([], [completed], true);
+    const withExtraOpen = __test_computeOngoingHealth([], [completed, open], true);
+
+    expect(withCompleted).toBeGreaterThan(openOnly);
+    expect(withExtraOpen).toBeGreaterThan(openOnly);
+  });
 });
