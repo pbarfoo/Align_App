@@ -3025,8 +3025,9 @@ function computeHealth(
 /**
  * Ongoing (no-deadline) goals measure UPKEEP, not progress toward a finish.
  * Health is the best current maintenance signal, blended with light structure:
- *   - active task focus: open, not-overdue tasks keep the goal visibly alive;
  *   - recurring habit completions: cadence fidelity over the last 28 days;
+ *   - recent task throughput: recent completed tasks visibly move the badge;
+ *   - active task focus: open, not-overdue tasks keep the goal visibly alive;
  *   - recent touch: completed tasks/subgoals or habit completions decay over time.
  * This avoids showing a nonsense zero when an ongoing role has a live task but
  * no recent checkbox yet.
@@ -3075,7 +3076,10 @@ function computeOngoingHealth(subGoals: Goal[], treeHabits: Habit[], isFocus = f
     if (!t.completed || !t.completedAt) return false;
     return now - t.completedAt <= WINDOW * 86_400_000;
   });
-  const taskCompletion = tasks.length === 0 ? 0 : recentCompletedTasks.length / tasks.length;
+  // Ongoing tasks are throughput, not a finite checklist. Cap at three recent
+  // completions so adding a new open task doesn't dilute work already done, and
+  // each completed task is large enough to move the rounded badge.
+  const taskCompletion = Math.min(1, recentCompletedTasks.length / 3);
 
   const touchTimes: number[] = [
     ...habits.flatMap((h) => (h.completions ?? []).map((d) => new Date(d + 'T12:00').getTime())),
@@ -3092,10 +3096,10 @@ function computeOngoingHealth(subGoals: Goal[], treeHabits: Habit[], isFocus = f
   // to actually be happening. A recent touch or a live task keep the goal off
   // the floor but can't alone peg it to 100.
   const base = Math.min(1,
-    0.45 * consistency +
-    0.25 * recentTouch +
-    0.15 * taskCompletion +
-    0.10 * taskFocus +
+    0.53 * consistency +
+    0.25 * taskCompletion +
+    0.22 * recentTouch +
+    0.05 * taskFocus +
     0.05 * engagement);
 
   // Same ±10% focus adjustment as deadline goals: raises the bar when
@@ -3426,7 +3430,7 @@ function GoalStrip({
           <div className="health-popup-row">
             <span className="health-popup-formula">
               {goal.horizon === 'ongoing'
-                ? 'habit consistency · recent activity · structure'
+                ? 'habit consistency · completed tasks · recent activity'
                 : 'pace · habit consistency · planning engagement'}
             </span>
             <span className="health-popup-result" style={{ color: domainColor }}>{healthPct}%</span>
@@ -3435,12 +3439,12 @@ function GoalStrip({
           {goal.horizon === 'ongoing' ? (
             <>
               <div className="health-popup-weights">
-                <span>Are your habits consistent? (60%)</span>
-                <span>Anything done in the last 7 days? (20%)</span>
-                <span>Is the goal built out? (20%)</span>
+                <span>Are recurring habits being kept?</span>
+                <span>Were ongoing tasks completed recently?</span>
+                <span>Is there active work attached?</span>
               </div>
               <div className="health-popup-note">
-                No deadline, so no pace — health measures upkeep. Habit consistency × 60% + recent activity × 20% + structure × 20%
+                No deadline, so no pace — health measures upkeep through habit consistency, recent completed tasks, recent touch, and active focus.
               </div>
             </>
           ) : (
@@ -3532,7 +3536,7 @@ function GoalsDashboard({
   const healthNoteOngoing = (
     <div className="dash-health-note">
       <div className="dash-health-note-title">How Health is calculated</div>
-      <p>Habit consistency (60%) · Recent activity, last 7 days (20%) · Structure (20%) — no deadline, so no pace</p>
+      <p>Habit consistency · Recent completed tasks · Recent activity · Active focus — no deadline, so no pace</p>
       <p>New goals start at 50% and settle to their earned score over the first 14 days.</p>
     </div>
   );

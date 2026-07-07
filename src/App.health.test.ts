@@ -95,7 +95,20 @@ describe('ongoing goal health', () => {
     const withCompleted = __test_computeOngoingHealth([], [completed], true);
     const withExtraOpen = __test_computeOngoingHealth([], [completed, open], true);
 
-    expect(withCompleted).toBeGreaterThan(openOnly);
-    expect(withExtraOpen).toBeGreaterThan(openOnly);
+    expect(withCompleted - openOnly).toBeGreaterThan(0.08);
+    expect(withExtraOpen).toBeGreaterThanOrEqual(withCompleted);
+  });
+
+  it('does not dilute recent completed task credit when another open task is added', () => {
+    vi.setSystemTime(now);
+
+    const completedA = task({ id: 'h-done-a', completed: true, completedAt: now });
+    const completedB = task({ id: 'h-done-b', completed: true, completedAt: now - day });
+    const open = task({ id: 'h-open', dueDate: '2026-07-10' });
+
+    const completedOnly = __test_computeOngoingHealth([], [completedA, completedB], true);
+    const withOpenTask = __test_computeOngoingHealth([], [completedA, completedB, open], true);
+
+    expect(withOpenTask).toBeGreaterThanOrEqual(completedOnly);
   });
 });
