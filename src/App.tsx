@@ -796,6 +796,16 @@ function Align({
   const [collapsedGoals, setCollapsedGoals] = useState<Set<string>>(
     () => new Set(goals.map((g) => g.id)),
   );
+  // Backstop: if goals hadn't loaded when this mounted (empty initial set),
+  // collapse everything the first time they arrive — otherwise the tree would
+  // open fully expanded.
+  const collapseInit = useRef(false);
+  useEffect(() => {
+    if (!collapseInit.current && goals.length) {
+      collapseInit.current = true;
+      setCollapsedGoals(new Set(goals.map((g) => g.id)));
+    }
+  }, [goals]);
   const [editingHabitId, setEditingHabitId] = useState<string | null>(null);
 
   const toggleCollapse = (id: string) =>
