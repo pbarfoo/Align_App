@@ -973,21 +973,7 @@ function Align({
         const turningOn = !h.completed;
         return { ...h, completed: turningOn, completedAt: turningOn ? Date.now() : undefined };
       }
-      const today = toDateStr(new Date());
-      const completions = h.completions ?? [];
-      // If today isn't done yet and there are frozen days, log the oldest frozen
-      // day first — checkmark works through the backlog before logging today.
-      const frozen = getGraceDays(h);
-      const target = (!completions.includes(today) && frozen.length > 0) ? frozen[0] : today;
-      const turningOn = !completions.includes(target);
-      const newCompletions = turningOn ? [...completions, target] : completions.filter((d) => d !== target);
-      return {
-        ...h,
-        doneToday: target === today ? turningOn : h.doneToday,
-        completions: newCompletions,
-        streak: computeStreakFromCompletions(newCompletions, h),
-        completedAt: turningOn ? Date.now() : undefined,
-      };
+      return toggleHabitCompletion(h);
     }));
 
   return (
@@ -2104,20 +2090,7 @@ function Today({
         const turningOn = !h.completed;
         return { ...h, completed: turningOn, completedAt: turningOn ? Date.now() : undefined };
       }
-      const today = toDateStr(new Date());
-      const completions = h.completions ?? [];
-      // Mirror Align tab: work through frozen backlog before logging today
-      const frozen = getGraceDays(h);
-      const target = (!completions.includes(today) && frozen.length > 0) ? frozen[0] : today;
-      const turningOn = !completions.includes(target);
-      const newCompletions = turningOn ? [...completions, target] : completions.filter((d) => d !== target);
-      return {
-        ...h,
-        doneToday: target === today ? turningOn : h.doneToday,
-        completions: newCompletions,
-        streak: computeStreakFromCompletions(newCompletions, h),
-        completedAt: turningOn ? Date.now() : undefined,
-      };
+      return toggleHabitCompletion(h);
     }));
   };
 
@@ -3113,6 +3086,7 @@ function computeOngoingHealth(subGoals: Goal[], treeHabits: Habit[], isFocus = f
 }
 
 export const __test_computeOngoingHealth = computeOngoingHealth;
+export const __test_toggleHabitCompletion = toggleHabitCompletion;
 
 /**
  * Done = simple count ratio across sub-goals, habits, and tasks.
@@ -4144,6 +4118,36 @@ function getGraceDays(h: Habit): string[] {
   );
   if (lastDone >= prev.getTime()) return [];
   return [prevStr];
+}
+
+/**
+ * Toggle a habit's completion for the RELEVANT occurrence, shared by the Align
+ * and Today tabs:
+ *   1. if today is already logged → un-log it (lets you undo, incl. a stray
+ *      completion logged on a non-scheduled day);
+ *   2. else work through the missed backlog oldest-first (frozen days);
+ *   3. else log today ONLY if the habit is actually scheduled today;
+ *   4. else no-op — never phantom-log a day the habit isn't due (which would
+ *      move health without ever filling the card's circle).
+ */
+function toggleHabitCompletion(h: Habit): Habit {
+  const today = toDateStr(new Date());
+  const completions = h.completions ?? [];
+  const frozen = getGraceDays(h);
+  let target: string | null;
+  if (completions.includes(today)) target = today;
+  else if (frozen.length > 0) target = frozen[0];
+  else if (isHabitScheduledToday(h)) target = today;
+  else return h;
+  const turningOn = !completions.includes(target);
+  const newCompletions = turningOn ? [...completions, target] : completions.filter((d) => d !== target);
+  return {
+    ...h,
+    doneToday: target === today ? turningOn : h.doneToday,
+    completions: newCompletions,
+    streak: computeStreakFromCompletions(newCompletions, h),
+    completedAt: turningOn ? Date.now() : undefined,
+  };
 }
 
 /* ---------------- bits ---------------- */
