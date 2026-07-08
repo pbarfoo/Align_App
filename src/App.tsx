@@ -1171,7 +1171,9 @@ function Align({
                   onToggleCollapse={habits.some((h) => h.goalId === sg.id) ? () => toggleCollapse(sg.id) : undefined}
                 />
               ))}
-            {!collapsedGoals.has(goal.id) && addingFor === goal.id && (
+            {/* Add form always renders — even while the goal is collapsed —
+                otherwise tapping + on a collapsed goal appears to do nothing. */}
+            {addingFor === goal.id && (
               addingForKind === null ? (
                 <div className="inline-add short add-form">
                   <div className="seg">
@@ -1393,7 +1395,9 @@ function ShortWithActions({
           </React.Fragment>
           );
         })}
-      {!isCollapsed && addingFor === goal.id && (
+      {/* Always render the add form — a collapsed (or chevron-less) sub-goal
+          must still show it when + is tapped. */}
+      {addingFor === goal.id && (
         <AddActionForm
           goalId={goal.id}
           onAdd={onAddAction}
