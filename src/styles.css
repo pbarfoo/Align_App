@@ -561,7 +561,8 @@ h1 {
 }
 
 .field-row > select,
-.field-row > input {
+.field-row > input,
+.field-row > .date-field {
   flex: 1;
   min-width: 120px;
 }
@@ -2685,9 +2686,24 @@ h1 {
    iOS Safari that can suppress the input's own value rendering, leaving the
    picker openable but the chosen date/time invisible (the same "looks
    broken" failure this styling is meant to avoid). */
-.date-input {
+/* Labelled date/time field: caption above the native input so an empty box
+   (iOS shows no placeholder) still says what it is. */
+.date-field {
   flex: 1;
   min-width: 120px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.date-field-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  padding-left: 2px;
+}
+.date-input {
+  width: 100%;
   min-height: 44px;
   box-sizing: border-box;
   background: var(--surface-2);

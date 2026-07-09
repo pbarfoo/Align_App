@@ -531,29 +531,32 @@ export default function App() {
 
 /* ---------------- Date / Time Button ---------------- */
 // Real, visible native inputs — the only thing that reliably opens the picker
-// on iOS. No overlay/opacity tricks (those failed to open on mobile).
-function DateBtn({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
+// on iOS. The input renders blank when empty there (no placeholder), so a
+// caption label above the field says what it is. The <label> forwards taps to
+// the visible input, which opens the picker natively.
+function DateTimeField({ type, value, onChange, label }: {
+  type: 'date' | 'time'; value: string; onChange: (v: string) => void; label: string;
+}) {
   return (
-    <input
-      type="date"
-      value={value}
-      aria-label={placeholder}
-      onChange={(e) => onChange(e.target.value)}
-      className={`date-input${value ? '' : ' date-input--empty'}`}
-    />
+    <label className="date-field">
+      <span className="date-field-label">{label}</span>
+      <input
+        type={type}
+        value={value}
+        aria-label={label}
+        onChange={(e) => onChange(e.target.value)}
+        className={`date-input${value ? '' : ' date-input--empty'}`}
+      />
+    </label>
   );
 }
 
+function DateBtn({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
+  return <DateTimeField type="date" value={value} onChange={onChange} label={placeholder} />;
+}
+
 function TimeBtn({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
-  return (
-    <input
-      type="time"
-      value={value}
-      aria-label={placeholder}
-      onChange={(e) => onChange(e.target.value)}
-      className={`date-input${value ? '' : ' date-input--empty'}`}
-    />
-  );
+  return <DateTimeField type="time" value={value} onChange={onChange} label={placeholder} />;
 }
 
 /* ---------------- Foundation ---------------- */
