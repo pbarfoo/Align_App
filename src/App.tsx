@@ -46,8 +46,6 @@ interface ActionInput {
   dueTime?: string;
 }
 
-const TAB_KEY = 'align-tab-v1';
-
 function isDomainIdValue(value: unknown): value is DomainId {
   return value === 'career' || value === 'self' || value === 'community';
 }
@@ -399,11 +397,6 @@ export default function App() {
   useEffect(() => {
     hydrating.current = false;
   });
-
-  // Tab persists in localStorage (UI preference)
-  useEffect(() => {
-    localStorage.setItem(TAB_KEY, JSON.stringify(tab));
-  }, [tab]);
 
   // Explicit delete helpers (upsert doesn't remove rows)
   const deleteGoalFromDb = (ids: string[]) => {
@@ -2924,6 +2917,40 @@ function valueAlignmentScore(
 
 /* ---------------- GoalsDashboard ---------------- */
 
+/** Streak-weighted importance of a habit in health/consistency math (1–4×). */
+function habitStreakWeight(h: Habit): number {
+  return Math.min(1 + (h.streak || 0) * 0.2, 4.0);
+}
+
+/**
+ * 28-day habit-consistency fidelity, shared by deadline (computeHealth) and
+ * ongoing (computeOngoingHealth) goals so a fix to one always applies to both.
+ * Age-aware: a habit younger than the 28-day window is graded against how
+ * many completions it could realistically have had so far, not the full
+ * window — otherwise a brand-new habit done every day since it started reads
+ * as barely consistent purely for lacking history.
+ */
+function computeHabitConsistency(habits: Habit[], now: number): number {
+  const WINDOW = 28;
+  const lookback = toDateStr(new Date(now - WINDOW * 86_400_000));
+  let totalW = 0, scoreW = 0;
+  habits.forEach((h) => {
+    const comps = h.completions ?? [];
+    const startMs = h.startDate
+      ? new Date(h.startDate + 'T12:00').getTime()
+      : comps.length
+        ? Math.min(...comps.map((d) => new Date(d + 'T12:00').getTime()))
+        : now - WINDOW * 86_400_000;
+    const ageDays  = Math.min(WINDOW, Math.max(1, (now - startMs) / 86_400_000));
+    const expected = Math.max(1, ageDays / naturalIntervalDays(h));
+    const actual   = comps.filter((d) => d >= lookback).length;
+    const w = habitStreakWeight(h);
+    scoreW += Math.min(actual / expected, 1) * w;
+    totalW += w;
+  });
+  return totalW > 0 ? scoreW / totalW : 0;
+}
+
 /**
  * Three-factor health:
  *   health = 0.5 × pace + 0.3 × habit_consistency + 0.2 × engagement   (habits exist)
@@ -2933,7 +2960,7 @@ function valueAlignmentScore(
  *   done_fraction = (completed tasks×1 + completed sub-goals×5 + active habits×streak_weight)
  *                   / (total tasks×1 + total sub-goals×5 + total habit weights)
  *
- * habit_consistency = 28-day fidelity per habit, averaged weighted by streak (1–4×)
+ * habit_consistency = 28-day fidelity per habit (age-aware), averaged weighted by streak (1–4×)
  *
  * engagement  = how structured the goal is — scales to 1.0 at 5+ items (sub-goals + tasks + habits)
  */
@@ -2946,7 +2973,6 @@ function computeHealth(
   isFocus = false,
 ): number {
   const SUB_W = 5;
-  const habitW     = (h: Habit) => Math.min(1 + (h.streak || 0) * 0.2, 4.0);
   const lookback   = toDateStr(new Date(now - 28 * 86_400_000));
   const tasks      = treeHabits.filter((h) => h.kind === 'task');
   const habits     = treeHabits.filter((h) => h.kind === 'habit');
@@ -2956,7 +2982,7 @@ function computeHealth(
   const engagement = Math.min(itemCount / 5, 1.0);
 
   // Pace
-  const habitTotalW  = habits.reduce((s, h) => s + habitW(h), 0);
+  const habitTotalW  = habits.reduce((s, h) => s + habitStreakWeight(h), 0);
   const totalWeight  = tasks.length + subGoals.length * SUB_W + habitTotalW;
   let pace = 0;
   if (totalWeight > 0) {
@@ -2968,7 +2994,7 @@ function computeHealth(
       s + (g.completedAt ? 1 : computeDone([], allHabits.filter((h) => h.goalId === g.id), allHabits, now)), 0) * SUB_W;
     const habitDoneW  = habits
       .filter((h) => (h.completions ?? []).some((d) => d >= lookback))
-      .reduce((s, h) => s + habitW(h), 0);
+      .reduce((s, h) => s + habitStreakWeight(h), 0);
     const doneFraction = (taskDone + subDone + habitDoneW) / totalWeight;
     // Blend absolute progress with the ahead-of-schedule ratio so a single
     // early completion doesn't peg pace to 100%. Early on (< 10% elapsed) the
@@ -2989,18 +3015,11 @@ function computeHealth(
   // Range: −10% (pace=0) to +10% (pace=1), neutral at pace=0.5
   const focusAdj = isFocus ? (adjustedPace - 0.5) * 0.2 : 0;
 
-  // Habit consistency
+  // Habit consistency — age-aware (see computeHabitConsistency), so a
+  // brand-new habit done every day since it started isn't penalised purely
+  // for lacking 28 days of history.
   const applyFocus = (h: number) => Math.max(0, Math.min(h + focusAdj, 1.0));
-
-  let totalW = 0, scoreW = 0;
-  habits.forEach((h) => {
-    const expected = Math.max(1, 28 / naturalIntervalDays(h));
-    const actual   = (h.completions ?? []).filter((d) => d >= lookback).length;
-    const w        = habitW(h);
-    scoreW += Math.min(actual / expected, 1) * w;
-    totalW += w;
-  });
-  const habitConsistency = totalW > 0 ? scoreW / totalW : 0;
+  const habitConsistency = computeHabitConsistency(habits, now);
 
   if (habits.length === 0) return applyFocus(0.7 * adjustedPace + 0.3 * engagement);
   return applyFocus(0.5 * adjustedPace + 0.3 * habitConsistency + 0.2 * engagement);
@@ -3024,28 +3043,11 @@ function computeOngoingHealth(subGoals: Goal[], treeHabits: Habit[], isFocus = f
 
   const engagement = Math.min(itemCount / 5, 1.0);
   const now = Date.now();
-
-  const habitW = (h: Habit) => Math.min(1 + (h.streak || 0) * 0.2, 4.0);
   const WINDOW = 28;
-  const lookback = toDateStr(new Date(now - WINDOW * 86_400_000));
-  let totalW = 0, scoreW = 0;
-  habits.forEach((h) => {
-    const comps = h.completions ?? [];
-    // Age-aware expectation: a brand-new habit done every day reads as
-    // consistent instead of being penalised for lacking 28 days of history.
-    const startMs = h.startDate
-      ? new Date(h.startDate + 'T12:00').getTime()
-      : comps.length
-        ? Math.min(...comps.map((d) => new Date(d + 'T12:00').getTime()))
-        : now - WINDOW * 86_400_000;
-    const ageDays  = Math.min(WINDOW, Math.max(1, (now - startMs) / 86_400_000));
-    const expected = Math.max(1, ageDays / naturalIntervalDays(h));
-    const actual   = comps.filter((d) => d >= lookback).length;
-    const w = habitW(h);
-    scoreW += Math.min(actual / expected, 1) * w;
-    totalW += w;
-  });
-  const consistency = totalW > 0 ? scoreW / totalW : 0;
+
+  // Age-aware, streak-weighted cadence fidelity — same helper deadline goals
+  // use, so a habit-consistency fix always applies to both goal types.
+  const consistency = computeHabitConsistency(habits, now);
 
   const openTasks = tasks.filter((t) => !t.completed);
   const taskFocus = openTasks.length === 0 ? 0 : Math.max(...openTasks.map((t) => {
@@ -3107,17 +3109,16 @@ export const __test_toggleHabitCompletion = toggleHabitCompletion;
  */
 function computeDone(subGoals: Goal[], treeHabits: Habit[], allHabits: Habit[], now: number): number {
   const SUB_W = 5;
-  const habitW = (h: Habit) => Math.min(1 + (h.streak || 0) * 0.2, 4.0);
   const lookbackDate = toDateStr(new Date(now - 28 * 86_400_000));
   const tasks  = treeHabits.filter((h) => h.kind === 'task');
   const habits = treeHabits.filter((h) => h.kind === 'habit');
-  const total  = subGoals.length * SUB_W + tasks.length + habits.reduce((s, h) => s + habitW(h), 0);
+  const total  = subGoals.length * SUB_W + tasks.length + habits.reduce((s, h) => s + habitStreakWeight(h), 0);
   if (total === 0) return 0;
   const done =
     subGoals.reduce((s, g) =>
       s + (g.completedAt ? 1 : computeDone([], allHabits.filter((h) => h.goalId === g.id), allHabits, now)), 0) * SUB_W +
     tasks.filter((h) => !!h.completed).length +
-    habits.filter((h) => (h.completions ?? []).some((d) => d >= lookbackDate)).reduce((s, h) => s + habitW(h), 0);
+    habits.filter((h) => (h.completions ?? []).some((d) => d >= lookbackDate)).reduce((s, h) => s + habitStreakWeight(h), 0);
   return done / total;
 }
 
@@ -4134,8 +4135,11 @@ function getGraceDays(h: Habit): string[] {
 /**
  * Toggle a habit's completion for the RELEVANT occurrence, shared by the Align
  * and Today tabs:
- *   1. if today is already logged → un-log it (lets you undo, incl. a stray
- *      completion logged on a non-scheduled day);
+ *   1. if the CURRENT PERIOD already has a satisfying completion → un-log it
+ *      (undo). For weekly/monthly/etc. cadences the satisfying date is often
+ *      not literally "today" (e.g. logged Monday, viewed Thursday) — checking
+ *      only `completions.includes(today)` missed this and caused a second,
+ *      duplicate completion to be logged instead of undoing;
  *   2. else work through the missed backlog oldest-first (frozen days);
  *   3. else log today ONLY if the habit is actually scheduled today;
  *   4. else no-op — never phantom-log a day the habit isn't due (which would
@@ -4144,20 +4148,27 @@ function getGraceDays(h: Habit): string[] {
 function toggleHabitCompletion(h: Habit): Habit {
   const today = toDateStr(new Date());
   const completions = h.completions ?? [];
+  const satisfying = completions.filter((d) => dateInCurrentPeriod(d, h));
+  if (satisfying.length > 0) {
+    const newCompletions = completions.filter((d) => !satisfying.includes(d));
+    return {
+      ...h,
+      doneToday: newCompletions.includes(today) ? h.doneToday : false,
+      completions: newCompletions,
+      streak: computeStreakFromCompletions(newCompletions, h),
+      completedAt: undefined,
+    };
+  }
   const frozen = getGraceDays(h);
-  let target: string | null;
-  if (completions.includes(today)) target = today;
-  else if (frozen.length > 0) target = frozen[0];
-  else if (isHabitScheduledToday(h)) target = today;
-  else return h;
-  const turningOn = !completions.includes(target);
-  const newCompletions = turningOn ? [...completions, target] : completions.filter((d) => d !== target);
+  const target = frozen.length > 0 ? frozen[0] : isHabitScheduledToday(h) ? today : null;
+  if (target === null) return h;
+  const newCompletions = [...completions, target];
   return {
     ...h,
-    doneToday: target === today ? turningOn : h.doneToday,
+    doneToday: target === today ? true : h.doneToday,
     completions: newCompletions,
     streak: computeStreakFromCompletions(newCompletions, h),
-    completedAt: turningOn ? Date.now() : undefined,
+    completedAt: Date.now(),
   };
 }
 

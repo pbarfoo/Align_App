@@ -32,4 +32,18 @@ describe('toggleHabitCompletion', () => {
     const result = toggleHabit(mwfHabit({ completions: ['2026-07-08'] }));
     expect(result.completions).not.toContain('2026-07-08');
   });
+
+  it('undoes a weekly habit logged earlier in the week, not just "today"', () => {
+    // Logged Monday 2026-07-06; viewed later the same ISO week, Thursday 2026-07-09.
+    const thu = new Date('2026-07-09T12:00:00').getTime();
+    vi.setSystemTime(thu);
+    const weekly: Habit = {
+      id: 'h', goalId: 'g', title: 'Weekly review', kind: 'habit',
+      doneToday: false, recurrence: 'weekly', startDate: '2026-06-01',
+      completions: ['2026-07-06'], streak: 1,
+    };
+    const result = toggleHabit(weekly);
+    // Must UNDO (remove the Monday completion), not log a second completion for Thursday.
+    expect(result.completions).toEqual([]);
+  });
 });

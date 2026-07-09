@@ -614,25 +614,6 @@ h1 {
   border-color: var(--accent);
 }
 
-.date-btn {
-  position: relative;
-  flex: 1;
-  min-width: 120px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 10px 12px;
-  font-size: 14px;
-  color: var(--text);
-  overflow: hidden;
-}
-.date-btn--empty { color: var(--muted); }
-.date-btn { cursor: pointer; position: relative; }
-.date-btn-text { pointer-events: none; }
-
 .node {
   position: relative;
   display: flex;
@@ -2797,7 +2778,11 @@ h1 {
   }
 }
 
-/* Native date/time inputs — visible & tappable, styled to match the form */
+/* Native date/time inputs — visible & tappable, styled to match the form.
+   Deliberately NOT setting -webkit-appearance/appearance: none here — on
+   iOS Safari that can suppress the input's own value rendering, leaving the
+   picker openable but the chosen date/time invisible (the same "looks
+   broken" failure this styling is meant to avoid). */
 .date-input {
   flex: 1;
   min-width: 120px;
@@ -2811,8 +2796,6 @@ h1 {
   font-family: inherit;
   color: var(--text);
   color-scheme: dark;
-  -webkit-appearance: none;
-  appearance: none;
   text-align: left;
 }
 .date-input--empty { color: var(--muted); }
