@@ -2586,11 +2586,20 @@ h1 {
 .triage-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 8px;
+  gap: 6px 14px;
+  margin-top: 10px;
   flex-wrap: wrap;
 }
-.triage-delete { color: #e05c5c; border-color: #e05c5c40; }
+/* Reschedule field sits inline with the text buttons, same height */
+.triage-actions .date-field--compact { flex: 0 0 auto; }
+.triage-actions .date-field--compact .date-input {
+  min-height: 38px;
+  padding: 8px 10px;
+  font-size: 15px;
+  min-width: 132px;
+}
+.triage-actions .mini-ghost { padding: 8px 4px; }
+.triage-delete { color: #e05c5c; }
 
 /* Day ring — completion & balance across life areas in one glance */
 .coach-progress--ring {

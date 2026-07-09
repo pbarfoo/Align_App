@@ -534,12 +534,14 @@ export default function App() {
 // on iOS. The input renders blank when empty there (no placeholder), so a
 // caption label above the field says what it is. The <label> forwards taps to
 // the visible input, which opens the picker natively.
-function DateTimeField({ type, value, onChange, label }: {
-  type: 'date' | 'time'; value: string; onChange: (v: string) => void; label: string;
+function DateTimeField({ type, value, onChange, label, compact }: {
+  type: 'date' | 'time'; value: string; onChange: (v: string) => void; label: string; compact?: boolean;
 }) {
   return (
-    <label className="date-field">
-      <span className="date-field-label">{label}</span>
+    <label className={`date-field${compact ? ' date-field--compact' : ''}`}>
+      {/* Caption above the field (skipped in compact mode, where the value is
+          always present, e.g. rescheduling an existing due date). */}
+      {!compact && <span className="date-field-label">{label}</span>}
       <input
         type={type}
         value={value}
@@ -551,8 +553,8 @@ function DateTimeField({ type, value, onChange, label }: {
   );
 }
 
-function DateBtn({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
-  return <DateTimeField type="date" value={value} onChange={onChange} label={placeholder} />;
+function DateBtn({ value, onChange, placeholder, compact }: { value: string; onChange: (v: string) => void; placeholder: string; compact?: boolean }) {
+  return <DateTimeField type="date" value={value} onChange={onChange} label={placeholder} compact={compact} />;
 }
 
 function TimeBtn({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
@@ -2495,6 +2497,7 @@ function Today({
                     </div>
                     <div className="triage-actions">
                       <DateBtn
+                        compact
                         value={task.dueDate ?? ''}
                         onChange={(v) => rescheduleTask(task.id, v)}
                         placeholder="Reschedule"
