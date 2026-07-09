@@ -2202,12 +2202,14 @@ function Today({
     .sort((a, b) => daysOverdueOf(b) - daysOverdueOf(a));
   const dueTodayNotFocused = dueTodayTasks.filter((t) => !focusTaskIds.has(t.id));
 
-  // Hard cap on the "Needs action" rows: 3. Overdue (worst first) claim the
-  // slots ahead of due-today; the overflow stays reachable under More.
+  // "Needs action" holds both overdue and due-today. Cap overdue (worst first)
+  // at 3 so a big backlog doesn't overwhelm the card, but always surface every
+  // due-today task — otherwise a full overdue list would push today's own
+  // deadlines out of sight. Overdue overflow stays reachable under More.
   const TASK_CAP = 3;
-  const pinnedTasks = [...overdueSorted, ...dueTodayNotFocused].slice(0, TASK_CAP);
-  const pinnedOverdue = pinnedTasks.filter((t) => !!t.dueDate && t.dueDate < today);
-  const pinnedDueToday = pinnedTasks.filter((t) => t.dueDate === today);
+  const pinnedOverdue = overdueSorted.slice(0, TASK_CAP);
+  const pinnedDueToday = dueTodayNotFocused;
+  const pinnedTasks = [...pinnedOverdue, ...pinnedDueToday];
 
   // Heuristic urgency for habits.
   const focusGoalIds = (() => {
