@@ -1501,7 +1501,7 @@ function AddActionForm({
   initial?: Habit;
   defaultKind?: ActionKind;
 }) {
-  const [kind, setKind] = useState<ActionKind>(initial?.kind ?? defaultKind ?? 'habit');
+  const [kind, setKind] = useState<ActionKind>(initial?.kind ?? defaultKind ?? 'task');
   const [title, setTitle] = useState(initial?.title ?? '');
   const [recurrence, setRecurrence] = useState<Recurrence>(initial?.recurrence ?? 'daily');
   const [customInterval, setCustomInterval] = useState(String(initial?.customInterval ?? 1));
