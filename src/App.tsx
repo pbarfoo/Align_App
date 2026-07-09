@@ -51,6 +51,11 @@ interface GoalHealthInfo {
   nItems: number;   // direct habits/tasks + sub-goals attached to the goal
 }
 
+/** Optional action button rendered inside a toast (e.g. Undo a delete). */
+interface ToastAction { label: string; run: () => void; }
+/** Show a transient toast. Pass an action to render a button (holds the toast longer). */
+type Flash = (msg: string, isError?: boolean, action?: ToastAction) => void;
+
 /** Row from the stale_tasks view (RLS-safe, sorted worst-first). */
 interface StaleTask {
   id: string;
@@ -263,7 +268,7 @@ export default function App() {
     if (!session) { setDataLoaded(true); return; }
     const userId = session.user.id;
     const timeout = setTimeout(() => {
-      setToast('⚠ Database taking too long — try refreshing');
+      setToast({ msg: '⚠ Database taking too long — try refreshing' });
       setDataLoaded(true);
     }, 10000);
     Promise.all([
@@ -278,7 +283,7 @@ export default function App() {
       const dbError = d.error || g.error || h.error || r.error;
       if (dbError) {
         console.error('Supabase load error:', dbError.message);
-        setToast(`⚠ DB error: ${dbError.message} — run supabase/schema.sql`);
+        setToast({ msg: `⚠ DB error: ${dbError.message} — run supabase/schema.sql` });
         setDataLoaded(true);
         return;
       }
@@ -340,7 +345,7 @@ export default function App() {
     }).catch((err) => {
       clearTimeout(timeout);
       console.error('Supabase load failed:', err);
-      setToast('⚠ Could not reach database — check your connection');
+      setToast({ msg: '⚠ Could not reach database — check your connection' });
       setDataLoaded(true);
     });
   }, [session?.user?.id]);
@@ -349,28 +354,28 @@ export default function App() {
   useEffect(() => {
     if (!dataLoaded || hydrating.current || !session) return;
     supabase.from('domains').upsert(domains.map((x) => domainToRow(x, session.user.id)), { onConflict: 'id,user_id' })
-      .then(({ error }) => { if (error) { console.error('sync domains:', error); setToast(`⚠ Save failed: ${error.message}`); } });
+      .then(({ error }) => { if (error) { console.error('sync domains:', error); setToast({ msg: `⚠ Save failed: ${error.message}` }); } });
   }, [domains]);
 
   // Sync goals
   useEffect(() => {
     if (!dataLoaded || hydrating.current || !session || !goals.length) return;
     supabase.from('goals').upsert(goals.map((x) => goalToRow(x, session.user.id)))
-      .then(({ error }) => { if (error) { console.error('sync goals:', error); setToast(`⚠ Save failed: ${error.message}`); } });
+      .then(({ error }) => { if (error) { console.error('sync goals:', error); setToast({ msg: `⚠ Save failed: ${error.message}` }); } });
   }, [goals]);
 
   // Sync habits
   useEffect(() => {
     if (!dataLoaded || hydrating.current || !session || !habits.length) return;
     supabase.from('habits').upsert(habits.map((x) => habitToRow(x, session.user.id)))
-      .then(({ error }) => { if (error) { console.error('sync habits:', error); setToast(`⚠ Save failed: ${error.message}`); } });
+      .then(({ error }) => { if (error) { console.error('sync habits:', error); setToast({ msg: `⚠ Save failed: ${error.message}` }); } });
   }, [habits]);
 
   // Sync reflections
   useEffect(() => {
     if (!dataLoaded || hydrating.current || !session || !reflections.length) return;
     supabase.from('reflections').upsert(reflections.map((x) => reflToRow(x, session.user.id)))
-      .then(({ error }) => { if (error) { console.error('sync reflections:', error); setToast(`⚠ Save failed: ${error.message}`); } });
+      .then(({ error }) => { if (error) { console.error('sync reflections:', error); setToast({ msg: `⚠ Save failed: ${error.message}` }); } });
   }, [reflections]);
 
   // Clear the hydration flag after the sync effects above have evaluated for
@@ -396,11 +401,14 @@ export default function App() {
   const [reviewOpen, setReviewOpen] = useState(false);
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ msg: string; action?: ToastAction } | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const flash = (msg: string, isError = false) => {
-    setToast(isError ? `⚠ ${msg}` : msg);
-    setTimeout(() => setToast(null), 2500);
+  const flash: Flash = (msg, isError = false, action) => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast({ msg: isError ? `⚠ ${msg}` : msg, action });
+    // Actionable toasts (e.g. Undo) linger longer so there's time to click.
+    toastTimer.current = setTimeout(() => setToast(null), action ? 6000 : 2500);
   };
 
   if (authLoading || !dataLoaded) {
@@ -442,6 +450,7 @@ export default function App() {
             setGoals={setGoals}
             onDeleteGoalFromDb={deleteGoalFromDb}
             onReflect={() => setReflectOpen(true)}
+            flash={flash}
             userId={session?.user.id}
           />
         )}
@@ -518,7 +527,24 @@ export default function App() {
         </div>
       )}
 
-      {toast && <div className="toast">{toast}</div>}
+      {toast && (
+        <div className="toast">
+          <span>{toast.msg}</span>
+          {toast.action && (
+            <button
+              type="button"
+              className="toast-action"
+              onClick={() => {
+                if (toastTimer.current) clearTimeout(toastTimer.current);
+                toast.action!.run();
+                setToast(null);
+              }}
+            >
+              {toast.action.label}
+            </button>
+          )}
+        </div>
+      )}
 
       <nav className="nav">
         <NavBtn label="Foundation" active={tab === 'foundation'} onClick={() => setTab('foundation')} icon={<IconBase />} />
@@ -764,7 +790,7 @@ function Align({
   setGoals: React.Dispatch<React.SetStateAction<Goal[]>>;
   habits: Habit[];
   setHabits: React.Dispatch<React.SetStateAction<Habit[]>>;
-  flash: (m: string) => void;
+  flash: Flash;
   onDeleteGoalFromDb: (ids: string[]) => void;
   onDeleteHabitFromDb: (id: string) => void;
 }) {
@@ -935,10 +961,27 @@ function Align({
       if (g.parentGoalId && remove.has(g.parentGoalId)) remove.add(g.id);
     });
     if (addingFor && remove.has(addingFor)) setAddingFor(null);
+    // Snapshot removed rows (goals with their original index, plus their
+    // habits/tasks) so Undo can splice them back into place. Restoring to
+    // state re-triggers the upsert sync, which re-creates the DB rows.
+    const removedGoals = goals
+      .map((g, i) => ({ g, i }))
+      .filter(({ g }) => remove.has(g.id));
+    const removedHabits = habits.filter((h) => remove.has(h.goalId));
     setGoals((prev) => prev.filter((g) => !remove.has(g.id)));
     setHabits((ph) => ph.filter((h) => !remove.has(h.goalId)));
     onDeleteGoalFromDb([...remove]);
-    flash('Deleted');
+    flash('Deleted', false, {
+      label: 'Undo',
+      run: () => {
+        setGoals((prev) => {
+          const next = [...prev];
+          removedGoals.forEach(({ g, i }) => next.splice(Math.min(i, next.length), 0, g));
+          return next;
+        });
+        setHabits((prev) => [...prev, ...removedHabits]);
+      },
+    });
   };
 
   const deleteHabit = (id: string) => {
@@ -1945,6 +1988,7 @@ function Today({
   setGoals,
   onDeleteGoalFromDb,
   onReflect,
+  flash,
   userId,
 }: {
   habits: Habit[];
@@ -1957,6 +2001,7 @@ function Today({
   setGoals: React.Dispatch<React.SetStateAction<Goal[]>>;
   onDeleteGoalFromDb: (ids: string[]) => void;
   onReflect: () => void;
+  flash: Flash;
   userId?: string;
 }) {
   const [showDone, setShowDone] = useState(false);
@@ -2162,9 +2207,24 @@ function Today({
     goals.forEach((g) => {
       if (g.parentGoalId && remove.has(g.parentGoalId)) remove.add(g.id);
     });
+    const removedGoals = goals
+      .map((g, i) => ({ g, i }))
+      .filter(({ g }) => remove.has(g.id));
+    const removedHabits = habits.filter((h) => remove.has(h.goalId));
     setGoals((prev) => prev.filter((g) => !remove.has(g.id)));
     setHabits((ph) => ph.filter((h) => !remove.has(h.goalId)));
     onDeleteGoalFromDb([...remove]);
+    flash('Deleted', false, {
+      label: 'Undo',
+      run: () => {
+        setGoals((prev) => {
+          const next = [...prev];
+          removedGoals.forEach(({ g, i }) => next.splice(Math.min(i, next.length), 0, g));
+          return next;
+        });
+        setHabits((prev) => [...prev, ...removedHabits]);
+      },
+    });
   };
 
   // Mirrors Align's addAction — used by the "Break down" flow to add smaller

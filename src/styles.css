@@ -1475,7 +1475,25 @@ h1 {
   font-weight: 600;
   z-index: 30;
   animation: fade 0.25s ease;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  white-space: nowrap;
 }
+
+.toast-action {
+  background: transparent;
+  border: none;
+  color: var(--bg);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  padding: 0 2px;
+  margin: -4px -6px -4px 0;
+}
+.toast-action:hover { opacity: 0.8; }
 
 /* ---------- Profile button ---------- */
 .profile-btn {
