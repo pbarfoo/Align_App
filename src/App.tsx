@@ -2900,10 +2900,10 @@ function valueAlignmentScore(
   let actSum = 0, actCount = 0;
   for (const g of allTagged) {
     const h = g.horizon === 'long'
-      ? vitalityFor(g, goals, habits, false, false).health
+      ? vitalityFor(g, goals, habits, 0, false).health
       : g.horizon === 'ongoing'
-        ? ongoingGoalMetrics(g, goals, habits, false, false).health
-        : stGoalMetrics(g, goals, habits, false, false).health;
+        ? ongoingGoalMetrics(g, goals, habits, 0, false).health
+        : stGoalMetrics(g, goals, habits, 0, false).health;
     actSum += h; actCount++;
   }
   const activityComponent = actCount > 0 ? actSum / actCount : null;
@@ -2981,7 +2981,10 @@ function computeHealth(
   allHabits: Habit[],
   now: number,
   timeElapsed: number,
-  isFocus = false,
+  /** 0–1: how strongly priority position should scale the focus adjustment
+   * below. #1 in its domain = 1, tapering to 0 by ~position 4 (see
+   * focusStrengthByDomain) — not a binary "is this THE focus goal" flag. */
+  focusStrength = 0,
 ): number {
   const SUB_W = 5;
   const lookback   = toDateStr(new Date(now - 28 * 86_400_000));
@@ -3022,9 +3025,11 @@ function computeHealth(
   const timeFactor = timeElapsed >= 0 ? Math.min(1.0, timeElapsed * 4 + 0.1) : 1.0;
   const adjustedPace = pace * timeFactor;
 
-  // Focus adjustment: raises the bar when neglected, rewards when delivering
-  // Range: −10% (pace=0) to +10% (pace=1), neutral at pace=0.5
-  const focusAdj = isFocus ? (adjustedPace - 0.5) * 0.2 : 0;
+  // Focus adjustment: raises the bar when neglected, rewards when delivering.
+  // Scaled by focusStrength so priority position (not just "is #1") controls
+  // how much this goal's health rides on its pace. Range at full strength:
+  // −10% (pace=0) to +10% (pace=1), neutral at pace=0.5.
+  const focusAdj = (adjustedPace - 0.5) * 0.2 * focusStrength;
 
   // Habit consistency — age-aware (see computeHabitConsistency), so a
   // brand-new habit done every day since it started isn't penalised purely
@@ -3046,7 +3051,7 @@ function computeHealth(
  * This avoids showing a nonsense zero when an ongoing role has a live task but
  * no recent checkbox yet.
  */
-function computeOngoingHealth(subGoals: Goal[], treeHabits: Habit[], isFocus = false): number {
+function computeOngoingHealth(subGoals: Goal[], treeHabits: Habit[], focusStrength = 0): number {
   const habits = treeHabits.filter((h) => h.kind === 'habit');
   const tasks  = treeHabits.filter((h) => h.kind === 'task');
   const itemCount = subGoals.length + tasks.length + habits.length;
@@ -3102,9 +3107,9 @@ function computeOngoingHealth(subGoals: Goal[], treeHabits: Habit[], isFocus = f
     0.05 * taskFocus +
     0.05 * engagement);
 
-  // Same ±10% focus adjustment as deadline goals: raises the bar when
-  // neglected, rewards when delivering.
-  const focusAdj = isFocus ? (base - 0.5) * 0.2 : 0;
+  // Same ±10% focus adjustment as deadline goals, scaled by priority
+  // position (focusStrength) rather than a binary "is #1" flag.
+  const focusAdj = (base - 0.5) * 0.2 * focusStrength;
   const scored = Math.max(0, Math.min(base + focusAdj, 1.0));
   return base > 0 ? Math.max(0.02, scored) : 0;
 }
@@ -3155,7 +3160,7 @@ function vitalityFor(
   lg: Goal,
   goals: Goal[],
   habits: Habit[],
-  isFocus = false,
+  focusStrength = 0,
   graced = true, // pass false for signals (e.g. value alignment) that must not be inflated by the new-goal grace
 ): { time: number; completion: number; health: number; completionRate: number; recencyScore: number; momentum: number } {
   const now     = Date.now();
@@ -3167,7 +3172,7 @@ function vitalityFor(
   const subtreeHabits = habits.filter((h) => subtree.has(h.goalId));
 
   const completion     = computeDone(subGoals, subtreeHabits, habits, now);
-  const earned         = computeHealth(subGoals, subtreeHabits, habits, now, elapsed, isFocus);
+  const earned         = computeHealth(subGoals, subtreeHabits, habits, now, elapsed, focusStrength);
   const health         = graced ? applyNewGoalGrace(earned, lg.createdAt) : earned;
   const completionRate = completion;
   const recencyScore   = health;
@@ -3243,7 +3248,7 @@ function DayRing({
 }
 
 
-function stGoalMetrics(sg: Goal, goals: Goal[], habits: Habit[], isFocus = false, graced = true): { time: number; completion: number; health: number; completionRate: number; recencyScore: number; momentum: number } {
+function stGoalMetrics(sg: Goal, goals: Goal[], habits: Habit[], focusStrength = 0, graced = true): { time: number; completion: number; health: number; completionRate: number; recencyScore: number; momentum: number } {
   const now     = Date.now();
   const totalMs = (sg.timeframe || 1) * 30.44 * 86_400_000;
   const elapsed = Math.min(1, Math.max(0, (now - sg.createdAt) / totalMs));
@@ -3253,7 +3258,7 @@ function stGoalMetrics(sg: Goal, goals: Goal[], habits: Habit[], isFocus = false
   const sgHabits  = habits.filter((h) => subtree.has(h.goalId));
 
   const completion     = computeDone(subGoals, sgHabits, habits, now);
-  const earned         = computeHealth(subGoals, sgHabits, habits, now, elapsed, isFocus);
+  const earned         = computeHealth(subGoals, sgHabits, habits, now, elapsed, focusStrength);
   const health         = graced ? applyNewGoalGrace(earned, sg.createdAt) : earned;
   const completionRate = completion;
   const recencyScore   = health;
@@ -3262,14 +3267,14 @@ function stGoalMetrics(sg: Goal, goals: Goal[], habits: Habit[], isFocus = false
 }
 
 
-function ongoingGoalMetrics(og: Goal, goals: Goal[], habits: Habit[], isFocus = false, graced = true): { time: number; completion: number; health: number; completionRate: number; recencyScore: number; momentum: number } {
+function ongoingGoalMetrics(og: Goal, goals: Goal[], habits: Habit[], focusStrength = 0, graced = true): { time: number; completion: number; health: number; completionRate: number; recencyScore: number; momentum: number } {
   const now    = Date.now();
   const subGoals = goals.filter((g) => g.parentGoalId === og.id);
   const subtree  = new Set<string>([og.id, ...subGoals.map((g) => g.id)]);
   const ogHabits = habits.filter((h) => subtree.has(h.goalId));
 
   const completion     = computeDone(subGoals, ogHabits, habits, now);
-  const earned         = computeOngoingHealth(subGoals, ogHabits, isFocus);
+  const earned         = computeOngoingHealth(subGoals, ogHabits, focusStrength);
   const health         = graced ? applyNewGoalGrace(earned, og.createdAt) : earned;
   const completionRate = completion;
   const recencyScore   = health;
@@ -3278,34 +3283,48 @@ function ongoingGoalMetrics(og: Goal, goals: Goal[], habits: Habit[], isFocus = 
 }
 
 /**
+ * Ranks top-level goals by their position within each domain (drag-to-reorder
+ * order, persisted via sort_order — the array's existing order IS the
+ * priority order) and returns a 0–1 "focus strength" per goal id: #1 in its
+ * domain gets full strength, tapering to 0 by ~position 4. Same curve as the
+ * Align tab's visual highlight (GoalNode's focusStrength), so the health
+ * score's ±10% focus adjustment always matches what the card shows.
+ * `topLevelGoals` must already exclude sub-goals — pass a pre-filtered list.
+ */
+function focusStrengthByDomain(topLevelGoals: Goal[]): Map<string, number> {
+  const strength = new Map<string, number>();
+  const rankByDomain = new Map<string, number>();
+  topLevelGoals.forEach((g) => {
+    const idx = rankByDomain.get(g.domainId) ?? 0;
+    rankByDomain.set(g.domainId, idx + 1);
+    strength.set(g.id, Math.max(0, 1 - idx * 0.4));
+  });
+  return strength;
+}
+
+/**
  * Health for every goal, keyed by id — the single source behind the Align
  * badges AND the numbers fed to the coach, so every surface agrees. Applies
- * the dashboard's first-top-level-goal-per-domain focus rule and the
+ * the priority-position focus taper (see focusStrengthByDomain) and the
  * new-goal grace.
  */
 function computeGoalHealthMap(goals: Goal[], habits: Habit[]): Record<string, GoalHealthInfo> {
-  const focusIds = new Set<string>();
-  (['long', 'short', 'ongoing'] as const).forEach((horizon) => {
-    const seen = new Set<string>();
-    goals.forEach((g) => {
-      if (g.horizon === horizon && !g.parentGoalId && !seen.has(g.domainId)) {
-        seen.add(g.domainId);
-        focusIds.add(g.id);
-      }
-    });
-  });
   const map: Record<string, GoalHealthInfo> = {};
-  goals.forEach((g) => {
-    const isFocus = focusIds.has(g.id);
-    const m = g.horizon === 'long'
-      ? vitalityFor(g, goals, habits, isFocus)
-      : g.horizon === 'ongoing'
-        ? ongoingGoalMetrics(g, goals, habits, isFocus)
-        : stGoalMetrics(g, goals, habits, isFocus);
-    const nItems =
-      habits.filter((h) => h.goalId === g.id).length +
-      goals.filter((x) => x.parentGoalId === g.id).length;
-    map[g.id] = { health: Math.round(m.health * 100), nItems };
+  (['long', 'short', 'ongoing'] as const).forEach((horizon) => {
+    const topLevel = goals.filter((g) => g.horizon === horizon && !g.parentGoalId);
+    const strengthById = focusStrengthByDomain(topLevel);
+    goals.filter((g) => g.horizon === horizon).forEach((g) => {
+      const focusStrength = strengthById.get(g.id) ?? 0;
+      const m = horizon === 'long'
+        ? vitalityFor(g, goals, habits, focusStrength)
+        : horizon === 'ongoing'
+          ? ongoingGoalMetrics(g, goals, habits, focusStrength)
+          : stGoalMetrics(g, goals, habits, focusStrength);
+      const nItems =
+        habits.filter((h) => h.goalId === g.id).length +
+        goals.filter((x) => x.parentGoalId === g.id).length;
+      map[g.id] = { health: Math.round(m.health * 100), nItems };
+    });
   });
   return map;
 }
@@ -3483,17 +3502,15 @@ function GoalsDashboard({
   const allShort     = goals.filter((g) => g.horizon === 'short');
   const ongoingGoals = goals.filter((g) => g.horizon === 'ongoing');
 
-  // First goal per domain = focus (same rule as Align tab: top-level only)
-  const seenLt = new Set<string>();
-  const focusLtIds = new Set(longGoals.filter((g) => { if (seenLt.has(g.domainId)) return false; seenLt.add(g.domainId); return true; }).map((g) => g.id));
-  const seenSt = new Set<string>();
-  const focusStIds = new Set(allShort.filter((g) => { if (g.parentGoalId || seenSt.has(g.domainId)) return false; seenSt.add(g.domainId); return true; }).map((g) => g.id));
-  const seenOg = new Set<string>();
-  const focusOgIds = new Set(ongoingGoals.filter((g) => { if (g.parentGoalId || seenOg.has(g.domainId)) return false; seenOg.add(g.domainId); return true; }).map((g) => g.id));
+  // Priority position per domain tapers the focus adjustment (same rule and
+  // curve as the Align tab's card highlight — see focusStrengthByDomain).
+  const focusLtStrength = focusStrengthByDomain(longGoals);
+  const focusStStrength = focusStrengthByDomain(allShort.filter((g) => !g.parentGoalId));
+  const focusOgStrength = focusStrengthByDomain(ongoingGoals.filter((g) => !g.parentGoalId));
 
-  const ltMetrics  = new Map(longGoals.map((g) => [g.id, vitalityFor(g, goals, habits, focusLtIds.has(g.id))] as const));
-  const stMetrics  = new Map(allShort.map((g) => [g.id, stGoalMetrics(g, goals, habits, focusStIds.has(g.id))] as const));
-  const ogMetrics  = new Map(ongoingGoals.map((g) => [g.id, ongoingGoalMetrics(g, goals, habits, focusOgIds.has(g.id))] as const));
+  const ltMetrics  = new Map(longGoals.map((g) => [g.id, vitalityFor(g, goals, habits, focusLtStrength.get(g.id) ?? 0)] as const));
+  const stMetrics  = new Map(allShort.map((g) => [g.id, stGoalMetrics(g, goals, habits, focusStStrength.get(g.id) ?? 0)] as const));
+  const ogMetrics  = new Map(ongoingGoals.map((g) => [g.id, ongoingGoalMetrics(g, goals, habits, focusOgStrength.get(g.id) ?? 0)] as const));
 
   const ltSpiderValues = longGoals.map((g) => ltMetrics.get(g.id)!.health);
   const stSpiderValues = allShort.map((g) => stMetrics.get(g.id)!.health);

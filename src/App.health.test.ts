@@ -51,7 +51,7 @@ describe('ongoing goal health', () => {
 
     // A queued task alone no longer reads as "healthy maintenance" — a higher
     // bar means sustained recurring work is required to score high.
-    const health = __test_computeOngoingHealth([], [task({ dueDate: '2026-07-10' })], true);
+    const health = __test_computeOngoingHealth([], [task({ dueDate: '2026-07-10' })], 1);
 
     expect(health).toBeGreaterThan(0);
     expect(health).toBeLessThan(0.4);
@@ -63,7 +63,7 @@ describe('ongoing goal health', () => {
     const health = __test_computeOngoingHealth([], [habit({
       completions: ['2026-07-01', '2026-07-02', '2026-07-03', '2026-07-04', '2026-07-05', '2026-07-06'],
       streak: 6,
-    })], true);
+    })], 1);
 
     expect(health).toBeGreaterThan(0.75);
   });
@@ -71,8 +71,8 @@ describe('ongoing goal health', () => {
   it('does not let a lone recent touch reach the top, and decays over time', () => {
     vi.setSystemTime(now);
 
-    const touchedRecently = __test_computeOngoingHealth([subGoal({ completedAt: now - 3 * day })], [], true);
-    const touchedLongAgo = __test_computeOngoingHealth([subGoal({ completedAt: now - 45 * day })], [], true);
+    const touchedRecently = __test_computeOngoingHealth([subGoal({ completedAt: now - 3 * day })], [], 1);
+    const touchedLongAgo = __test_computeOngoingHealth([subGoal({ completedAt: now - 45 * day })], [], 1);
 
     expect(touchedRecently).toBeGreaterThan(0.15); // off the floor
     expect(touchedRecently).toBeLessThan(0.6);      // but not "great maintenance"
@@ -91,9 +91,9 @@ describe('ongoing goal health', () => {
       completedAt: now,
     });
 
-    const openOnly = __test_computeOngoingHealth([], [open], true);
-    const withCompleted = __test_computeOngoingHealth([], [completed], true);
-    const withExtraOpen = __test_computeOngoingHealth([], [completed, open], true);
+    const openOnly = __test_computeOngoingHealth([], [open], 1);
+    const withCompleted = __test_computeOngoingHealth([], [completed], 1);
+    const withExtraOpen = __test_computeOngoingHealth([], [completed, open], 1);
 
     expect(withCompleted - openOnly).toBeGreaterThan(0.08);
     expect(withExtraOpen).toBeGreaterThanOrEqual(withCompleted);
@@ -106,8 +106,8 @@ describe('ongoing goal health', () => {
     const completedB = task({ id: 'h-done-b', completed: true, completedAt: now - day });
     const open = task({ id: 'h-open', dueDate: '2026-07-10' });
 
-    const completedOnly = __test_computeOngoingHealth([], [completedA, completedB], true);
-    const withOpenTask = __test_computeOngoingHealth([], [completedA, completedB, open], true);
+    const completedOnly = __test_computeOngoingHealth([], [completedA, completedB], 1);
+    const withOpenTask = __test_computeOngoingHealth([], [completedA, completedB, open], 1);
 
     expect(withOpenTask).toBeGreaterThanOrEqual(completedOnly);
   });
@@ -120,19 +120,38 @@ describe('ongoing goal health', () => {
     );
     const openTasks = [0, 1, 2].map((i) => task({ id: `h-open-${i}`, dueDate: '2026-07-10' }));
 
-    const before = __test_computeOngoingHealth([], [...completed, ...openTasks], true);
+    const before = __test_computeOngoingHealth([], [...completed, ...openTasks], 1);
     const afterAdd = __test_computeOngoingHealth([], [
       ...completed,
       ...openTasks,
       task({ id: 'h-new-open' }),
-    ], true);
+    ], 1);
     const afterComplete = __test_computeOngoingHealth([], [
       ...completed,
       task({ id: 'h-new-done', completed: true, completedAt: now }),
       ...openTasks,
-    ], true);
+    ], 1);
 
     expect(afterAdd - before).toBeGreaterThan(0.009);
     expect(afterComplete - before).toBeGreaterThan(0.05);
+  });
+
+  it('scales the focus adjustment by priority strength instead of an all-or-nothing flag', () => {
+    vi.setSystemTime(now);
+
+    // A moderately weak goal (base health well below 0.5, but not so weak it
+    // hits the 0.02 floor) — the negative focus adjustment should shrink
+    // toward zero as priority strength drops from full (#1) to none (well
+    // below the top few positions), landing strictly in between at 0.5.
+    const weakGoal = [subGoal({ completedAt: now - 3 * day })];
+    const noFocus = __test_computeOngoingHealth(weakGoal, [], 0);
+    const halfFocus = __test_computeOngoingHealth(weakGoal, [], 0.5);
+    const fullFocus = __test_computeOngoingHealth(weakGoal, [], 1);
+
+    // Full priority strength penalises a weak goal hardest; no priority
+    // strength (e.g. 4th+ position) leaves it unadjusted; half strength lands
+    // strictly in between — not equal to either end.
+    expect(fullFocus).toBeLessThan(halfFocus);
+    expect(halfFocus).toBeLessThan(noFocus);
   });
 });
