@@ -799,6 +799,8 @@ function Align({
   const [addingFor, setAddingFor] = useState<string | null>(null);
   const [addingForKind, setAddingForKind] = useState<'short' | 'action' | null>(null);
   const [editValuesFor, setEditValuesFor] = useState<string | null>(null);
+  // Goal pending a delete-confirmation (null = no dialog open).
+  const [pendingDeleteGoalId, setPendingDeleteGoalId] = useState<string | null>(null);
   const [hideCompleted, setHideCompleted] = useState<boolean>(() => {
     try { return JSON.parse(localStorage.getItem('align-hide-completed-v1') ?? 'false'); } catch { return false; }
   });
@@ -1016,6 +1018,18 @@ function Align({
 
   return (
     <div className="screen">
+      {pendingDeleteGoalId && (() => {
+        const warn = goalDeleteWarning(pendingDeleteGoalId, goals, habits);
+        return (
+          <ConfirmDialog
+            title={warn.title}
+            body={warn.body}
+            confirmLabel="Delete"
+            onConfirm={() => { deleteGoal(pendingDeleteGoalId); setPendingDeleteGoalId(null); }}
+            onCancel={() => setPendingDeleteGoalId(null)}
+          />
+        );
+      })()}
       <div className="eyebrow">Align</div>
       <h1>The thread</h1>
       <p className="lede">
@@ -1097,7 +1111,7 @@ function Align({
                 if (addingFor === goal.id) { setAddingFor(null); setAddingForKind(null); }
                 else { setAddingFor(goal.id); setAddingForKind(null); }
               }}
-              onDelete={() => deleteGoal(goal.id)}
+              onDelete={() => setPendingDeleteGoalId(goal.id)}
               onRename={(title) => updateGoalTitle(goal.id, title)}
               onChangeTimeframe={(horizon, t) => updateGoalTimeframe(goal.id, horizon, t)}
               isComplete={!!goal.completedAt}
@@ -1206,7 +1220,7 @@ function Align({
                   addingFor={addingFor}
                   setAddingFor={setAddingFor}
                   onAddAction={addAction}
-                  onDeleteGoal={deleteGoal}
+                  onDeleteGoal={setPendingDeleteGoalId}
                   onRenameGoal={updateGoalTitle}
                   onChangeGoalTimeframe={updateGoalTimeframe}
                   onDeleteHabit={deleteHabit}
@@ -2005,6 +2019,8 @@ function Today({
   userId?: string;
 }) {
   const [showDone, setShowDone] = useState(false);
+  // Goal pending a delete-confirmation from the triage row (null = closed).
+  const [pendingDeleteGoalId, setPendingDeleteGoalId] = useState<string | null>(null);
   // "More" (everything beyond Up next) — collapse state persists across visits.
   const [moreOpen, setMoreOpen] = useState<boolean>(() => {
     try { return JSON.parse(localStorage.getItem('today-more-open-v1') ?? 'false'); } catch { return false; }
@@ -2424,6 +2440,18 @@ function Today({
 
   return (
     <div className="screen">
+      {pendingDeleteGoalId && (() => {
+        const warn = goalDeleteWarning(pendingDeleteGoalId, goals, habits);
+        return (
+          <ConfirmDialog
+            title={warn.title}
+            body={warn.body}
+            confirmLabel="Delete"
+            onConfirm={() => { deleteGoalCascade(pendingDeleteGoalId); setPendingDeleteGoalId(null); }}
+            onCancel={() => setPendingDeleteGoalId(null)}
+          />
+        );
+      })()}
       <div className="eyebrow">Today</div>
       <h1>Small, aligned acts</h1>
       <p className="lede">
@@ -2524,7 +2552,7 @@ function Today({
                     <button className="mini-ghost" onClick={() => extendGoal(g.id)}>
                       Extend +{g.horizon === 'long' ? '1 yr' : '1 mo'}
                     </button>
-                    <button className="mini-ghost triage-delete" onClick={() => deleteGoalCascade(g.id)}>
+                    <button className="mini-ghost triage-delete" onClick={() => setPendingDeleteGoalId(g.id)}>
                       Delete
                     </button>
                   </div>
@@ -3043,9 +3071,10 @@ export const __test_computeOngoingHealth = computeOngoingHealth;
 export const __test_toggleHabitCompletion = toggleHabitCompletion;
 
 /**
- * Done = simple count ratio across sub-goals, habits, and tasks.
- * Sub-goals: completed (completedAt set) — weight 3 each.
- * Habits: done at least once in the last 28 days — weight 1 each.
+ * Done = weighted count ratio across sub-goals, habits, and tasks.
+ * Sub-goals: weight 5 each — a completed one (completedAt set) counts in
+ *   full, an in-progress one credits its own done-ratio.
+ * Habits: done at least once in the last 28 days — weighted by streak (1–4×).
  * Tasks: completed (h.completed true) — weight 1 each.
  */
 function computeDone(subGoals: Goal[], treeHabits: Habit[], allHabits: Habit[], now: number): number {
@@ -3087,7 +3116,7 @@ function vitalityFor(
   habits: Habit[],
   focusStrength = 0,
   graced = true, // pass false for signals (e.g. value alignment) that must not be inflated by the new-goal grace
-): { time: number; completion: number; health: number; completionRate: number; recencyScore: number; momentum: number } {
+): { time: number; completion: number; health: number } {
   const now     = Date.now();
   const totalMs = (lg.timeframe || 1) * 365.25 * 86_400_000;
   const elapsed = Math.min(1, Math.max(0, (now - lg.createdAt) / totalMs));
@@ -3096,13 +3125,10 @@ function vitalityFor(
   const subtree       = new Set<string>([lg.id, ...subGoals.map((g) => g.id)]);
   const subtreeHabits = habits.filter((h) => subtree.has(h.goalId));
 
-  const completion     = computeDone(subGoals, subtreeHabits, habits, now);
-  const earned         = computeHealth(subGoals, subtreeHabits, habits, now, elapsed, focusStrength);
-  const health         = graced ? applyNewGoalGrace(earned, lg.createdAt) : earned;
-  const completionRate = completion;
-  const recencyScore   = health;
-  const momentum       = (completion + health) / 2;
-  return { time: elapsed, completion, health, completionRate, recencyScore, momentum };
+  const completion = computeDone(subGoals, subtreeHabits, habits, now);
+  const earned     = computeHealth(subGoals, subtreeHabits, habits, now, elapsed, focusStrength);
+  const health     = graced ? applyNewGoalGrace(earned, lg.createdAt) : earned;
+  return { time: elapsed, completion, health };
 }
 
 const DOMAIN_COLORS: Record<string, string> = {
@@ -3173,7 +3199,7 @@ function DayRing({
 }
 
 
-function stGoalMetrics(sg: Goal, goals: Goal[], habits: Habit[], focusStrength = 0, graced = true): { time: number; completion: number; health: number; completionRate: number; recencyScore: number; momentum: number } {
+function stGoalMetrics(sg: Goal, goals: Goal[], habits: Habit[], focusStrength = 0, graced = true): { time: number; completion: number; health: number } {
   const now     = Date.now();
   const totalMs = (sg.timeframe || 1) * 30.44 * 86_400_000;
   const elapsed = Math.min(1, Math.max(0, (now - sg.createdAt) / totalMs));
@@ -3182,29 +3208,23 @@ function stGoalMetrics(sg: Goal, goals: Goal[], habits: Habit[], focusStrength =
   const subtree   = new Set<string>([sg.id, ...subGoals.map((g) => g.id)]);
   const sgHabits  = habits.filter((h) => subtree.has(h.goalId));
 
-  const completion     = computeDone(subGoals, sgHabits, habits, now);
-  const earned         = computeHealth(subGoals, sgHabits, habits, now, elapsed, focusStrength);
-  const health         = graced ? applyNewGoalGrace(earned, sg.createdAt) : earned;
-  const completionRate = completion;
-  const recencyScore   = health;
-  const momentum       = (completion + health) / 2;
-  return { time: elapsed, completion, health, completionRate, recencyScore, momentum };
+  const completion = computeDone(subGoals, sgHabits, habits, now);
+  const earned     = computeHealth(subGoals, sgHabits, habits, now, elapsed, focusStrength);
+  const health     = graced ? applyNewGoalGrace(earned, sg.createdAt) : earned;
+  return { time: elapsed, completion, health };
 }
 
 
-function ongoingGoalMetrics(og: Goal, goals: Goal[], habits: Habit[], focusStrength = 0, graced = true): { time: number; completion: number; health: number; completionRate: number; recencyScore: number; momentum: number } {
+function ongoingGoalMetrics(og: Goal, goals: Goal[], habits: Habit[], focusStrength = 0, graced = true): { time: number; completion: number; health: number } {
   const now    = Date.now();
   const subGoals = goals.filter((g) => g.parentGoalId === og.id);
   const subtree  = new Set<string>([og.id, ...subGoals.map((g) => g.id)]);
   const ogHabits = habits.filter((h) => subtree.has(h.goalId));
 
-  const completion     = computeDone(subGoals, ogHabits, habits, now);
-  const earned         = computeOngoingHealth(subGoals, ogHabits, focusStrength);
-  const health         = graced ? applyNewGoalGrace(earned, og.createdAt) : earned;
-  const completionRate = completion;
-  const recencyScore   = health;
-  const momentum       = health;
-  return { time: 0, completion, health, completionRate, recencyScore, momentum };
+  const completion = computeDone(subGoals, ogHabits, habits, now);
+  const earned     = computeOngoingHealth(subGoals, ogHabits, focusStrength);
+  const health     = graced ? applyNewGoalGrace(earned, og.createdAt) : earned;
+  return { time: 0, completion, health };
 }
 
 /**
@@ -3337,7 +3357,7 @@ function GoalStrip({
   isShort = false,
 }: {
   goal: Goal;
-  metrics: { time: number; completion: number; health: number; completionRate: number; recencyScore: number };
+  metrics: { time: number; completion: number; health: number };
   domainColor?: string;
   isShort?: boolean;
 }) {
@@ -4203,6 +4223,52 @@ function SunIcon() {
       />
     </svg>
   );
+}
+
+/**
+ * Reusable confirmation modal, matching the reset-warning sheet. Click the
+ * scrim or Cancel to dismiss; the confirm button runs onConfirm.
+ */
+function ConfirmDialog({
+  title,
+  body,
+  confirmLabel = 'Delete',
+  onConfirm,
+  onCancel,
+}: {
+  title: string;
+  body: React.ReactNode;
+  confirmLabel?: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="scrim" role="dialog" aria-modal="true" onClick={onCancel}>
+      <div className="sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="reset-warn-icon">⚠</div>
+        <h2 style={{ marginBottom: 8 }}>{title}</h2>
+        <p className="reset-warn-body">{body}</p>
+        <button className="reset-warn-confirm" onClick={onConfirm}>{confirmLabel}</button>
+        <button className="ghost" onClick={onCancel}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+/** Warning body listing what a goal delete will cascade into. */
+function goalDeleteWarning(goalId: string, goals: Goal[], habits: Habit[]): { title: string; body: string } {
+  const g = goals.find((x) => x.id === goalId);
+  const remove = new Set<string>([goalId, ...goals.filter((x) => x.parentGoalId === goalId).map((x) => x.id)]);
+  const subCount  = remove.size - 1;
+  const itemCount = habits.filter((h) => remove.has(h.goalId)).length;
+  const extras = [
+    subCount  ? `${subCount} sub-goal${subCount !== 1 ? 's' : ''}` : '',
+    itemCount ? `${itemCount} task${itemCount !== 1 ? 's' : ''}/habit${itemCount !== 1 ? 's' : ''}` : '',
+  ].filter(Boolean).join(' and ');
+  return {
+    title: 'Delete this goal?',
+    body: `“${g?.title ?? 'This goal'}”${extras ? `, along with its ${extras},` : ''} will be permanently deleted. You can undo it right afterward from the toast.`,
+  };
 }
 
 function TrashIcon() {
