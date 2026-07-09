@@ -799,7 +799,11 @@ h1 {
   border: 1px solid var(--line);
   transition: color 0.18s, border-color 0.18s, background 0.18s;
 }
-.node-sun:hover { color: #e8b53c; border-color: #e8b53c; }
+/* hover only on real pointers — on touch, :hover sticks after a tap and would
+   make a just-unflagged sun keep looking lit. */
+@media (hover: hover) {
+  .node-sun:hover { color: #e8b53c; border-color: #e8b53c; }
+}
 .node-sun.on {
   color: #f0c04a;
   border-color: #f0c04a;
@@ -820,7 +824,9 @@ h1 {
   cursor: pointer;
   transition: color 0.18s;
 }
-.row-sun:hover { color: #e8b53c; }
+@media (hover: hover) {
+  .row-sun:hover { color: #e8b53c; }
+}
 .row-sun.on { color: #f0c04a; }
 
 .node-edit {
