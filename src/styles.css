@@ -333,12 +333,13 @@ h1 {
   margin-bottom: 14px;
 }
 
-.focus-thread {
-  margin-bottom: 14px;
+/* Focus highlight tapers with --focus-strength (0–1, set inline by GoalNode)
+   instead of being all-or-nothing on the #1 card — priority order persists
+   now, so position 2/3 still read as "somewhat in focus" before fading out. */
+.node.focus-goal::before {
+  background: rgba(255, 255, 255, calc(0.9 * var(--focus-strength, 1)));
+  width: 3px;
 }
-
-.node.focus-goal::before { background: rgba(255, 255, 255, 0.9); width: 3px; }
-.goal-thread.focus-thread .node::before { background: rgba(255, 255, 255, 0.75); width: 3px; }
 
 .node-foot {
   display: flex;
@@ -756,11 +757,13 @@ h1 {
 .node-drag:active { cursor: grabbing; }
 
 
-/* Top goal in the list is automatically "in focus" — shown with accent border */
+/* Goals in the top few priority positions get an accent border/glow that
+   tapers with --focus-strength (1 at #1, fading to 0 by ~position 3) rather
+   than an all-or-nothing badge on just the #1 card. */
 .goal-thread > .node.focus-goal,
 .node.short.focus-goal {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px rgba(200,169,106,0.25);
+  border-color: color-mix(in srgb, var(--accent) calc(var(--focus-strength, 1) * 100%), var(--line));
+  box-shadow: 0 0 0 1px rgba(200, 169, 106, calc(0.25 * var(--focus-strength, 1)));
 }
 
 .node-del {

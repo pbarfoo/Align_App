@@ -1035,10 +1035,14 @@ function Align({
           .map((goal, goalIdx) => {
           const goalValues = goal.valueIndexes.map((i) => domain.values[i]).filter(Boolean);
           const hasChildren = habits.some((h) => h.goalId === goal.id) || domainGoals.some((s) => s.parentGoalId === goal.id);
-          const isFocus = goalIdx === 0;
+          // Priority order is now meaningful and persists (drag-to-reorder),
+          // so the "in focus" highlight tapers by position instead of being
+          // an all-or-nothing badge on the top card alone: #1 strongest,
+          // fading out by the 3rd/4th position rather than vanishing after #1.
+          const focusStrength = Math.max(0, 1 - goalIdx * 0.4);
           return (
           <SortableGoal key={goal.id} id={goal.id}>
-          <div className={`goal-thread${isFocus ? ' focus-thread' : ''}`} style={{ '--thread-color': THREAD_PALETTE[goalIdx % THREAD_PALETTE.length] } as React.CSSProperties}>
+          <div className="goal-thread" style={{ '--thread-color': THREAD_PALETTE[goalIdx % THREAD_PALETTE.length] } as React.CSSProperties}>
             <GoalNode
               goal={goal}
               values={goalValues}
@@ -1062,7 +1066,7 @@ function Align({
               onToggleComplete={() => toggleGoalComplete(goal.id)}
               isCollapsed={collapsedGoals.has(goal.id)}
               onToggleCollapse={hasChildren ? () => toggleCollapse(goal.id) : undefined}
-              isFocus={isFocus}
+              focusStrength={focusStrength}
               showDragHandle
               health={goalHealthMap[goal.id]}
             />
@@ -1240,7 +1244,7 @@ function ShortWithActions({
   domainValues,
   isCollapsed,
   onToggleCollapse,
-  isFocus,
+  focusStrength,
   showDragHandle,
   domainVision: _domainVision,
 }: {
@@ -1275,7 +1279,7 @@ function ShortWithActions({
   valueIndexes?: number[];
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
-  isFocus?: boolean;
+  focusStrength?: number;
   showDragHandle?: boolean;
 }) {
   const [editingHabitId, setEditingHabitId] = useState<string | null>(null);
@@ -1306,7 +1310,7 @@ function ShortWithActions({
         domainValues={domainValues}
         isCollapsed={isCollapsed}
         onToggleCollapse={onToggleCollapse}
-        isFocus={isFocus}
+        focusStrength={focusStrength}
         showDragHandle={showDragHandle}
         health={health}
       />
@@ -1678,7 +1682,7 @@ function GoalNode({
   onToggleComplete,
   isCollapsed,
   onToggleCollapse,
-  isFocus,
+  focusStrength,
   showDragHandle,
   health,
 }: {
@@ -1702,7 +1706,10 @@ function GoalNode({
   onToggleComplete?: () => void;
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
-  isFocus?: boolean;
+  /** 0–1: how strongly to show this goal as "in focus". Priority order now
+   * persists (drag-to-reorder), so this tapers by position rather than being
+   * an all-or-nothing badge on the top card alone. */
+  focusStrength?: number;
   showDragHandle?: boolean;
   health?: GoalHealthInfo;
 }) {
@@ -1711,7 +1718,7 @@ function GoalNode({
   const [editingTitle, setEditingTitle] = useState(false);
   const [editingTimeframe, setEditingTimeframe] = useState(false);
   const [draft, setDraft] = useState(goal.title);
-
+  const hasFocus = (focusStrength ?? 0) > 0.02;
 
   const commitRename = () => {
     if (draft.trim() && draft.trim() !== goal.title) onRename?.(draft.trim());
@@ -1727,7 +1734,11 @@ function GoalNode({
   };
 
   return (
-    <div className={`${className}${short ? ' short' : ''}${isComplete ? ' completed' : ''}${isFocus ? ' focus-goal' : ''}`} onClick={onClick}>
+    <div
+      className={`${className}${short ? ' short' : ''}${isComplete ? ' completed' : ''}${hasFocus ? ' focus-goal' : ''}`}
+      style={hasFocus ? ({ '--focus-strength': focusStrength } as React.CSSProperties) : undefined}
+      onClick={onClick}
+    >
       <div className="node-left-col">
         {onToggleCollapse && (
           <button
