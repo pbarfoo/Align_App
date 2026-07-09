@@ -22,6 +22,9 @@ export interface Goal {
   timeframe: number;
   /** unix ms when this short-term goal was marked complete */
   completedAt?: number;
+  /** position in the user's priority order — first goal per domain is the
+   * focus goal, so this order carries meaning and must persist */
+  sortOrder?: number;
 }
 
 export type ActionKind = 'habit' | 'task';

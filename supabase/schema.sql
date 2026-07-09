@@ -24,7 +24,8 @@ create table if not exists public.goals (
   parent_goal_id text,
   created_at bigint,
   timeframe numeric,
-  completed_at bigint
+  completed_at bigint,
+  sort_order int
 );
 
 -- HABITS

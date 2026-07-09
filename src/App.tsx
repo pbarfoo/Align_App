@@ -97,6 +97,7 @@ function goalToRow(g: Goal, userId: string): Row {
     title: g.title, parent_goal_id: g.parentGoalId ?? null,
     created_at: g.createdAt, timeframe: g.timeframe,
     completed_at: g.completedAt ?? null,
+    sort_order: g.sortOrder ?? null,
   };
 }
 function goalFromRow(row: Row): Goal {
@@ -109,6 +110,7 @@ function goalFromRow(row: Row): Goal {
     createdAt: row.created_at,
     timeframe: row.timeframe,
     completedAt: row.completed_at ?? undefined,
+    sortOrder: row.sort_order ?? undefined,
   };
 }
 
@@ -287,7 +289,9 @@ export default function App() {
     }, 10000);
     Promise.all([
       supabase.from('domains').select('*').eq('user_id', userId),
-      supabase.from('goals').select('*').eq('user_id', userId),
+      supabase.from('goals').select('*').eq('user_id', userId)
+        .order('sort_order', { ascending: true, nullsFirst: false })
+        .order('created_at', { ascending: true }),
       supabase.from('habits').select('*').eq('user_id', userId).order('id'),
       supabase.from('reflections').select('*').eq('user_id', userId).order('date'),
       supabase.from('stale_tasks').select('*'),
@@ -823,7 +827,9 @@ function Align({
     setGoals(prev => {
       const oi = prev.findIndex(g => g.id === active.id);
       const ni = prev.findIndex(g => g.id === over.id);
-      return arrayMove(prev, oi, ni);
+      // Renumber every goal after the move so the priority order (first per
+      // domain = focus) persists to the DB via the normal sync upsert.
+      return arrayMove(prev, oi, ni).map((g, i) => ({ ...g, sortOrder: i }));
     });
   };
 
@@ -890,6 +896,7 @@ function Align({
       ...(parentGoalId ? { parentGoalId } : {}),
       createdAt: Date.now(),
       timeframe,
+      sortOrder: prev.length, // new goals join at the bottom of the priority order
     }]);
     setAddingFor(null);
     setAddingForKind(null);
