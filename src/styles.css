@@ -785,6 +785,43 @@ h1 {
   background: rgba(229, 84, 75, 0.12);
 }
 
+/* ☀ Flag a task as today's focus — Align tab row control + Today row control */
+.node-sun {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--line);
+  transition: color 0.18s, border-color 0.18s, background 0.18s;
+}
+.node-sun:hover { color: #e8b53c; border-color: #e8b53c; }
+.node-sun.on {
+  color: #f0c04a;
+  border-color: #f0c04a;
+  background: rgba(240, 192, 74, 0.16);
+}
+
+.row-sun {
+  flex-shrink: 0;
+  align-self: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: color 0.18s;
+}
+.row-sun:hover { color: #e8b53c; }
+.row-sun.on { color: #f0c04a; }
+
 .node-edit {
   flex-shrink: 0;
   width: 26px;
@@ -2618,15 +2655,6 @@ h1 {
   .week-value-chip { font-size: 10.5px; }
 }
 
-/* Gemini focus pick — one-line reason under the row */
-.focus-reason {
-  margin-top: 4px;
-  font-size: 11.5px;
-  font-style: italic;
-  color: var(--accent);
-  opacity: 0.85;
-}
-
 /* Subheads inside the Today card */
 .today-subhead {
   font-size: 10.5px;
@@ -2646,139 +2674,10 @@ h1 {
   padding: 12px 14px;
 }
 
-.today-planner-card {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-/* Domain pills stretch evenly; active picks up the domain colour */
-.plan-pills { margin-top: 4px; }
-.plan-pills .pill.active {
-  color: var(--bg);
-  background: var(--pill-color, var(--accent));
-  border-color: var(--pill-color, var(--accent));
-}
-
-/* Goal pills: one streamlined horizontal-scroll row, size to content */
-.plan-goal-pills {
-  flex-wrap: nowrap;
-  gap: 8px;
-  overflow-x: auto;
-  scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
-  padding-bottom: 2px;
-  /* fade the right edge to hint there's more to swipe */
-  mask-image: linear-gradient(to right, #000 88%, transparent);
-}
-.plan-goal-pills::-webkit-scrollbar { display: none; }
-.plan-goal-pills .goal-pill {
-  flex: 0 0 auto;
-  max-width: 220px;
-  padding: 8px 13px;
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 1.25;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.goal-pill.active {
-  color: var(--pill-color, var(--accent));
-  border-color: var(--pill-color, var(--accent));
-  background: color-mix(in srgb, var(--pill-color, var(--accent)) 14%, transparent);
-}
-
-/* Collapsed: just the picked goal + a Change affordance */
-.plan-goal-selected {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.plan-goal-selected .goal-pill {
-  flex: 0 1 auto;
-  min-width: 0;
-  padding: 8px 13px;
-  font-size: 13px;
-  font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.plan-goal-change {
-  flex: none;
-  background: none;
-  border: none;
-  color: var(--muted);
-  font-size: 12px;
-  text-decoration: underline;
-  cursor: pointer;
-}
-
-.plan-recommendations {
-  margin-top: 2px;
-}
-
-.plan-recommendations .today-subhead {
-  margin-top: 2px;
-}
-
-.plan-recommendations .habit-row:last-child {
-  border-bottom: none;
-}
-
-.plan-empty {
-  font-size: 13px;
-  color: var(--muted);
-  padding: 8px 2px 4px;
-}
-
-/* Focus picker — choose today's focus by hand */
 .focus-head-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-}
-.focus-picker { margin-top: 4px; }
-.focus-pick-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 10px 6px;
-  background: none;
-  border: none;
-  border-bottom: 1px solid var(--line);
-  text-align: left;
-  cursor: pointer;
-}
-.focus-pick-check {
-  flex: none;
-  width: 20px;
-  height: 20px;
-  border: 1.5px solid var(--line);
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  color: var(--accent);
-}
-.focus-pick-row.on .focus-pick-check { border-color: var(--accent); }
-.focus-pick-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.focus-pick-title { font-size: 14px; color: var(--text, #ececec); }
-.focus-pick-row.on .focus-pick-title { color: var(--accent); }
-.focus-pick-goal { font-size: 11px; color: var(--muted); }
-.focus-picker .add-actions { margin-top: 10px; }
-
-@media (max-width: 380px) {
-  .plan-controls {
-    grid-template-columns: 1fr;
-  }
-
-  .plan-field--wide {
-    grid-column: auto;
-  }
 }
 
 /* Native date/time inputs — visible & tappable, styled to match the form.

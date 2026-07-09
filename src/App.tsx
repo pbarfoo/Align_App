@@ -31,11 +31,6 @@ import type { Session } from '@supabase/supabase-js';
 
 type Tab = 'foundation' | 'align' | 'today';
 
-interface TodayPlanPrefs {
-  domainId: DomainId;
-  goalId: string;
-}
-
 interface ActionInput {
   startDate?: string;
   recurrence?: Recurrence;
@@ -44,22 +39,6 @@ interface ActionInput {
   specificDays?: number[];
   dueDate?: string;
   dueTime?: string;
-}
-
-function isDomainIdValue(value: unknown): value is DomainId {
-  return value === 'career' || value === 'self' || value === 'community';
-}
-
-function readTodayPlanPrefs(date: string): Partial<TodayPlanPrefs> {
-  try {
-    const parsed = JSON.parse(localStorage.getItem(`align-today-plan-${date}`) ?? '{}') as Partial<TodayPlanPrefs>;
-    return {
-      domainId: isDomainIdValue(parsed.domainId) ? parsed.domainId : undefined,
-      goalId: typeof parsed.goalId === 'string' ? parsed.goalId : undefined,
-    };
-  } catch {
-    return {};
-  }
 }
 
 /* ---- Supabase row mappers ---- */
@@ -121,6 +100,7 @@ function habitToRow(h: Habit, userId: string): Row {
     custom_interval: h.customInterval ?? null, custom_unit: h.customUnit ?? null,
     specific_days: h.specificDays ?? null,
     due_date: h.dueDate ?? null, due_time: h.dueTime ?? null,
+    focus_date: h.focusDate ?? null,
     completed: h.completed ?? null, completed_at: h.completedAt ?? null,
     streak: h.streak ?? 0,
     completions,
@@ -139,6 +119,7 @@ function habitFromRow(row: Row): Habit {
     specificDays: row.specific_days ?? undefined,
     dueDate: row.due_date ?? undefined,
     dueTime: row.due_time ?? undefined,
+    focusDate: row.focus_date ?? undefined,
     completed: row.kind === 'task' ? !!row.completed : row.completed ?? undefined,
     completedAt: row.completed_at ?? undefined,
     streak: row.streak ?? 0,
@@ -961,6 +942,15 @@ function Align({
     flash('Deleted');
   };
 
+  // ☀ Flag / unflag a task as a priority for TODAY — surfaces it in the Today
+  // tab's chosen-focus section. Day-scoped: focusDate holds the date it was
+  // flagged for, so flags naturally lapse at midnight.
+  const todayStr = toDateStr(new Date());
+  const toggleTaskFocus = (id: string) =>
+    setHabits((prev) => prev.map((h) =>
+      h.id === id ? { ...h, focusDate: h.focusDate === todayStr ? undefined : todayStr } : h
+    ));
+
   const toggleGoalComplete = (id: string) =>
     setGoals((prev) => prev.map((g) =>
       g.id === id ? { ...g, completedAt: g.completedAt ? undefined : Date.now() } : g
@@ -1130,6 +1120,13 @@ function Align({
                       </div>
                     </div>
                     <div className="node-ctrls">
+                      {h.kind === 'task' && (
+                        <button
+                          className={`node-sun${h.focusDate === todayStr ? ' on' : ''}`}
+                          title={h.focusDate === todayStr ? "Remove from today's focus" : "Focus on this today"}
+                          onClick={(e) => { e.stopPropagation(); toggleTaskFocus(h.id); }}
+                        ><SunIcon /></button>
+                      )}
                       <button className="node-del" title="Delete"
                         onClick={(e) => { e.stopPropagation(); deleteHabit(h.id); }}
                       ><TrashIcon /></button>
@@ -1168,6 +1165,8 @@ function Align({
                   onEditHabit={updateHabit}
                   onToggleGoalComplete={toggleGoalComplete}
                   onToggleHabit={toggleHabit}
+                  onToggleTaskFocus={toggleTaskFocus}
+                  todayStr={todayStr}
                   hideCompleted={hideCompleted}
                   domainValues={domain.values}
                   domainVision={domain.vision}
@@ -1236,6 +1235,8 @@ function ShortWithActions({
   onEditHabit,
   onToggleGoalComplete,
   onToggleHabit,
+  onToggleTaskFocus,
+  todayStr,
   hideCompleted,
   editValuesActive,
   onEditValues,
@@ -1272,6 +1273,8 @@ function ShortWithActions({
   onEditHabit: (id: string, updates: Partial<Habit>) => void;
   onToggleGoalComplete: (id: string) => void;
   onToggleHabit: (id: string) => void;
+  onToggleTaskFocus: (id: string) => void;
+  todayStr: string;
   hideCompleted: boolean;
   editValuesActive?: boolean;
   onEditValues?: () => void;
@@ -1376,6 +1379,15 @@ function ShortWithActions({
               </div>
             </div>
             <div className="node-ctrls">
+              {h.kind === 'task' && (
+                <button
+                  className={`node-sun${h.focusDate === todayStr ? ' on' : ''}`}
+                  title={h.focusDate === todayStr ? "Remove from today's focus" : "Focus on this today"}
+                  onClick={(e) => { e.stopPropagation(); onToggleTaskFocus(h.id); }}
+                >
+                  <SunIcon />
+                </button>
+              )}
               <button
                 className="node-del"
                 title="Delete"
@@ -1959,15 +1971,6 @@ function Today({
   const [coachFailed, setCoachFailed] = useState(false);
   const [coachRating, setCoachRating] = useState<'up' | 'down' | null>(null);
   const today = toDateStr(new Date());
-  const initialPlan = readTodayPlanPrefs(today);
-
-  // Start blank — no domain chosen — so the card is clean until you pick one.
-  const [selectedDomainId, setSelectedDomainId] = useState<DomainId | ''>(() =>
-    initialPlan.domainId && domains.some((d) => d.id === initialPlan.domainId) ? initialPlan.domainId : '');
-
-  const [selectedGoalId, setSelectedGoalId] = useState<string>(initialPlan.goalId ?? '');
-  // Goal list collapses to just the picked goal; expand to change.
-  const [expandGoals, setExpandGoals] = useState(false);
 
   const fetchCoachCard = () => {
     if (!goals.length && !habits.length) return;
@@ -2012,39 +2015,21 @@ function Today({
   const completedToday = tasks.filter(
     (t) => t.completed && t.completedAt && toDateStr(new Date(t.completedAt)) === today,
   );
-  const activeGoals = useMemo(() => goals.filter((g) => !g.completedAt), [goals]);
-  const goalsForPlanDomain = useMemo(
-    () => activeGoals.filter((g) => g.domainId === selectedDomainId),
-    [activeGoals, selectedDomainId],
-  );
+  // Tasks the user hand-flagged (☀) as today's priority, in the Align tab.
+  const focusTasks = openTasks.filter((t) => t.focusDate === today);
+  const focusTaskIds = new Set(focusTasks.map((t) => t.id));
 
   const doneItems = [...doneHabits, ...completedToday];
 
-  useEffect(() => {
-    // Drop a stale non-blank domain, but never auto-select one — blank is a
-    // valid resting state.
-    if (selectedDomainId && domains.length && !domains.some((d) => d.id === selectedDomainId)) {
-      setSelectedDomainId('');
-    }
-  }, [domains, selectedDomainId]);
+  // Flag/unflag a task as today's focus (mirrors Align's ☀ toggle) so the
+  // Today section can remove a task from itself.
+  const toggleTaskFocus = (id: string) =>
+    setHabits((prev) => prev.map((h) =>
+      h.id === id ? { ...h, focusDate: h.focusDate === today ? undefined : today } : h
+    ));
 
-  useEffect(() => {
-    // Clear the goal if it no longer belongs to the chosen domain.
-    if (selectedGoalId && !goalsForPlanDomain.some((g) => g.id === selectedGoalId)) {
-      setSelectedGoalId('');
-    }
-  }, [goalsForPlanDomain, selectedGoalId]);
-
-  useEffect(() => {
-    localStorage.setItem(`align-today-plan-${today}`, JSON.stringify({
-      domainId: selectedDomainId,
-      goalId: selectedGoalId,
-    }));
-  }, [today, selectedDomainId, selectedGoalId]);
-
-
-  // Once a day, drop stale per-day keys (today's plan + leftovers from earlier
-  // picker experiments) so localStorage doesn't accumulate one entry per day.
+  // Once a day, drop stale per-day keys left by earlier picker experiments so
+  // localStorage doesn't accumulate one entry per day.
   useEffect(() => {
     const prefixes = ['align-today-plan-', 'align-focus-scope-', 'align-focus-manual-'];
     for (let i = localStorage.length - 1; i >= 0; i--) {
@@ -2203,20 +2188,19 @@ function Today({
   };
 
 
-  // --- The Today list: overdue first (with decision actions inline), then
-  // due-today tasks, then a chosen plan, then the rest of today's habits
-  // ranked by focus / neglect / weak-goal rescue.
-  const overdueSorted = [...overdueTasks].sort((a, b) => daysOverdueOf(b) - daysOverdueOf(a));
+  // --- The Today list: your chosen focus tasks (☀) up top, then overdue /
+  // due-today needing action, then the day's habits.
+  // Overdue tasks you've already flagged for focus live in the focus section,
+  // not here (no double-listing).
+  const overdueSorted = [...overdueTasks]
+    .filter((t) => !focusTaskIds.has(t.id))
+    .sort((a, b) => daysOverdueOf(b) - daysOverdueOf(a));
+  const dueTodayNotFocused = dueTodayTasks.filter((t) => !focusTaskIds.has(t.id));
 
-  const selectedDomain = selectedDomainId ? domains.find((d) => d.id === selectedDomainId) ?? null : null;
-  const selectedGoal = goalsForPlanDomain.find((g) => g.id === selectedGoalId) ?? null;
-
-
-  // Hard cap on task rows in the Today list: 3. Overdue (worst first) claim
-  // the slots ahead of due-today; the overflow stays reachable under More.
-  // AI picks that are tasks only show while slots remain — habits always show.
+  // Hard cap on the "Needs action" rows: 3. Overdue (worst first) claim the
+  // slots ahead of due-today; the overflow stays reachable under More.
   const TASK_CAP = 3;
-  const pinnedTasks = [...overdueSorted, ...dueTodayTasks].slice(0, TASK_CAP);
+  const pinnedTasks = [...overdueSorted, ...dueTodayNotFocused].slice(0, TASK_CAP);
   const pinnedOverdue = pinnedTasks.filter((t) => !!t.dueDate && t.dueDate < today);
   const pinnedDueToday = pinnedTasks.filter((t) => t.dueDate === today);
 
@@ -2255,77 +2239,10 @@ function Today({
   // ALL of today's open habits — the complete daily rhythm, urgency-sorted.
   const habitsToday = [...openHabits].sort((a, b) => habitUrgency(b) - habitUrgency(a));
 
-  const goalIsInSelectedThread = (goalId: string): boolean => {
-    if (!selectedGoal) return false;
-    let g = goals.find((x) => x.id === goalId);
-    while (g) {
-      if (g.id === selectedGoal.id) return true;
-      g = g.parentGoalId ? goals.find((x) => x.id === g!.parentGoalId) : undefined;
-    }
-    return false;
-  };
-
-  const dueDiffDays = (h: Habit): number | null => {
-    if (h.kind !== 'task' || !h.dueDate) return null;
-    return Math.ceil(
-      (new Date(h.dueDate + 'T12:00').getTime() - new Date(today + 'T12:00').getTime()) / 86_400_000,
-    );
-  };
-
-  const taskUrgencyScore = (h: Habit): number => {
-    const days = dueDiffDays(h);
-    if (h.kind !== 'task') return 0;
-    if (days === null) return 10;
-    if (days < 0) return 100 + Math.min(40, Math.abs(days) * 5);
-    if (days === 0) return 90;
-    if (days <= 3) return 58 - days * 8;
-    if (days <= 14) return 25;
-    return 10;
-  };
-
-  const planCandidates = [...openHabits, ...openTasks].filter((h) => {
-    if (selectedGoal) return goalIsInSelectedThread(h.goalId);
-    return selectedDomain ? domainOf(h.goalId) === selectedDomain.id : true;
-  });
-
-  // Rank the selected goal's open actions by urgency + how much they'd lift a
-  // struggling goal — one clear order to work top-down.
-  const planScore = (h: Habit): number => {
-    const gh = goalHealthMap[h.goalId];
-    const healthGap = gh ? 100 - gh.health : 0;
-    const habitScore = h.kind === 'habit' ? habitUrgency(h) : 0;
-
-    return taskUrgencyScore(h) + habitScore + healthGap * 0.25 + (h.kind === 'task' ? 18 : 12);
-
-  };
-
-  // Only the 3 most needed/effective actions for the chosen goal — a focused
-  // shortlist, not the whole backlog.
-  const recommendedPlanItems = [...planCandidates]
-    .sort((a, b) => planScore(b) - planScore(a) || byPriority(a, b))
-    .slice(0, 3);
-
-  const planReason = (h: Habit): string => {
-    const days = dueDiffDays(h);
-    const gh = goalHealthMap[h.goalId];
-    if (h.kind === 'task' && days !== null) {
-      if (days < 0) return 'Overdue, clear the drag first';
-      if (days === 0) return 'Due today, finish the loop';
-      if (days <= 3) return 'Coming up soon for this goal';
-    }
-    if (h.kind === 'habit' && getGraceDays(h).length > 0) return 'Missed recently, protect the streak';
-    if (h.kind === 'habit' && isNeglected(h)) return 'Neglected lately, rebuild momentum';
-    if (gh && gh.health <= 33) return 'Lifts a goal that needs attention';
-
-    return 'Next move for this goal';
-
-  };
-
   // Everything not shown in Today (future tasks + capped overflow), by domain.
   const shownToday = new Set<string>([
-    ...pinnedTasks, ...openHabits,
+    ...focusTasks, ...pinnedTasks, ...openHabits,
   ].map((h) => h.id));
-  recommendedPlanItems.forEach((item) => shownToday.add(item.id));
   const moreByDomain = domains
     .map((d) => ({
       domain: d,
@@ -2351,7 +2268,7 @@ function Today({
     fetchCoachCard();
   }, [!goals.length && !habits.length]); // re-runs once data arrives; stable after that
 
-  const renderRow = (h: Habit, aiReason?: string) => {
+  const renderRow = (h: Habit) => {
     const isDone = h.kind === 'task' ? !!h.completed : isHabitDoneThisPeriod(h);
     const dColor = DOMAIN_COLORS[domainOf(h.goalId) ?? ''] ?? 'var(--line)';
     const gh = goalHealthMap[h.goalId];
@@ -2388,7 +2305,6 @@ function Today({
             &nbsp;·&nbsp;
             {h.kind === 'task' ? getTaskCountdown(h) : getRecurrenceString(h)}
           </div>
-          {aiReason && <div className="focus-reason">✦ {aiReason}</div>}
           {(() => {
             if (h.kind === 'task') {
               if (!isDone && h.dueDate && h.dueDate < today) {
@@ -2423,6 +2339,16 @@ function Today({
             );
           })()}
         </div>
+        {h.kind === 'task' && !isDone && (
+          <button
+            className={`row-sun${h.focusDate === today ? ' on' : ''}`}
+            title={h.focusDate === today ? "Remove from today's focus" : "Focus on this today"}
+            onClick={(e) => { e.stopPropagation(); toggleTaskFocus(h.id); }}
+            aria-label="Toggle today focus"
+          >
+            <SunIcon />
+          </button>
+        )}
       </div>
     );
   };
@@ -2488,82 +2414,13 @@ function Today({
         </div>
       </div>
 
-      {/* Focus — pick a domain, then a goal; work its actions one at a time. */}
-      {domains.length > 0 && (
-        <div className="today-section focus focus-card today-planner-card">
+      {/* ☀ Today's focus — the tasks you flagged in the Align tab. */}
+      {focusTasks.length > 0 && (
+        <div className="today-section focus focus-card">
           <div className="today-section-head focus-head-row">
-
-            <span>✦ Focus</span>
+            <span>☀ Today's focus</span>
           </div>
-
-          {/* Domain pills */}
-          <div className="pills plan-pills">
-            {domains.map((d) => (
-              <button
-                key={d.id}
-                className={`pill${d.id === selectedDomainId ? ' active' : ''}`}
-                style={{ '--pill-color': DOMAIN_COLORS[d.id] ?? 'var(--accent)' } as React.CSSProperties}
-                onClick={() => {
-                  const turningOff = d.id === selectedDomainId;
-                  setSelectedDomainId(turningOff ? '' : d.id);
-                  setSelectedGoalId('');
-                  setExpandGoals(!turningOff);
-
-                }}
-              >
-                {d.name.split(' ')[0]}
-              </button>
-            ))}
-          </div>
-
-
-          {/* Blank until a domain is chosen */}
-          {!selectedDomainId && (
-            <p className="plan-empty">Pick a life area to focus on today.</p>
-          )}
-
-          {/* Goals for the chosen domain — one scrollable row; collapses to the
-              picked goal once chosen (tap Change to reopen). */}
-          {selectedDomainId && (
-            goalsForPlanDomain.length === 0 ? (
-              <p className="plan-empty">No active goals in {selectedDomain?.name ?? 'this domain'} yet.</p>
-            ) : selectedGoal && !expandGoals ? (
-              <div className="plan-goal-selected">
-                <span
-                  className="pill goal-pill active"
-                  style={{ '--pill-color': DOMAIN_COLORS[selectedGoal.domainId] ?? 'var(--accent)' } as React.CSSProperties}
-                >
-                  {selectedGoal.title}
-                </span>
-                <button className="plan-goal-change" onClick={() => setExpandGoals(true)}>Change</button>
-              </div>
-            ) : (
-              <div className="pills plan-goal-pills">
-                {goalsForPlanDomain.map((g) => (
-                  <button
-                    key={g.id}
-                    className={`pill goal-pill${g.id === selectedGoal?.id ? ' active' : ''}`}
-                    style={{ '--pill-color': DOMAIN_COLORS[g.domainId] ?? 'var(--accent)' } as React.CSSProperties}
-                    onClick={() => { setSelectedGoalId(g.id); setExpandGoals(false); }}
-                  >
-                    {g.title}
-                  </button>
-                ))}
-              </div>
-            )
-          )}
-
-          {/* The chosen goal's actions, one clear order to work top-down */}
-          {selectedGoal && !expandGoals && (
-            recommendedPlanItems.length > 0 ? (
-              <div className="plan-recommendations">
-                {recommendedPlanItems.map((item) => renderRow(item, planReason(item)))}
-              </div>
-            ) : (
-              <p className="plan-empty">Nothing open for “{selectedGoal.title}” today. ✦</p>
-
-            )
-          )}
+          {focusTasks.map((t) => renderRow(t))}
         </div>
       )}
 
@@ -4264,6 +4121,18 @@ function CalIcon() {
       <line x1="0.5" y1="4.5" x2="11.5" y2="4.5" stroke="currentColor" strokeWidth="1.2"/>
       <line x1="3.5" y1="0" x2="3.5" y2="3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
       <line x1="8.5" y1="0" x2="8.5" y2="3" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+    </svg>
+  );
+}
+
+function SunIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="4" stroke="currentColor" strokeWidth="2" />
+      <path
+        d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"
+        stroke="currentColor" strokeWidth="2" strokeLinecap="round"
+      />
     </svg>
   );
 }

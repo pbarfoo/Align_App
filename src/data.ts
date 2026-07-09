@@ -62,6 +62,9 @@ export interface Habit {
   completions?: string[];
   /** specific-days recurrence: 0=Sun, 1=Mon … 6=Sat */
   specificDays?: number[];
+  /** task only: "YYYY-MM-DD" this task was flagged (☀) as a priority for.
+   * When it equals today, the task appears in Today's chosen-focus section. */
+  focusDate?: string;
 }
 
 export const domains: Domain[] = [
