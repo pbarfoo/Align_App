@@ -563,18 +563,32 @@ export default function App() {
 function DateTimeField({ type, value, onChange, label, compact }: {
   type: 'date' | 'time'; value: string; onChange: (v: string) => void; label: string; compact?: boolean;
 }) {
+  // iOS Safari renders an empty native date/time input as a fully blank box —
+  // no placeholder text, no picker glyph — so overlay our own hint + icon that
+  // shows while empty. The overlay is pointer-events:none so taps still open the
+  // native picker underneath.
+  const hint = type === 'date' ? 'Choose date' : 'Choose time';
+  const icon = type === 'date' ? '📅' : '🕐';
   return (
     <label className={`date-field${compact ? ' date-field--compact' : ''}`}>
       {/* Caption above the field (skipped in compact mode, where the value is
           always present, e.g. rescheduling an existing due date). */}
       {!compact && <span className="date-field-label">{label}</span>}
-      <input
-        type={type}
-        value={value}
-        aria-label={label}
-        onChange={(e) => onChange(e.target.value)}
-        className={`date-input${value ? '' : ' date-input--empty'}`}
-      />
+      <span className="date-input-wrap">
+        <input
+          type={type}
+          value={value}
+          aria-label={label}
+          onChange={(e) => onChange(e.target.value)}
+          className={`date-input${value ? '' : ' date-input--empty'}`}
+        />
+        {!value && (
+          <span className="date-input-hint" aria-hidden="true">
+            <span className="date-input-hint-icon">{icon}</span>
+            {hint}
+          </span>
+        )}
+      </span>
     </label>
   );
 }

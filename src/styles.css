@@ -2749,8 +2749,27 @@ h1 {
   color-scheme: dark;
   text-align: left;
 }
-.date-input--empty { color: var(--muted); }
+/* Hide the native empty-value text (desktop shows "mm/dd/yyyy") so only our
+   overlay hint reads through; a real value flips the class off and restores it. */
+.date-input--empty { color: transparent; }
 .date-input:focus { outline: 1px solid var(--accent); }
+/* Wrapper lets us overlay a hint on top of an empty native input (iOS shows
+   nothing for an unset date/time otherwise). */
+.date-input-wrap { position: relative; display: block; width: 100%; }
+.date-input-hint {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 16px;
+  color: var(--muted);
+  pointer-events: none; /* taps fall through to the native input/picker */
+}
+.date-input-hint-icon { font-size: 15px; opacity: 0.85; }
+.triage-actions .date-field--compact .date-input-hint { left: 10px; font-size: 15px; }
 /* Nudge the native calendar/clock indicator to the right edge */
 .date-input::-webkit-calendar-picker-indicator {
   margin-left: auto;
