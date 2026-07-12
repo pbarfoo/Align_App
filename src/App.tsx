@@ -106,6 +106,7 @@ function habitToRow(h: Habit, userId: string): Row {
     specific_days: h.specificDays ?? null,
     due_date: h.dueDate ?? null, due_time: h.dueTime ?? null,
     focus_date: h.focusDate ?? null,
+    skipped_dates: h.skippedDates ?? null,
     completed: h.completed ?? null, completed_at: h.completedAt ?? null,
     streak: h.streak ?? 0,
     completions,
@@ -125,6 +126,7 @@ function habitFromRow(row: Row): Habit {
     dueDate: row.due_date ?? undefined,
     dueTime: row.due_time ?? undefined,
     focusDate: row.focus_date ?? undefined,
+    skippedDates: row.skipped_dates ?? undefined,
     completed: row.kind === 'task' ? !!row.completed : row.completed ?? undefined,
     completedAt: row.completed_at ?? undefined,
     streak: row.streak ?? 0,
@@ -1208,7 +1210,7 @@ function Align({
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setHabits((prev) => prev.map((x) =>
-                                  x.id !== h.id ? x : { ...x, startDate: dayAfter(frozenDate) }
+                                  x.id !== h.id ? x : { ...x, startDate: dayAfter(frozenDate), skippedDates: [...(x.skippedDates ?? []), frozenDate] }
                                 ));
                               }}
                             >
@@ -1468,7 +1470,7 @@ function ShortWithActions({
                       title="Skip this day — clears it without marking complete"
                       onClick={(e) => {
                         e.stopPropagation();
-                        onEditHabit(h.id, { startDate: dayAfter(frozenDate) });
+                        onEditHabit(h.id, { startDate: dayAfter(frozenDate), skippedDates: [...(h.skippedDates ?? []), frozenDate] });
                       }}
                     >
                       <CalIcon /> {graceLabel} ↺
@@ -2976,7 +2978,11 @@ function computeHabitConsistency(habits: Habit[], now: number): number {
         ? Math.min(...comps.map((d) => new Date(d + 'T12:00').getTime()))
         : now; // no history yet → treat as fresh, not 28 days of misses
     const ageDays  = Math.min(WINDOW, Math.max(1, (now - startMs) / 86_400_000));
-    const expected = Math.max(1, ageDays / naturalIntervalDays(h));
+    // Explicitly-skipped days (red pill) are counted as misses: the start date
+    // was advanced past them so they're out of the age window, so add them back
+    // as expected-but-not-done occurrences. Skipping ≠ forgiveness.
+    const skipMisses = (h.skippedDates ?? []).filter((d) => d >= lookback).length;
+    const expected = Math.max(1, ageDays / naturalIntervalDays(h)) + skipMisses;
     const actual   = comps.filter((d) => d >= lookback).length;
     const w = habitStreakWeight(h);
     scoreW += Math.min(actual / expected, 1) * w;
@@ -4144,6 +4150,7 @@ function getGraceDays(h: Habit): string[] {
   if (h.kind !== 'habit') return [];
 
   const done = new Set(h.completions ?? []);
+  const skipped = new Set(h.skippedDates ?? []);
   const startDateStr = h.startDate ?? null;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -4165,6 +4172,7 @@ function getGraceDays(h: Habit): string[] {
       d.setDate(d.getDate() - i);
       const str = toDateStr(d);
       if (startDateStr && str < startDateStr) break; // before habit started
+      if (skipped.has(str)) break;                    // explicitly skipped — stop
       if (!isScheduled(d)) continue;                 // not a due day
       if (done.has(str)) break;                       // last due day was logged
       missed.push(str);
@@ -4179,6 +4187,7 @@ function getGraceDays(h: Habit): string[] {
   prev.setDate(prev.getDate() - interval);
   const prevStr = toDateStr(prev);
   if (startDateStr && prevStr < startDateStr) return []; // started this period
+  if (skipped.has(prevStr)) return [];                    // explicitly skipped
   // If the most recent completion already falls inside the previous period
   // window, that period was satisfied — the current (still-open) period isn't
   // "missed" yet, so show nothing.

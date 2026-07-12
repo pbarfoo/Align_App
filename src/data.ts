@@ -65,6 +65,10 @@ export interface Habit {
   /** task only: "YYYY-MM-DD" this task was flagged (☀) as a priority for.
    * When it equals today, the task appears in Today's chosen-focus section. */
   focusDate?: string;
+  /** habit only: scheduled days the user explicitly SKIPPED (the red pill).
+   * The start date is advanced past them so they stop nagging, but each is
+   * still counted as a miss in the consistency math — skipping ≠ forgiveness. */
+  skippedDates?: string[];
 }
 
 export const domains: Domain[] = [

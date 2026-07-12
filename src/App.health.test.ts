@@ -136,6 +136,24 @@ describe('ongoing goal health', () => {
     expect(afterComplete - before).toBeGreaterThan(0.05);
   });
 
+  it('a skipped day (red pill) counts as a miss rather than forgiving it', () => {
+    vi.setSystemTime(now);
+
+    // Both habits have the SAME (advanced) start date — the only difference is
+    // whether the skipped day was recorded. Old behavior just advanced the
+    // start date and erased the miss (forgiven); the new behavior records the
+    // skip so it still counts, which must score LOWER.
+    const comps = ['2026-07-01', '2026-07-02', '2026-07-03', '2026-07-04', '2026-07-05'];
+    const forgiven = habit({ id: 'k', startDate: '2026-07-01', completions: comps, streak: 5 });
+    const counted = habit({
+      id: 'k', startDate: '2026-07-01', completions: comps, streak: 5,
+      skippedDates: ['2026-06-30'],
+    });
+
+    expect(__test_computeOngoingHealth([], [counted], 0))
+      .toBeLessThan(__test_computeOngoingHealth([], [forgiven], 0));
+  });
+
   it('adding a brand-new habit does not lower ongoing health (only maturing then neglecting it does)', () => {
     vi.setSystemTime(now);
     const todayStr = '2026-07-06';

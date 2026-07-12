@@ -43,6 +43,7 @@ create table if not exists public.habits (
   due_date text,
   due_time text,
   focus_date text,
+  skipped_dates text[],
   specific_days int[],
   completions jsonb default '[]'::jsonb,
   completed boolean,
