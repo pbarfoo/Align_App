@@ -80,6 +80,7 @@ function goalToRow(g: Goal, userId: string): Row {
     created_at: g.createdAt, timeframe: g.timeframe,
     completed_at: g.completedAt ?? null,
     sort_order: g.sortOrder ?? null,
+    archived_at: g.archivedAt ?? null,
   };
 }
 function goalFromRow(row: Row): Goal {
@@ -93,6 +94,7 @@ function goalFromRow(row: Row): Goal {
     timeframe: row.timeframe,
     completedAt: row.completed_at ?? undefined,
     sortOrder: row.sort_order ?? undefined,
+    archivedAt: row.archived_at ?? undefined,
   };
 }
 
@@ -859,6 +861,7 @@ function Align({
     }
   }, [goals]);
   const [editingHabitId, setEditingHabitId] = useState<string | null>(null);
+  const [inactiveOpen, setInactiveOpen] = useState(false);
 
   const toggleCollapse = (id: string) =>
     setCollapsedGoals(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
@@ -886,6 +889,10 @@ function Align({
   const domain = domains.find((d) => d.id === domainId)!;
   const domainGoals = goals.filter((g) => g.domainId === domainId);
   const topGoals = domainGoals.filter((g) => !g.parentGoalId);
+  // Inactive (paused) goals drop out of the active spine into their own
+  // collapsed section at the bottom; the rest render as normal.
+  const activeTopGoals   = topGoals.filter((g) => !g.archivedAt);
+  const archivedTopGoals = topGoals.filter((g) => !!g.archivedAt);
 
   const litChain = useMemo(() => {
     if (!lit) return null;
@@ -1045,6 +1052,11 @@ function Align({
       g.id === id ? { ...g, completedAt: g.completedAt ? undefined : Date.now() } : g
     ));
 
+  const toggleGoalArchive = (id: string) =>
+    setGoals((prev) => prev.map((g) =>
+      g.id === id ? { ...g, archivedAt: g.archivedAt ? undefined : Date.now() } : g
+    ));
+
   const toggleHabit = (id: string) =>
     setHabits((prev) => prev.map((h) => {
       if (h.id !== id) return h;
@@ -1120,8 +1132,8 @@ function Align({
 
       <div className="spine">
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-        <SortableContext items={topGoals.filter(g => !(hideCompleted && !!g.completedAt)).map(g => g.id)} strategy={verticalListSortingStrategy}>
-        {topGoals
+        <SortableContext items={activeTopGoals.filter(g => !(hideCompleted && !!g.completedAt)).map(g => g.id)} strategy={verticalListSortingStrategy}>
+        {activeTopGoals
           .filter((g) => !(hideCompleted && !!g.completedAt))
           .map((goal, goalIdx) => {
           const goalValues = goal.valueIndexes.map((i) => domain.values[i]).filter(Boolean);
@@ -1155,6 +1167,7 @@ function Align({
               onChangeTimeframe={(horizon, t) => updateGoalTimeframe(goal.id, horizon, t)}
               isComplete={!!goal.completedAt}
               onToggleComplete={() => toggleGoalComplete(goal.id)}
+              onToggleArchive={() => toggleGoalArchive(goal.id)}
               isCollapsed={collapsedGoals.has(goal.id)}
               onToggleCollapse={hasChildren ? () => toggleCollapse(goal.id) : undefined}
               focusStrength={focusStrength}
@@ -1313,6 +1326,35 @@ function Align({
           domainValues={domain.values}
           onAdd={(idxs, title, horizon, timeframe) => addGoal(idxs, title, horizon, timeframe)}
         />
+
+        {archivedTopGoals.length > 0 && (
+          <div className="inactive-section">
+            <button
+              className="inactive-toggle"
+              onClick={() => setInactiveOpen((o) => !o)}
+              title="Paused goals — excluded from health, the dashboard, and Today"
+            >
+              {inactiveOpen ? '▾' : '▸'} Inactive ({archivedTopGoals.length})
+            </button>
+            {inactiveOpen && (
+              <div className="inactive-list">
+                {archivedTopGoals.map((goal) => (
+                  <div key={goal.id} className="inactive-node">
+                    <GoalNode
+                      goal={goal}
+                      values={goal.valueIndexes.map((i) => domain.values[i]).filter(Boolean)}
+                      className={cls(`g:${goal.id}`)}
+                      onClick={() => setLit(lit === `g:${goal.id}` ? null : `g:${goal.id}`)}
+                      isArchived
+                      onToggleArchive={() => toggleGoalArchive(goal.id)}
+                      onDelete={() => setPendingDeleteGoalId(goal.id)}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1793,6 +1835,8 @@ function GoalNode({
   onChangeValues,
   isComplete,
   onToggleComplete,
+  isArchived,
+  onToggleArchive,
   isCollapsed,
   onToggleCollapse,
   focusStrength,
@@ -1817,6 +1861,8 @@ function GoalNode({
   onChangeValues?: (idxs: number[]) => void;
   isComplete?: boolean;
   onToggleComplete?: () => void;
+  isArchived?: boolean;
+  onToggleArchive?: () => void;
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
   /** 0–1: how strongly to show this goal as "in focus". Priority order now
@@ -2012,6 +2058,18 @@ function GoalNode({
             {addActive ? '×' : '+'}
           </button>
         )}
+        {onToggleArchive && (
+          <button
+            className={`node-archive${isArchived ? ' on' : ''}`}
+            title={isArchived ? 'Reactivate this goal' : 'Set inactive (pause — parks it out of health & Today)'}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleArchive();
+            }}
+          >
+            {isArchived ? '▶' : '⏸'}
+          </button>
+        )}
         {onDelete && (
           <button
             className="node-del"
@@ -2031,9 +2089,9 @@ function GoalNode({
 
 /* ---------------- Today ---------------- */
 function Today({
-  habits,
+  habits: allHabits,
   setHabits,
-  goals,
+  goals: allGoals,
   domains,
   reflections,
   staleTasks,
@@ -2057,6 +2115,13 @@ function Today({
   flash: Flash;
   userId?: string;
 }) {
+  // Inactive (paused) goals and their sub-goals are hidden from Today — their
+  // tasks/habits don't appear in focus, needs-action, or the day's list, and
+  // don't count toward the coach's progress.
+  const parkedGoalIds = archivedGoalIdSet(allGoals);
+  const goals  = allGoals.filter((g) => !parkedGoalIds.has(g.id));
+  const habits = allHabits.filter((h) => !parkedGoalIds.has(h.goalId));
+
   const [showDone, setShowDone] = useState(false);
   // Goal pending a delete-confirmation from the triage row (null = closed).
   const [pendingDeleteGoalId, setPendingDeleteGoalId] = useState<string | null>(null);
@@ -3331,6 +3396,25 @@ function focusStrengthByDomain(topLevelGoals: Goal[]): Map<string, number> {
   return strength;
 }
 
+/** Ids of every inactive (paused) goal plus all their descendant sub-goals —
+ * the set excluded from health, the dashboard, and the Today lists so a parked
+ * goal can neither help nor hurt. Archiving is offered on top-level goals, but
+ * this walks the tree so a whole branch goes quiet together. */
+function archivedGoalIdSet(goals: Goal[]): Set<string> {
+  const parked = new Set(goals.filter((g) => g.archivedAt).map((g) => g.id));
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const g of goals) {
+      if (!parked.has(g.id) && g.parentGoalId && parked.has(g.parentGoalId)) {
+        parked.add(g.id);
+        grew = true;
+      }
+    }
+  }
+  return parked;
+}
+
 /**
  * Health for every goal, keyed by id — the single source behind the Align
  * badges AND the numbers fed to the coach, so every surface agrees. Applies
@@ -3339,10 +3423,14 @@ function focusStrengthByDomain(topLevelGoals: Goal[]): Map<string, number> {
  */
 function computeGoalHealthMap(goals: Goal[], habits: Habit[]): Record<string, GoalHealthInfo> {
   const map: Record<string, GoalHealthInfo> = {};
+  // Inactive (paused) goals and their descendants get no health — they're
+  // parked, so they never appear in badges, the dashboard, or the coach.
+  const parked = archivedGoalIdSet(goals);
+  const live = goals.filter((g) => !parked.has(g.id));
   (['long', 'short', 'ongoing'] as const).forEach((horizon) => {
-    const topLevel = goals.filter((g) => g.horizon === horizon && !g.parentGoalId);
+    const topLevel = live.filter((g) => g.horizon === horizon && !g.parentGoalId);
     const strengthById = focusStrengthByDomain(topLevel);
-    goals.filter((g) => g.horizon === horizon).forEach((g) => {
+    live.filter((g) => g.horizon === horizon).forEach((g) => {
       const focusStrength = strengthById.get(g.id) ?? 0;
       const m = horizon === 'long'
         ? vitalityFor(g, goals, habits, focusStrength)
@@ -3516,7 +3604,7 @@ function GoalStrip({
 
 function GoalsDashboard({
   domains,
-  goals,
+  goals: allGoals,
   habits,
   onClose,
 }: {
@@ -3525,6 +3613,9 @@ function GoalsDashboard({
   habits: Habit[];
   onClose: () => void;
 }) {
+  // Inactive goals (and their sub-goals) drop out of the dashboard entirely.
+  const parked = archivedGoalIdSet(allGoals);
+  const goals  = allGoals.filter((g) => !parked.has(g.id));
   const longGoals    = goals.filter((g) => g.horizon === 'long'    && !g.parentGoalId);
   // Short-term includes sub-goals — they get their own strip with a "↳ parent"
   // label, so goals added under a long-term goal still register here.

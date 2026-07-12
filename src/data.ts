@@ -25,6 +25,10 @@ export interface Goal {
   /** position in the user's priority order — first goal per domain is the
    * focus goal, so this order carries meaning and must persist */
   sortOrder?: number;
+  /** unix ms when the goal was set INACTIVE (paused). Distinct from
+   * completedAt (achieved): an inactive goal is parked — excluded from health,
+   * the dashboard, and the Today lists — and can be reactivated at any time. */
+  archivedAt?: number;
 }
 
 export type ActionKind = 'habit' | 'task';

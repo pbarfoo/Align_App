@@ -25,7 +25,8 @@ create table if not exists public.goals (
   created_at bigint,
   timeframe numeric,
   completed_at bigint,
-  sort_order int
+  sort_order int,
+  archived_at bigint
 );
 
 -- HABITS
