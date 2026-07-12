@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { getGeminiCoachCard, saveCoachFeedback, getTodayCoachRating, type CoachCard } from './geminiAdvisor';
 import {
   DndContext, type DragEndEvent, MouseSensor, TouchSensor,
-  useSensor, useSensors, closestCenter,
+  useSensor, useSensors, closestCenter, useDroppable,
 } from '@dnd-kit/core';
 import {
   SortableContext, useSortable, arrayMove,
@@ -800,6 +800,34 @@ function DragHandle() {
 }
 
 /* ---------------- SortableGoal (drag-to-reorder wrapper) ---------------- */
+// Drop-zone id for the "Inactive" section: dragging a goal onto it pauses the
+// goal; dragging one back up into the active list reactivates it.
+const INACTIVE_ZONE_ID = 'inactive-zone';
+
+/** The always-present drop target at the bottom of a domain — a labelled
+ * section you drag goals into to set them inactive (empty until you do). */
+function InactiveDropZone({ count, open, onToggle, children }: {
+  count: number; open: boolean; onToggle: () => void; children: React.ReactNode;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: INACTIVE_ZONE_ID });
+  return (
+    <div ref={setNodeRef} className={`inactive-section${isOver ? ' drop-over' : ''}`}>
+      <button
+        className="inactive-toggle"
+        onClick={onToggle}
+        title="Paused goals — excluded from health, the dashboard, and Today. Drag a goal here to pause it."
+      >
+        <PauseLinesIcon />
+        <span>Inactive{count > 0 ? ` (${count})` : ''}</span>
+        {count > 0 && <span className="inactive-caret">{open ? '▾' : '▸'}</span>}
+      </button>
+      {count === 0
+        ? <div className="inactive-hint">Drag a goal here to set it inactive</div>
+        : open && <div className="inactive-list">{children}</div>}
+    </div>
+  );
+}
+
 function SortableGoal({ id, children }: { id: string; children: React.ReactNode }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
   return (
@@ -872,12 +900,33 @@ function Align({
   );
 
   const handleDragEnd = ({ active, over }: DragEndEvent) => {
-    if (!over || active.id === over.id) return;
-    setGoals(prev => {
-      const oi = prev.findIndex(g => g.id === active.id);
-      const ni = prev.findIndex(g => g.id === over.id);
-      // Renumber every goal after the move so the priority order (first per
-      // domain = focus) persists to the DB via the normal sync upsert.
+    if (!over) return;
+    const dragged = goals.find((g) => g.id === active.id);
+    if (!dragged) return;
+
+    // Which section did it land in? The inactive drop-zone, an archived goal,
+    // or an active goal — that decides whether it becomes inactive or active.
+    const overGoal = goals.find((g) => g.id === over.id);
+    const targetArchived = over.id === INACTIVE_ZONE_ID
+      ? true
+      : overGoal ? !!overGoal.archivedAt : !!dragged.archivedAt;
+    const wasArchived = !!dragged.archivedAt;
+
+    // Crossed the active/inactive boundary: pause it or reactivate it.
+    if (targetArchived !== wasArchived) {
+      setGoals((prev) => prev.map((g) =>
+        g.id === active.id ? { ...g, archivedAt: targetArchived ? Date.now() : undefined } : g));
+      if (targetArchived) setInactiveOpen(true);
+      return;
+    }
+
+    // Same section: reorder by priority. Renumber so the order persists to the
+    // DB via the normal sync upsert (first per domain = focus).
+    if (active.id === over.id) return;
+    setGoals((prev) => {
+      const oi = prev.findIndex((g) => g.id === active.id);
+      const ni = prev.findIndex((g) => g.id === over.id);
+      if (oi < 0 || ni < 0) return prev;
       return arrayMove(prev, oi, ni).map((g, i) => ({ ...g, sortOrder: i }));
     });
   };
@@ -1052,11 +1101,6 @@ function Align({
       g.id === id ? { ...g, completedAt: g.completedAt ? undefined : Date.now() } : g
     ));
 
-  const toggleGoalArchive = (id: string) =>
-    setGoals((prev) => prev.map((g) =>
-      g.id === id ? { ...g, archivedAt: g.archivedAt ? undefined : Date.now() } : g
-    ));
-
   const toggleHabit = (id: string) =>
     setHabits((prev) => prev.map((h) => {
       if (h.id !== id) return h;
@@ -1167,7 +1211,6 @@ function Align({
               onChangeTimeframe={(horizon, t) => updateGoalTimeframe(goal.id, horizon, t)}
               isComplete={!!goal.completedAt}
               onToggleComplete={() => toggleGoalComplete(goal.id)}
-              onToggleArchive={() => toggleGoalArchive(goal.id)}
               isCollapsed={collapsedGoals.has(goal.id)}
               onToggleCollapse={hasChildren ? () => toggleCollapse(goal.id) : undefined}
               focusStrength={focusStrength}
@@ -1320,41 +1363,37 @@ function Align({
           );
         })}
         </SortableContext>
-        </DndContext>
 
         <AddGoalForm
           domainValues={domain.values}
           onAdd={(idxs, title, horizon, timeframe) => addGoal(idxs, title, horizon, timeframe)}
         />
 
-        {archivedTopGoals.length > 0 && (
-          <div className="inactive-section">
-            <button
-              className="inactive-toggle"
-              onClick={() => setInactiveOpen((o) => !o)}
-              title="Paused goals — excluded from health, the dashboard, and Today"
-            >
-              {inactiveOpen ? '▾' : '▸'} Inactive ({archivedTopGoals.length})
-            </button>
-            {inactiveOpen && (
-              <div className="inactive-list">
-                {archivedTopGoals.map((goal) => (
-                  <div key={goal.id} className="inactive-node">
-                    <GoalNode
-                      goal={goal}
-                      values={goal.valueIndexes.map((i) => domain.values[i]).filter(Boolean)}
-                      className={cls(`g:${goal.id}`)}
-                      onClick={() => setLit(lit === `g:${goal.id}` ? null : `g:${goal.id}`)}
-                      isArchived
-                      onToggleArchive={() => toggleGoalArchive(goal.id)}
-                      onDelete={() => setPendingDeleteGoalId(goal.id)}
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+        {/* Drag a goal past the new-goal form into here to pause it; drag one
+            back up into the list above to reactivate it. */}
+        <InactiveDropZone
+          count={archivedTopGoals.length}
+          open={inactiveOpen}
+          onToggle={() => setInactiveOpen((o) => !o)}
+        >
+          <SortableContext items={archivedTopGoals.map((g) => g.id)} strategy={verticalListSortingStrategy}>
+            {archivedTopGoals.map((goal) => (
+              <SortableGoal key={goal.id} id={goal.id}>
+                <div className="inactive-node">
+                  <GoalNode
+                    goal={goal}
+                    values={goal.valueIndexes.map((i) => domain.values[i]).filter(Boolean)}
+                    className={cls(`g:${goal.id}`)}
+                    onClick={() => setLit(lit === `g:${goal.id}` ? null : `g:${goal.id}`)}
+                    onDelete={() => setPendingDeleteGoalId(goal.id)}
+                    showDragHandle
+                  />
+                </div>
+              </SortableGoal>
+            ))}
+          </SortableContext>
+        </InactiveDropZone>
+        </DndContext>
       </div>
     </div>
   );
@@ -1835,8 +1874,6 @@ function GoalNode({
   onChangeValues,
   isComplete,
   onToggleComplete,
-  isArchived,
-  onToggleArchive,
   isCollapsed,
   onToggleCollapse,
   focusStrength,
@@ -1861,8 +1898,6 @@ function GoalNode({
   onChangeValues?: (idxs: number[]) => void;
   isComplete?: boolean;
   onToggleComplete?: () => void;
-  isArchived?: boolean;
-  onToggleArchive?: () => void;
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
   /** 0–1: how strongly to show this goal as "in focus". Priority order now
@@ -2056,18 +2091,6 @@ function GoalNode({
             }}
           >
             {addActive ? '×' : '+'}
-          </button>
-        )}
-        {onToggleArchive && (
-          <button
-            className={`node-archive${isArchived ? ' on' : ''}`}
-            title={isArchived ? 'Reactivate this goal' : 'Set inactive (pause — parks it out of health & Today)'}
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleArchive();
-            }}
-          >
-            {isArchived ? '▶' : '⏸'}
           </button>
         )}
         {onDelete && (
@@ -4447,6 +4470,16 @@ function goalDeleteWarning(goalId: string, goals: Goal[], habits: Habit[]): { ti
     title: 'Delete this goal?',
     body: `“${g?.title ?? 'This goal'}”${extras ? `, along with its ${extras},` : ''} will be permanently deleted. You can undo it right afterward from the toast.`,
   };
+}
+
+function PauseLinesIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true"
+         style={{ display: 'inline', verticalAlign: 'middle' }}>
+      <line x1="9" y1="5" x2="9" y2="19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <line x1="15" y1="5" x2="15" y2="19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
 }
 
 function TrashIcon() {
