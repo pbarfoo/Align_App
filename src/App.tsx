@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { getGeminiCoachCard, saveCoachFeedback, getTodayCoachRating, type CoachCard } from './geminiAdvisor';
 import {
-  DndContext, type DragEndEvent, MouseSensor, TouchSensor,
+  DndContext, DragOverlay, type DragEndEvent, type DragStartEvent,
+  MouseSensor, TouchSensor,
   useSensor, useSensors, closestCenter, useDroppable,
 } from '@dnd-kit/core';
 import {
@@ -834,7 +835,15 @@ function SortableGoal({ id, children }: { id: string; children: React.ReactNode 
     <DragHandleCtx.Provider value={(listeners ?? null) as DragListeners | null}>
       <div
         ref={setNodeRef}
-        style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.45 : 1 }}
+        style={{
+          // While dragging, the floating DragOverlay follows the pointer — the
+          // original stays put as a dimmed placeholder (a gap where it was), so
+          // there's only one moving card. Non-dragged siblings still animate to
+          // make room.
+          transform: isDragging ? undefined : CSS.Transform.toString(transform),
+          transition,
+          opacity: isDragging ? 0.35 : 1,
+        }}
         {...attributes}
       >
         {children}
@@ -890,6 +899,8 @@ function Align({
   }, [goals]);
   const [editingHabitId, setEditingHabitId] = useState<string | null>(null);
   const [inactiveOpen, setInactiveOpen] = useState(false);
+  // Id of the goal currently being dragged — drives the floating DragOverlay.
+  const [activeDragId, setActiveDragId] = useState<string | null>(null);
 
   const toggleCollapse = (id: string) =>
     setCollapsedGoals(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
@@ -899,7 +910,10 @@ function Align({
     useSensor(MouseSensor, { activationConstraint: { distance: 3 } }),
   );
 
+  const handleDragStart = ({ active }: DragStartEvent) => setActiveDragId(String(active.id));
+
   const handleDragEnd = ({ active, over }: DragEndEvent) => {
+    setActiveDragId(null);
     if (!over) return;
     const dragged = goals.find((g) => g.id === active.id);
     if (!dragged) return;
@@ -942,6 +956,17 @@ function Align({
   // collapsed section at the bottom; the rest render as normal.
   const activeTopGoals   = topGoals.filter((g) => !g.archivedAt);
   const archivedTopGoals = topGoals.filter((g) => !!g.archivedAt);
+
+  // The goal under the pointer during a drag, plus its thread colour, so the
+  // floating DragOverlay clone matches the card it lifted from.
+  const activeDragGoal = activeDragId ? goals.find((g) => g.id === activeDragId) ?? null : null;
+  const activeDragColor = (() => {
+    if (!activeDragGoal) return THREAD_PALETTE[0];
+    const idx = activeTopGoals
+      .filter((g) => !(hideCompleted && !!g.completedAt))
+      .findIndex((g) => g.id === activeDragGoal.id);
+    return idx >= 0 ? THREAD_PALETTE[idx % THREAD_PALETTE.length] : 'var(--line)';
+  })();
 
   const litChain = useMemo(() => {
     if (!lit) return null;
@@ -1175,7 +1200,13 @@ function Align({
       </button>
 
       <div className="spine">
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+          onDragCancel={() => setActiveDragId(null)}
+        >
         <SortableContext items={activeTopGoals.filter(g => !(hideCompleted && !!g.completedAt)).map(g => g.id)} strategy={verticalListSortingStrategy}>
         {activeTopGoals
           .filter((g) => !(hideCompleted && !!g.completedAt))
@@ -1393,6 +1424,24 @@ function Align({
             ))}
           </SortableContext>
         </InactiveDropZone>
+
+        {/* Floating clone that follows the pointer during a drag and animates
+            into place on drop — the "lift" motion for both pausing and
+            reactivating a goal. */}
+        <DragOverlay dropAnimation={{ duration: 220, easing: 'cubic-bezier(0.2, 0, 0, 1)' }}>
+          {activeDragGoal ? (
+            <div className="goal-thread drag-overlay-card" style={{ '--thread-color': activeDragColor } as React.CSSProperties}>
+              <GoalNode
+                goal={activeDragGoal}
+                values={activeDragGoal.valueIndexes.map((i) => domain.values[i]).filter(Boolean)}
+                className={cls(`g:${activeDragGoal.id}`)}
+                onClick={() => {}}
+                health={goalHealthMap[activeDragGoal.id]}
+                isComplete={!!activeDragGoal.completedAt}
+              />
+            </div>
+          ) : null}
+        </DragOverlay>
         </DndContext>
       </div>
     </div>

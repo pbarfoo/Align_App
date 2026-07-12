@@ -822,6 +822,14 @@ h1 {
   opacity: 0.7;
 }
 .inactive-list { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+
+/* Floating card that follows the pointer during a drag — lifted look */
+.drag-overlay-card {
+  cursor: grabbing;
+  transform: scale(1.02);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+  border-radius: 14px;
+}
 /* Dim parked goals so they read as set-aside, not active */
 .inactive-node { opacity: 0.6; }
 @media (hover: hover) {
