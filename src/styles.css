@@ -2610,12 +2610,13 @@ h1 {
 }
 /* Reschedule field sits inline with the text buttons, same height */
 .triage-actions .date-field--compact { flex: 0 0 auto; }
-.triage-actions .date-field--compact .date-input {
+.triage-actions .date-field--compact .date-facade {
   min-height: 38px;
   padding: 8px 10px;
   font-size: 15px;
   min-width: 132px;
 }
+.triage-actions .date-field--compact .date-input-overlay { padding: 8px 10px; }
 .triage-actions .mini-ghost { padding: 8px 4px; }
 .triage-delete { color: #e05c5c; }
 
@@ -2735,7 +2736,13 @@ h1 {
   color: var(--muted);
   padding-left: 2px;
 }
-.date-input {
+/* Wrapper stacks the transparent native input over our own facade. */
+.date-input-wrap { position: relative; display: block; width: 100%; }
+/* Facade: the only visible layer — icon + formatted value (or "Choose …"). */
+.date-facade {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   width: 100%;
   min-height: 44px;
   box-sizing: border-box;
@@ -2743,36 +2750,29 @@ h1 {
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 10px 12px;
-  font-size: 16px; /* >=16px stops iOS zoom-on-focus */
-  font-family: inherit;
-  color: var(--text);
-  color-scheme: dark;
-  text-align: left;
-}
-/* Hide the native empty-value text (desktop shows "mm/dd/yyyy") so only our
-   overlay hint reads through; a real value flips the class off and restores it. */
-.date-input--empty { color: transparent; }
-.date-input:focus { outline: 1px solid var(--accent); }
-/* Wrapper lets us overlay a hint on top of an empty native input (iOS shows
-   nothing for an unset date/time otherwise). */
-.date-input-wrap { position: relative; display: block; width: 100%; }
-.date-input-hint {
-  position: absolute;
-  left: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
   font-size: 16px;
-  color: var(--muted);
-  pointer-events: none; /* taps fall through to the native input/picker */
+  color: var(--text);
 }
-.date-input-hint-icon { font-size: 15px; opacity: 0.85; }
-.triage-actions .date-field--compact .date-input-hint { left: 10px; font-size: 15px; }
-/* Nudge the native calendar/clock indicator to the right edge */
-.date-input::-webkit-calendar-picker-indicator {
-  margin-left: auto;
-  filter: invert(0.7);
+.date-facade--empty { color: var(--muted); }
+.date-facade-icon { font-size: 15px; opacity: 0.85; flex: 0 0 auto; }
+.date-facade-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Transparent native input covering the field: catches taps, opens the picker,
+   holds the value — but renders nothing visible (opacity 0 hides its segments
+   AND the native indicator, so nothing collides with the facade). >=16px font
+   still prevents iOS zoom-on-focus. */
+.date-input-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  border: 0;
+  padding: 10px 12px;
+  box-sizing: border-box;
+  opacity: 0;
+  font-size: 16px;
+  font-family: inherit;
+  color-scheme: dark;
   cursor: pointer;
 }
+.date-input-wrap:focus-within .date-facade { outline: 1px solid var(--accent); }

@@ -556,38 +556,61 @@ export default function App() {
 }
 
 /* ---------------- Date / Time Button ---------------- */
-// Real, visible native inputs — the only thing that reliably opens the picker
-// on iOS. The input renders blank when empty there (no placeholder), so a
-// caption label above the field says what it is. The <label> forwards taps to
-// the visible input, which opens the picker natively.
+// Cross-browser picker field. Native date/time inputs render inconsistently
+// when empty (iOS shows a blank box; desktop shows raw mm/dd/yyyy segments),
+// and overlaying text on a live input collides with that native text. So we
+// render our OWN facade (icon + formatted value or "Choose date/time") and lay
+// a fully transparent native input over the whole field: the input still
+// catches taps and opens the picker (showPicker on desktop, tap-to-focus on
+// iOS), but the user only ever sees the facade we control.
+function formatDateDisplay(v: string): string {
+  const [y, m, d] = v.split('-').map(Number);
+  if (!y || !m || !d) return v;
+  const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const base = `${MON[m - 1]} ${d}`;
+  return y === new Date().getFullYear() ? base : `${base}, ${y}`;
+}
+function formatTimeDisplay(v: string): string {
+  const [h, min] = v.split(':').map(Number);
+  if (Number.isNaN(h)) return v;
+  const ampm = h < 12 ? 'AM' : 'PM';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${String(min ?? 0).padStart(2, '0')} ${ampm}`;
+}
 function DateTimeField({ type, value, onChange, label, compact }: {
   type: 'date' | 'time'; value: string; onChange: (v: string) => void; label: string; compact?: boolean;
 }) {
-  // iOS Safari renders an empty native date/time input as a fully blank box —
-  // no placeholder text, no picker glyph — so overlay our own hint + icon that
-  // shows while empty. The overlay is pointer-events:none so taps still open the
-  // native picker underneath.
-  const hint = type === 'date' ? 'Choose date' : 'Choose time';
+  const inputRef = useRef<HTMLInputElement>(null);
   const icon = type === 'date' ? '📅' : '🕐';
+  const display = value
+    ? (type === 'date' ? formatDateDisplay(value) : formatTimeDisplay(value))
+    : (type === 'date' ? 'Choose date' : 'Choose time');
+  // Desktop needs an explicit open (clicking a transparent input's body doesn't
+  // drop the calendar); showPicker() does. iOS opens on the tap-to-focus itself.
+  const openPicker = () => {
+    const el = inputRef.current as (HTMLInputElement & { showPicker?: () => void }) | null;
+    if (el && typeof el.showPicker === 'function') {
+      try { el.showPicker(); } catch { /* iOS/older: focus fallback below */ }
+    }
+  };
   return (
     <label className={`date-field${compact ? ' date-field--compact' : ''}`}>
       {/* Caption above the field (skipped in compact mode, where the value is
           always present, e.g. rescheduling an existing due date). */}
       {!compact && <span className="date-field-label">{label}</span>}
-      <span className="date-input-wrap">
+      <span className="date-input-wrap" onClick={openPicker}>
+        <span className={`date-facade${value ? '' : ' date-facade--empty'}`} aria-hidden="true">
+          <span className="date-facade-icon">{icon}</span>
+          <span className="date-facade-text">{display}</span>
+        </span>
         <input
+          ref={inputRef}
           type={type}
           value={value}
           aria-label={label}
           onChange={(e) => onChange(e.target.value)}
-          className={`date-input${value ? '' : ' date-input--empty'}`}
+          className="date-input-overlay"
         />
-        {!value && (
-          <span className="date-input-hint" aria-hidden="true">
-            <span className="date-input-hint-icon">{icon}</span>
-            {hint}
-          </span>
-        )}
       </span>
     </label>
   );
