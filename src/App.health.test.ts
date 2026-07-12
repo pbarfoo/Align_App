@@ -269,6 +269,21 @@ describe('deadline goal health — activity-based, no done/total ratio', () => {
     expect(health).toBeLessThan(0.85);
   });
 
+  it('a sub-goal is worth more to structure than a habit, which beats a task', () => {
+    vi.setSystemTime(now);
+    const todayStr = '2026-07-06';
+
+    const doneTask = task({ id: 'd', completed: true, completedAt: now - day });
+    const withTask  = __test_computeHealth([], [doneTask, task({ id: 't2', dueDate: '2026-08-01' })], now, 0);
+    const withHabit = __test_computeHealth([], [doneTask, habit({ id: 'h2', startDate: todayStr, completions: [] })], now, 0);
+    const withSub   = __test_computeHealth([subGoal({ id: 's2', createdAt: now })], [doneTask], now, 0);
+
+    // Adding a sub-goal lifts "filled out" more than a habit, which lifts it
+    // more than a plain task.
+    expect(withSub).toBeGreaterThan(withHabit);
+    expect(withHabit).toBeGreaterThan(withTask);
+  });
+
   it('an overdue undone task scales health down (missed deadline bites)', () => {
     vi.setSystemTime(now);
 

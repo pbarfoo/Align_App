@@ -3155,9 +3155,12 @@ function computeHealth(
   const habits   = treeHabits.filter((h) => h.kind === 'habit');
   const eligibleHabits = habits.filter((h) => habitCountsYet(h, now));
 
-  // Filled out: creating sub-goals, tasks, or habits is itself healthy.
+  // Filled out: real structure is itself healthy — and the KIND matters. A
+  // sub-goal is a whole milestone, a habit an ongoing commitment, a task a
+  // single to-do, so they're worth 2.5 / 1.5 / 1 toward "built out".
   const itemCount = subGoals.length + tasks.length + habits.length;
-  const structure = Math.min(itemCount / 4, 1);
+  const structureWeight = subGoals.length * 2.5 + habits.length * 1.5 + tasks.length;
+  const structure = Math.min(structureWeight / 4, 1);
 
   // Habits kept on cadence (brand-new ones are neutral; skips count as misses).
   const consistency = computeHabitConsistency(eligibleHabits, now);
@@ -3227,7 +3230,9 @@ function computeOngoingHealth(subGoals: Goal[], treeHabits: Habit[], focusStreng
   const itemCount = subGoals.length + tasks.length + habits.length;
   if (itemCount === 0) return 0;
 
-  const engagement = Math.min(itemCount / 5, 1.0);
+  // Same kind-weighting as deadline goals: a sub-goal counts more than a
+  // habit, which counts more than a task, toward "filled out".
+  const engagement = Math.min((subGoals.length * 2.5 + habits.length * 1.5 + tasks.length) / 5, 1.0);
   const now = Date.now();
   const WINDOW = 28;
 
