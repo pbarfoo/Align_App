@@ -140,6 +140,29 @@ function toDateStr(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+/** The unit one "streak" step represents, so the coach can say "4 days in a
+ * row" instead of a meaningless bare "streak is 4". */
+function streakUnit(h: Habit): string {
+  switch (h.recurrence) {
+    case 'daily': return 'day';
+    case 'weekdays': return 'weekday';
+    case 'weekly': return 'week';
+    case 'monthly': return 'month';
+    case 'yearly': return 'year';
+    case 'custom': return (h.customUnit ?? 'week').replace(/s$/, '');
+    case 'specific-days': return 'session';
+    default: return 'time';
+  }
+}
+
+/** Human-readable streak phrase for the coach prompt, e.g. "4 days in a row". */
+function streakPhrase(h: Habit): string {
+  const n = h.streak ?? 0;
+  if (n <= 0) return 'no active streak';
+  const unit = streakUnit(h);
+  return `${n} ${unit}${n === 1 ? '' : 's'} in a row`;
+}
+
 function daysSince(completions: string[]): number | null {
   if (!completions.length) return null;
   const last = completions.reduce(
@@ -300,7 +323,7 @@ function valueFingerprint(domains: Domain[]): string {
 
 
 function coachCacheKey(date: string, domains: Domain[]) {
-  return `gemini-coach-v27-${date}-${valueFingerprint(domains)}`;
+  return `gemini-coach-v28-${date}-${valueFingerprint(domains)}`;
 }
 
 function yesterdayCardTitle(domains: Domain[]): string | null {
@@ -308,7 +331,7 @@ function yesterdayCardTitle(domains: Domain[]): string | null {
   yesterday.setDate(yesterday.getDate() - 1);
   const yStr = toDateStr(yesterday);
   // Check recent key versions so we catch whatever ran yesterday
-  for (const v of ['v27', 'v26', 'v25', 'v24', 'v23', 'v22', 'v21', 'v20']) {
+  for (const v of ['v28', 'v27', 'v26', 'v25', 'v24', 'v23', 'v22', 'v21', 'v20']) {
     const raw = localStorage.getItem(`gemini-coach-${v}-${yStr}-${valueFingerprint(domains)}`);
     if (raw) {
       try { return (JSON.parse(raw) as CoachCard).title; } catch { /* skip */ }
@@ -433,9 +456,8 @@ export async function getGeminiCoachCard(
         const status = h.completed ? `done` : `due:${h.dueDate ?? 'none'}`;
         return `- "${h.title}" | goal:"${goalTitle}" | task | ${status}`;
       }
-      const streak = h.streak ?? 0;
       const recent = (h.completions ?? []).slice(-7).join(', ') || 'none';
-      return `- "${h.title}" | goal:"${goalTitle}" | ${h.recurrence ?? 'daily'} | streak:${streak} | recent:[${recent}]`;
+      return `- "${h.title}" | goal:"${goalTitle}" | ${h.recurrence ?? 'daily'} | streak:${streakPhrase(h)} | recent:[${recent}]`;
     }),
     '',
     '## Weekly reflections (most recent first)',
@@ -489,6 +511,7 @@ HARD RULES — violations mean the card is wrong:
 - Do not invent topics. Only reference what's in the data.
 - Do not reinterpret values. "Service" = serving others. "Autonomy" = independence. Use them as-is.
 - Never say a raw reflection score like "score of 3" — the user never sees those numbers. Use the scale labels (Drifted / Some / Mostly / Aligned) or a percentage instead.
+- When you mention a streak, always write the plain-language phrase from the data (e.g. "4 days in a row", "3 weeks running"). NEVER write a bare number like "streak is 4" or "your streak is 4" — the user has no idea what that number counts.
 ${rotateRule ? `- ${rotateRule}` : ''}
 ${focusDomainRule}
 
