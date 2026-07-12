@@ -2986,11 +2986,13 @@ function computeHealth(
     pace = 0.5 * Math.min(doneFraction, 1.0) + 0.5 * aheadRatio;
   }
 
-  // Time-maturity: pace credit scales with how far into the goal's life we are.
-  // A goal must prove consistency over time — early completions can't spike health.
-  // Starts at 10% on day 1, reaches full credit at ~25% elapsed.
-  const timeFactor = timeElapsed >= 0 ? Math.min(1.0, timeElapsed * 4 + 0.1) : 1.0;
-  const adjustedPace = pace * timeFactor;
+  // Early completions ARE allowed to lift health right away — a real burst of
+  // progress should spike the meter, not be throttled for being early. It won't
+  // stay frozen up there without follow-through: the ahead-of-schedule ratio
+  // (doneFraction / timeElapsed) shrinks as the clock advances, and the 28-day
+  // habit-consistency window decays if the recurring work lapses — so an early
+  // spike that isn't sustained naturally weighs back down on its own.
+  const adjustedPace = pace;
 
   // Focus adjustment: raises the bar when neglected, rewards when delivering.
   // Scaled by focusStrength so priority position (not just "is #1") controls
