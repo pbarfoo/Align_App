@@ -235,22 +235,38 @@ describe('deadline goal health — activity-based, no done/total ratio', () => {
     expect(withBacklog).toBeGreaterThanOrEqual(lean);
   });
 
-  it('a fully-worked goal can earn ~100 (kept habit + recent completions + structure)', () => {
+  it('a goal firing on all cylinders can still earn ~100', () => {
     vi.setSystemTime(now);
 
-    // Weekly habit kept every week → fully consistent (one completion per
-    // expected period), touched today.
+    // Every axis maxed: weekly habit kept every week (consistency 1), four
+    // recent task completions (throughput 1), 5 items (structure 1), touched
+    // today (recency 1) → even the weakest-link term is 1.
     const keptHabit = habit({
       id: 'kept', recurrence: 'weekly', startDate: '2026-06-08',
       completions: ['2026-06-08', '2026-06-15', '2026-06-22', '2026-06-29', '2026-07-06'],
       streak: 5,
     });
-    const done1 = task({ id: 'd1', completed: true, completedAt: now - day });
-    const done2 = task({ id: 'd2', completed: true, completedAt: now - 2 * day });
-    const done3 = task({ id: 'd3', completed: true, completedAt: now - 3 * day });
+    const done = [0, 1, 2, 3].map((i) =>
+      task({ id: `d${i}`, completed: true, completedAt: now - i * day }));
 
-    const health = __test_computeHealth([], [keptHabit, done1, done2, done3], now, 0);
+    const health = __test_computeHealth([], [keptHabit, ...done], now, 0);
     expect(health).toBeGreaterThan(0.98);
+  });
+
+  it('one weak axis keeps a goal off 100 (weakest-link term)', () => {
+    vi.setSystemTime(now);
+
+    // Same as above but the habit has been missed lately (low consistency) —
+    // strong on everything else, yet the weak axis must cap it below the top.
+    const missedHabit = habit({
+      id: 'slip', recurrence: 'daily', startDate: '2026-05-01',
+      completions: ['2026-07-06'], streak: 1,
+    });
+    const done = [0, 1, 2, 3].map((i) =>
+      task({ id: `w${i}`, completed: true, completedAt: now - i * day }));
+
+    const health = __test_computeHealth([], [missedHabit, ...done], now, 0);
+    expect(health).toBeLessThan(0.85);
   });
 
   it('an overdue undone task scales health down (missed deadline bites)', () => {
