@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { __test_computeOngoingHealth } from './App';
+import { __test_computeOngoingHealth, __test_computeHealth } from './App';
 import type { Goal, Habit } from './data';
 
 const day = 86_400_000;
@@ -136,6 +136,26 @@ describe('ongoing goal health', () => {
     expect(afterComplete - before).toBeGreaterThan(0.05);
   });
 
+  it('adding a brand-new habit does not lower ongoing health (only maturing then neglecting it does)', () => {
+    vi.setSystemTime(now);
+    const todayStr = '2026-07-06';
+
+    const doneTask = task({ id: 'od', completed: true, completedAt: now - day });
+    const base = __test_computeOngoingHealth([], [doneTask], 0);
+
+    // A freshly-created daily habit (starts today, no completions yet) is
+    // neutral — it must not drag the score down the moment it's added.
+    const freshHabit = habit({ id: 'fresh', startDate: todayStr, completions: [] });
+    const withFreshHabit = __test_computeOngoingHealth([], [doneTask, freshHabit], 0);
+
+    // A future/undated task is likewise neutral.
+    const futureTask = task({ id: 'fut', dueDate: '2026-08-01' });
+    const withFutureTask = __test_computeOngoingHealth([], [doneTask, futureTask], 0);
+
+    expect(withFreshHabit).toBeGreaterThanOrEqual(base);
+    expect(withFutureTask).toBeGreaterThanOrEqual(base);
+  });
+
   it('scales the focus adjustment by priority strength instead of an all-or-nothing flag', () => {
     vi.setSystemTime(now);
 
@@ -153,5 +173,48 @@ describe('ongoing goal health', () => {
     // strictly in between — not equal to either end.
     expect(fullFocus).toBeLessThan(halfFocus);
     expect(halfFocus).toBeLessThan(noFocus);
+  });
+});
+
+describe('deadline goal health — adding structure never lowers it', () => {
+  const elapsed = 0.3;
+  const todayStr = '2026-07-06';
+
+  it('a future task, a fresh habit, or a new sub-goal added to a goal does not drop health', () => {
+    vi.setSystemTime(now);
+
+    const doneTask = task({ id: 'done', completed: true, completedAt: now - day, dueDate: '2026-07-01' });
+    const base = __test_computeHealth([], [doneTask], [doneTask], now, elapsed, 0);
+
+    // Not-yet-due task: future work, not a miss.
+    const futureTask = task({ id: 'fut', dueDate: '2026-08-01' });
+    const withFuture = __test_computeHealth([], [doneTask, futureTask], [doneTask, futureTask], now, elapsed, 0);
+
+    // Brand-new daily habit (starts today, no completions): neutral until it
+    // has had its first interval to be done.
+    const freshHabit = habit({ id: 'fresh', startDate: todayStr, completions: [] });
+    const withHabit = __test_computeHealth([], [doneTask, freshHabit], [doneTask, freshHabit], now, elapsed, 0);
+
+    // Brand-new empty sub-goal (created just now): neutral to the parent.
+    const newSub = subGoal({ id: 'newsub', createdAt: now });
+    const withSub = __test_computeHealth([newSub], [doneTask], [doneTask], now, elapsed, 0);
+
+    expect(withFuture).toBeGreaterThanOrEqual(base);
+    expect(withHabit).toBeGreaterThanOrEqual(base);
+    expect(withSub).toBeGreaterThanOrEqual(base);
+  });
+
+  it('an overdue undone task DOES weigh on health (neglect still counts)', () => {
+    vi.setSystemTime(now);
+
+    const doneTask = task({ id: 'done', completed: true, completedAt: now - day, dueDate: '2026-07-01' });
+    const base = __test_computeHealth([], [doneTask], [doneTask], now, elapsed, 0);
+
+    // Same goal, but now with an overdue, uncompleted task — this is neglect,
+    // not fresh structure, so health should drop below the clean baseline.
+    const overdueTask = task({ id: 'late', dueDate: '2026-06-20' });
+    const withOverdue = __test_computeHealth([], [doneTask, overdueTask], [doneTask, overdueTask], now, elapsed, 0);
+
+    expect(withOverdue).toBeLessThan(base);
   });
 });

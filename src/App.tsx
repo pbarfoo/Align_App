@@ -2923,6 +2923,38 @@ function habitStreakWeight(h: Habit): number {
   return Math.min(1 + (h.streak || 0) * 0.2, 4.0);
 }
 
+/* ---- Item maturity: adding structure must never LOWER health -------------
+ * A brand-new task/habit/sub-goal is neutral — excluded from the pace and
+ * consistency math — until it's had a genuine chance to be acted on. Only then
+ * does leaving it undone count against you. Completed items always count. This
+ * is what makes "adding a goal/task/habit" safe: it can raise health (via
+ * engagement) but never drop it just for existing. */
+
+const SUBGOAL_GRACE_DAYS = 7;
+
+/** A habit counts once it has any completion, or once one full recurrence
+ * interval has elapsed since it started (its first real chance to be done). */
+function habitCountsYet(h: Habit, now: number): boolean {
+  if ((h.completions ?? []).length > 0) return true;
+  const startMs = h.startDate ? new Date(h.startDate + 'T12:00').getTime() : now;
+  return (now - startMs) / 86_400_000 >= naturalIntervalDays(h);
+}
+
+/** A sub-goal is neutral to its parent for a short grace after creation, so
+ * adding a milestone never dings the parent; after that an ignored one counts. */
+function subGoalCountsYet(g: Goal, now: number): boolean {
+  if (g.completedAt) return true;
+  return (now - (g.createdAt || 0)) / 86_400_000 >= SUBGOAL_GRACE_DAYS;
+}
+
+/** An incomplete task weighs on pace only once it's actually overdue —
+ * upcoming or undated work is "not due yet", so adding it can't lower health. */
+function taskCountsInPace(t: Habit, now: number): boolean {
+  if (t.completed) return true;
+  if (!t.dueDate) return false;
+  return new Date(t.dueDate + 'T23:59:59').getTime() < now;
+}
+
 /**
  * 28-day habit-consistency fidelity, shared by deadline (computeHealth) and
  * ongoing (computeOngoingHealth) goals so a fix to one always applies to both.
@@ -2936,12 +2968,13 @@ function computeHabitConsistency(habits: Habit[], now: number): number {
   const lookback = toDateStr(new Date(now - WINDOW * 86_400_000));
   let totalW = 0, scoreW = 0;
   habits.forEach((h) => {
+    if (!habitCountsYet(h, now)) return; // brand-new habit: neutral, not a miss
     const comps = h.completions ?? [];
     const startMs = h.startDate
       ? new Date(h.startDate + 'T12:00').getTime()
       : comps.length
         ? Math.min(...comps.map((d) => new Date(d + 'T12:00').getTime()))
-        : now - WINDOW * 86_400_000;
+        : now; // no history yet → treat as fresh, not 28 days of misses
     const ageDays  = Math.min(WINDOW, Math.max(1, (now - startMs) / 86_400_000));
     const expected = Math.max(1, ageDays / naturalIntervalDays(h));
     const actual   = comps.filter((d) => d >= lookback).length;
@@ -2985,18 +3018,24 @@ function computeHealth(
   const itemCount  = subGoals.length + tasks.length + habits.length;
   const engagement = Math.min(itemCount / 5, 1.0);
 
-  // Pace
-  const habitTotalW  = habits.reduce((s, h) => s + habitStreakWeight(h), 0);
-  const totalWeight  = tasks.length + subGoals.length * SUB_W + habitTotalW;
+  // Pace — only MATURED, still-relevant items weigh here, so adding a brand-new
+  // task/habit/sub-goal never dilutes the fraction. Completed items always
+  // count; undone items count only once they've had their chance (see the
+  // *CountsYet / *CountsInPace helpers above).
+  const paceHabits   = habits.filter((h) => habitCountsYet(h, now));
+  const paceSubs     = subGoals.filter((g) => subGoalCountsYet(g, now));
+  const paceTasks    = tasks.filter((t) => taskCountsInPace(t, now));
+  const habitTotalW  = paceHabits.reduce((s, h) => s + habitStreakWeight(h), 0);
+  const totalWeight  = paceTasks.length + paceSubs.length * SUB_W + habitTotalW;
   let pace = 0;
   if (totalWeight > 0) {
-    const taskDone    = tasks.filter((h) => !!h.completed).length;
+    const taskDone    = paceTasks.filter((h) => !!h.completed).length;
     // Sub-goals credit fractionally: a finished sub-goal counts in full, an
     // in-progress one contributes its own done-ratio — child work is never
     // invisible to the parent until the checkbox.
-    const subDone     = subGoals.reduce((s, g) =>
+    const subDone     = paceSubs.reduce((s, g) =>
       s + (g.completedAt ? 1 : computeDone([], allHabits.filter((h) => h.goalId === g.id), allHabits, now)), 0) * SUB_W;
-    const habitDoneW  = habits
+    const habitDoneW  = paceHabits
       .filter((h) => (h.completions ?? []).some((d) => d >= lookback))
       .reduce((s, h) => s + habitStreakWeight(h), 0);
     const doneFraction = (taskDone + subDone + habitDoneW) / totalWeight;
@@ -3029,7 +3068,10 @@ function computeHealth(
   const applyFocus = (h: number) => Math.max(0, Math.min(h + focusAdj, 1.0));
   const habitConsistency = computeHabitConsistency(habits, now);
 
-  if (habits.length === 0) return applyFocus(0.7 * adjustedPace + 0.3 * engagement);
+  // Key the consistency branch off habits that actually count yet — a goal
+  // whose only habits are brand-new shouldn't be dragged toward a 0
+  // consistency; it behaves like a no-habit goal until they mature.
+  if (paceHabits.length === 0) return applyFocus(0.7 * adjustedPace + 0.3 * engagement);
   return applyFocus(0.5 * adjustedPace + 0.3 * habitConsistency + 0.2 * engagement);
 }
 
@@ -3107,6 +3149,7 @@ function computeOngoingHealth(subGoals: Goal[], treeHabits: Habit[], focusStreng
 }
 
 export const __test_computeOngoingHealth = computeOngoingHealth;
+export const __test_computeHealth = computeHealth;
 export const __test_toggleHabitCompletion = toggleHabitCompletion;
 
 /**
@@ -3119,12 +3162,15 @@ export const __test_toggleHabitCompletion = toggleHabitCompletion;
 function computeDone(subGoals: Goal[], treeHabits: Habit[], allHabits: Habit[], now: number): number {
   const SUB_W = 5;
   const lookbackDate = toDateStr(new Date(now - 28 * 86_400_000));
-  const tasks  = treeHabits.filter((h) => h.kind === 'task');
-  const habits = treeHabits.filter((h) => h.kind === 'habit');
-  const total  = subGoals.length * SUB_W + tasks.length + habits.reduce((s, h) => s + habitStreakWeight(h), 0);
+  // Same maturity gate as pace: brand-new items are neutral, so adding one
+  // never drops the completion ratio (which also feeds a parent goal's pace).
+  const tasks  = treeHabits.filter((h) => h.kind === 'task' && taskCountsInPace(h, now));
+  const habits = treeHabits.filter((h) => h.kind === 'habit' && habitCountsYet(h, now));
+  const subs   = subGoals.filter((g) => subGoalCountsYet(g, now));
+  const total  = subs.length * SUB_W + tasks.length + habits.reduce((s, h) => s + habitStreakWeight(h), 0);
   if (total === 0) return 0;
   const done =
-    subGoals.reduce((s, g) =>
+    subs.reduce((s, g) =>
       s + (g.completedAt ? 1 : computeDone([], allHabits.filter((h) => h.goalId === g.id), allHabits, now)), 0) * SUB_W +
     tasks.filter((h) => !!h.completed).length +
     habits.filter((h) => (h.completions ?? []).some((d) => d >= lookbackDate)).reduce((s, h) => s + habitStreakWeight(h), 0);
