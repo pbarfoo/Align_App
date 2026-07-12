@@ -194,44 +194,73 @@ describe('ongoing goal health', () => {
   });
 });
 
-describe('deadline goal health — adding structure never lowers it', () => {
-  const elapsed = 0.3;
+describe('deadline goal health — activity-based, no done/total ratio', () => {
   const todayStr = '2026-07-06';
 
   it('a future task, a fresh habit, or a new sub-goal added to a goal does not drop health', () => {
     vi.setSystemTime(now);
 
     const doneTask = task({ id: 'done', completed: true, completedAt: now - day, dueDate: '2026-07-01' });
-    const base = __test_computeHealth([], [doneTask], [doneTask], now, elapsed, 0);
+    const base = __test_computeHealth([], [doneTask], now, 0);
 
-    // Not-yet-due task: future work, not a miss.
+    // Not-yet-due task: backlog, not a miss.
     const futureTask = task({ id: 'fut', dueDate: '2026-08-01' });
-    const withFuture = __test_computeHealth([], [doneTask, futureTask], [doneTask, futureTask], now, elapsed, 0);
+    const withFuture = __test_computeHealth([], [doneTask, futureTask], now, 0);
 
     // Brand-new daily habit (starts today, no completions): neutral until it
     // has had its first interval to be done.
     const freshHabit = habit({ id: 'fresh', startDate: todayStr, completions: [] });
-    const withHabit = __test_computeHealth([], [doneTask, freshHabit], [doneTask, freshHabit], now, elapsed, 0);
+    const withHabit = __test_computeHealth([], [doneTask, freshHabit], now, 0);
 
     // Brand-new empty sub-goal (created just now): neutral to the parent.
     const newSub = subGoal({ id: 'newsub', createdAt: now });
-    const withSub = __test_computeHealth([newSub], [doneTask], [doneTask], now, elapsed, 0);
+    const withSub = __test_computeHealth([newSub], [doneTask], now, 0);
 
     expect(withFuture).toBeGreaterThanOrEqual(base);
     expect(withHabit).toBeGreaterThanOrEqual(base);
     expect(withSub).toBeGreaterThanOrEqual(base);
   });
 
-  it('an overdue undone task DOES weigh on health (neglect still counts)', () => {
+  it('a big backlog of open tasks does NOT lower health (no completed/created ratio)', () => {
+    vi.setSystemTime(now);
+
+    const doneTask = task({ id: 'done', completed: true, completedAt: now - day });
+    const lean = __test_computeHealth([], [doneTask], now, 0);
+
+    // Pile on ten future/undated open tasks — a burn-down ratio would tank
+    // this, but health is activity-based, so it must not drop.
+    const backlog = Array.from({ length: 10 }, (_, i) => task({ id: `open-${i}` }));
+    const withBacklog = __test_computeHealth([], [doneTask, ...backlog], now, 0);
+
+    expect(withBacklog).toBeGreaterThanOrEqual(lean);
+  });
+
+  it('a fully-worked goal can earn ~100 (kept habit + recent completions + structure)', () => {
+    vi.setSystemTime(now);
+
+    // Weekly habit kept every week → fully consistent (one completion per
+    // expected period), touched today.
+    const keptHabit = habit({
+      id: 'kept', recurrence: 'weekly', startDate: '2026-06-08',
+      completions: ['2026-06-08', '2026-06-15', '2026-06-22', '2026-06-29', '2026-07-06'],
+      streak: 5,
+    });
+    const done1 = task({ id: 'd1', completed: true, completedAt: now - day });
+    const done2 = task({ id: 'd2', completed: true, completedAt: now - 2 * day });
+    const done3 = task({ id: 'd3', completed: true, completedAt: now - 3 * day });
+
+    const health = __test_computeHealth([], [keptHabit, done1, done2, done3], now, 0);
+    expect(health).toBeGreaterThan(0.98);
+  });
+
+  it('an overdue undone task scales health down (missed deadline bites)', () => {
     vi.setSystemTime(now);
 
     const doneTask = task({ id: 'done', completed: true, completedAt: now - day, dueDate: '2026-07-01' });
-    const base = __test_computeHealth([], [doneTask], [doneTask], now, elapsed, 0);
+    const base = __test_computeHealth([], [doneTask], now, 0);
 
-    // Same goal, but now with an overdue, uncompleted task — this is neglect,
-    // not fresh structure, so health should drop below the clean baseline.
     const overdueTask = task({ id: 'late', dueDate: '2026-06-20' });
-    const withOverdue = __test_computeHealth([], [doneTask, overdueTask], [doneTask, overdueTask], now, elapsed, 0);
+    const withOverdue = __test_computeHealth([], [doneTask, overdueTask], now, 0);
 
     expect(withOverdue).toBeLessThan(base);
   });

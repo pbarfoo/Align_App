@@ -2992,93 +2992,80 @@ function computeHabitConsistency(habits: Habit[], now: number): number {
 }
 
 /**
- * Three-factor health:
- *   health = 0.5 × pace + 0.3 × habit_consistency + 0.2 × engagement   (habits exist)
- *   health = 0.7 × pace + 0.3 × engagement                              (no habits)
- *
- * pace        = done_fraction / time_elapsed_fraction (capped 0–1)
- *   done_fraction = (completed tasks×1 + completed sub-goals×5 + active habits×streak_weight)
- *                   / (total tasks×1 + total sub-goals×5 + total habit weights)
- *
- * habit_consistency = 28-day fidelity per habit (age-aware), averaged weighted by streak (1–4×)
- *
- * engagement  = how structured the goal is — scales to 1.0 at 5+ items (sub-goals + tasks + habits)
+ * Activity-based health — "are you actually WORKING this goal?", never a
+ * done/total burn-down (tasks get added throughout, so a completed-vs-created
+ * ratio would punish planning and is deliberately NOT a factor). It blends,
+ * over only the dimensions a goal actually uses (so a habit-only or task-only
+ * goal can still earn a full 100 by doing its thing well):
+ *   - structure:    is it filled out? having real items is itself healthy;
+ *   - consistency:  habits kept on cadence (misses & skips count);
+ *   - throughput:   are tasks / sub-goals being COMPLETED lately (a rate, not
+ *                   a fraction of the backlog);
+ *   - recency:      is it being touched at all, decaying if ignored.
+ * Overdue dated tasks then scale the whole score down — a missed deadline is
+ * the clearest "not on top of it" signal, so it always bites.
  */
 function computeHealth(
   subGoals: Goal[],
   treeHabits: Habit[],
-  allHabits: Habit[],
   now: number,
-  timeElapsed: number,
-  /** 0–1: how strongly priority position should scale the focus adjustment
-   * below. #1 in its domain = 1, tapering to 0 by ~position 4 (see
-   * focusStrengthByDomain) — not a binary "is this THE focus goal" flag. */
+  /** 0–1: how strongly priority position scales the focus adjustment. #1 in
+   * its domain = 1, tapering to 0 by ~position 4 (see focusStrengthByDomain). */
   focusStrength = 0,
 ): number {
-  const SUB_W = 5;
-  const lookback   = toDateStr(new Date(now - 28 * 86_400_000));
-  const tasks      = treeHabits.filter((h) => h.kind === 'task');
-  const habits     = treeHabits.filter((h) => h.kind === 'habit');
+  const windowMs = 28 * 86_400_000;
+  const tasks    = treeHabits.filter((h) => h.kind === 'task');
+  const habits   = treeHabits.filter((h) => h.kind === 'habit');
+  const eligibleHabits = habits.filter((h) => habitCountsYet(h, now));
 
-  // Engagement: creating sub-goals, tasks, or habits is itself a health signal
-  const itemCount  = subGoals.length + tasks.length + habits.length;
-  const engagement = Math.min(itemCount / 5, 1.0);
+  // Filled out: creating sub-goals, tasks, or habits is itself healthy.
+  const itemCount = subGoals.length + tasks.length + habits.length;
+  const structure = Math.min(itemCount / 3, 1);
 
-  // Pace — only MATURED, still-relevant items weigh here, so adding a brand-new
-  // task/habit/sub-goal never dilutes the fraction. Completed items always
-  // count; undone items count only once they've had their chance (see the
-  // *CountsYet / *CountsInPace helpers above).
-  const paceHabits   = habits.filter((h) => habitCountsYet(h, now));
-  const paceSubs     = subGoals.filter((g) => subGoalCountsYet(g, now));
-  const paceTasks    = tasks.filter((t) => taskCountsInPace(t, now));
-  const habitTotalW  = paceHabits.reduce((s, h) => s + habitStreakWeight(h), 0);
-  const totalWeight  = paceTasks.length + paceSubs.length * SUB_W + habitTotalW;
-  let pace = 0;
-  if (totalWeight > 0) {
-    const taskDone    = paceTasks.filter((h) => !!h.completed).length;
-    // Sub-goals credit fractionally: a finished sub-goal counts in full, an
-    // in-progress one contributes its own done-ratio — child work is never
-    // invisible to the parent until the checkbox.
-    const subDone     = paceSubs.reduce((s, g) =>
-      s + (g.completedAt ? 1 : computeDone([], allHabits.filter((h) => h.goalId === g.id), allHabits, now)), 0) * SUB_W;
-    const habitDoneW  = paceHabits
-      .filter((h) => (h.completions ?? []).some((d) => d >= lookback))
-      .reduce((s, h) => s + habitStreakWeight(h), 0);
-    const doneFraction = (taskDone + subDone + habitDoneW) / totalWeight;
-    // Blend absolute progress with the ahead-of-schedule ratio so a single
-    // early completion doesn't peg pace to 100%. Early on (< 10% elapsed) the
-    // ratio is unstable, so lean fully on absolute progress there.
-    const aheadRatio = timeElapsed < 0.1
-      ? Math.min(doneFraction, 1.0)
-      : Math.min(doneFraction / timeElapsed, 1.0);
-    pace = 0.5 * Math.min(doneFraction, 1.0) + 0.5 * aheadRatio;
+  // Habits kept on cadence (brand-new ones are neutral; skips count as misses).
+  const consistency = computeHabitConsistency(eligibleHabits, now);
+
+  // Throughput: recent COMPLETIONS, not a ratio of the ever-growing backlog.
+  // A finished sub-goal is worth more than a single task.
+  const recentTaskDone = tasks.filter((t) => t.completed && t.completedAt && now - t.completedAt <= windowMs).length;
+  const recentSubDone  = subGoals.filter((g) => g.completedAt && now - g.completedAt <= windowMs).length;
+  const throughput = Math.min((recentTaskDone + recentSubDone * 2) / 3, 1);
+
+  // Recency: any completion keeps it alive; decays to 0 over ~45 idle days.
+  const touchTimes: number[] = [
+    ...habits.flatMap((h) => (h.completions ?? []).map((d) => new Date(d + 'T12:00').getTime())),
+    ...tasks.filter((t) => t.completed && t.completedAt).map((t) => t.completedAt!),
+    ...subGoals.filter((g) => g.completedAt).map((g) => g.completedAt!),
+  ].filter((t) => Number.isFinite(t));
+  const lastTouch = touchTimes.length ? Math.max(...touchTimes) : 0;
+  const recency = lastTouch ? Math.max(0, 1 - (now - lastTouch) / (45 * 86_400_000)) : 0;
+
+  // Weighted blend over only the dimensions in play — full marks on the
+  // dimensions a goal uses ⇒ 100, so every kind of goal can earn the top.
+  const dims: Array<[number, number, boolean]> = [
+    [0.35, consistency, eligibleHabits.length > 0],
+    [0.30, throughput,  tasks.length > 0 || subGoals.length > 0],
+    [0.20, structure,   itemCount > 0],
+    [0.15, recency,     itemCount > 0],
+  ];
+  let wsum = 0, wtot = 0;
+  dims.forEach(([wt, sc, active]) => { if (active) { wsum += wt * sc; wtot += wt; } });
+  let base = wtot > 0 ? wsum / wtot : 0;
+
+  // Deadlines: overdue dated tasks scale health down (each up to full weight
+  // once ~2 weeks late), floored so one slip can't zero a well-worked goal.
+  const overdue = tasks.filter((t) => !t.completed && t.dueDate && new Date(t.dueDate + 'T23:59:59').getTime() < now);
+  if (overdue.length > 0) {
+    const severity = overdue.reduce((s, t) => {
+      const daysLate = (now - new Date(t.dueDate + 'T23:59:59').getTime()) / 86_400_000;
+      return s + Math.min(daysLate / 14, 1);
+    }, 0);
+    base *= Math.max(0.3, 1 - severity * 0.25);
   }
 
-  // Early completions ARE allowed to lift health right away — a real burst of
-  // progress should spike the meter, not be throttled for being early. It won't
-  // stay frozen up there without follow-through: the ahead-of-schedule ratio
-  // (doneFraction / timeElapsed) shrinks as the clock advances, and the 28-day
-  // habit-consistency window decays if the recurring work lapses — so an early
-  // spike that isn't sustained naturally weighs back down on its own.
-  const adjustedPace = pace;
-
-  // Focus adjustment: raises the bar when neglected, rewards when delivering.
-  // Scaled by focusStrength so priority position (not just "is #1") controls
-  // how much this goal's health rides on its pace. Range at full strength:
-  // −10% (pace=0) to +10% (pace=1), neutral at pace=0.5.
-  const focusAdj = (adjustedPace - 0.5) * 0.2 * focusStrength;
-
-  // Habit consistency — age-aware (see computeHabitConsistency), so a
-  // brand-new habit done every day since it started isn't penalised purely
-  // for lacking 28 days of history.
-  const applyFocus = (h: number) => Math.max(0, Math.min(h + focusAdj, 1.0));
-  const habitConsistency = computeHabitConsistency(habits, now);
-
-  // Key the consistency branch off habits that actually count yet — a goal
-  // whose only habits are brand-new shouldn't be dragged toward a 0
-  // consistency; it behaves like a no-habit goal until they mature.
-  if (paceHabits.length === 0) return applyFocus(0.7 * adjustedPace + 0.3 * engagement);
-  return applyFocus(0.5 * adjustedPace + 0.3 * habitConsistency + 0.2 * engagement);
+  // Priority-position focus taper: ±10% at full strength, neutral at 0.5.
+  const focusAdj = (base - 0.5) * 0.2 * focusStrength;
+  return Math.max(0, Math.min(base + focusAdj, 1));
 }
 
 /**
@@ -3217,7 +3204,7 @@ function vitalityFor(
   const subtreeHabits = habits.filter((h) => subtree.has(h.goalId));
 
   const completion = computeDone(subGoals, subtreeHabits, habits, now);
-  const earned     = computeHealth(subGoals, subtreeHabits, habits, now, elapsed, focusStrength);
+  const earned     = computeHealth(subGoals, subtreeHabits, now, focusStrength);
   const health     = graced ? applyNewGoalGrace(earned, lg.createdAt) : earned;
   return { time: elapsed, completion, health };
 }
@@ -3300,7 +3287,7 @@ function stGoalMetrics(sg: Goal, goals: Goal[], habits: Habit[], focusStrength =
   const sgHabits  = habits.filter((h) => subtree.has(h.goalId));
 
   const completion = computeDone(subGoals, sgHabits, habits, now);
-  const earned     = computeHealth(subGoals, sgHabits, habits, now, elapsed, focusStrength);
+  const earned     = computeHealth(subGoals, sgHabits, now, focusStrength);
   const health     = graced ? applyNewGoalGrace(earned, sg.createdAt) : earned;
   return { time: elapsed, completion, health };
 }
