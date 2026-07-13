@@ -3107,8 +3107,8 @@ function taskCountsInPace(t: Habit, now: number): boolean {
 }
 
 /**
- * 28-day habit-consistency fidelity, shared by deadline (computeHealth) and
- * ongoing (computeOngoingHealth) goals so a fix to one always applies to both.
+ * 28-day habit-consistency fidelity, used by computeHealth — the single
+ * activity-based formula shared by deadline AND ongoing goals alike.
  * Age-aware: a habit younger than the 28-day window is graded against how
  * many completions it could realistically have had so far, not the full
  * window — otherwise a brand-new habit done every day since it started reads
@@ -3143,16 +3143,21 @@ function computeHabitConsistency(habits: Habit[], now: number): number {
 /**
  * Activity-based health — "are you actually WORKING this goal?", never a
  * done/total burn-down (tasks get added throughout, so a completed-vs-created
- * ratio would punish planning and is deliberately NOT a factor). It blends,
- * over only the dimensions a goal actually uses (so a habit-only or task-only
- * goal can still earn a full 100 by doing its thing well):
+ * ratio would punish planning and is deliberately NOT a factor). Used for
+ * EVERY goal horizon — long, short, AND ongoing (see ongoingGoalMetrics) —
+ * because it has no goal-deadline/pace dependency to begin with; "ongoing"
+ * only changes the UI (no countdown, can't expire), never the scoring. It
+ * blends, over only the dimensions a goal actually uses (so a habit-only or
+ * task-only goal can still earn a full 100 by doing its thing well):
  *   - structure:    is it filled out? having real items is itself healthy;
  *   - consistency:  habits kept on cadence (misses & skips count);
  *   - throughput:   are tasks / sub-goals being COMPLETED lately (a rate, not
  *                   a fraction of the backlog);
  *   - recency:      is it being touched at all, decaying if ignored.
- * Overdue dated tasks then scale the whole score down — a missed deadline is
- * the clearest "not on top of it" signal, so it always bites.
+ * The blend is then pulled a little toward its weakest active dimension, and
+ * overdue DATED TASKS (any goal can have these, regardless of horizon) scale
+ * the whole score down — a missed deadline is the clearest "not on top of it"
+ * signal, so it always bites.
  */
 function computeHealth(
   subGoals: Goal[],
@@ -3226,82 +3231,6 @@ function computeHealth(
   return Math.max(0, Math.min(base + focusAdj, 1));
 }
 
-/**
- * Ongoing (no-deadline) goals measure UPKEEP, not progress toward a finish.
- * Health is the best current maintenance signal, blended with light structure:
- *   - recurring habit completions: cadence fidelity over the last 28 days;
- *   - recent task throughput: recent completed tasks visibly move the badge;
- *   - active task focus: open, not-overdue tasks keep the goal visibly alive;
- *   - recent touch: completed tasks/subgoals or habit completions decay over time.
- * This avoids showing a nonsense zero when an ongoing role has a live task but
- * no recent checkbox yet.
- */
-function computeOngoingHealth(subGoals: Goal[], treeHabits: Habit[], focusStrength = 0): number {
-  const habits = treeHabits.filter((h) => h.kind === 'habit');
-  const tasks  = treeHabits.filter((h) => h.kind === 'task');
-  const itemCount = subGoals.length + tasks.length + habits.length;
-  if (itemCount === 0) return 0;
-
-  // Same kind-weighting as deadline goals: a sub-goal counts more than a
-  // habit, which counts more than a task, toward "filled out".
-  const engagement = Math.min((subGoals.length * 2.5 + habits.length * 1.5 + tasks.length) / 5, 1.0);
-  const now = Date.now();
-  const WINDOW = 28;
-
-  // Age-aware, streak-weighted cadence fidelity — same helper deadline goals
-  // use, so a habit-consistency fix always applies to both goal types.
-  const consistency = computeHabitConsistency(habits, now);
-
-  const openTasks = tasks.filter((t) => !t.completed);
-  const taskFocus = openTasks.length === 0 ? 0 : Math.max(...openTasks.map((t) => {
-    if (!t.dueDate) return 0.65;
-    const daysUntilDue = Math.ceil((new Date(t.dueDate + 'T12:00').getTime() - now) / 86_400_000);
-    if (daysUntilDue >= 0) return daysUntilDue <= 7 ? 0.85 : 0.7;
-    // Overdue ongoing tasks decay gently instead of instantly poisoning the role.
-    return Math.max(0.2, 0.6 - Math.min(Math.abs(daysUntilDue), 28) / 28 * 0.4);
-  }));
-
-  const recentCompletedTasks = tasks.filter((t) => {
-    if (!t.completed || !t.completedAt) return false;
-    return now - t.completedAt <= WINDOW * 86_400_000;
-  });
-  // Ongoing tasks are throughput, not a finite checklist. Count recent
-  // completions over a wider band so repeated checkoffs keep moving the badge.
-  const taskCompletion = Math.min(1, recentCompletedTasks.length / 6);
-  // Adding a task should register as structure, not disappear behind a max()
-  // focus signal. This caps gently so a huge task pile cannot peg health alone.
-  const taskStructure = Math.min(1, tasks.length / 10);
-
-  const touchTimes: number[] = [
-    ...habits.flatMap((h) => (h.completions ?? []).map((d) => new Date(d + 'T12:00').getTime())),
-    ...tasks.filter((t) => t.completed && t.completedAt).map((t) => t.completedAt!),
-    ...subGoals.filter((g) => g.completedAt).map((g) => g.completedAt!),
-  ].filter((t) => Number.isFinite(t));
-  const lastTouch = touchTimes.length ? Math.max(...touchTimes) : 0;
-  const daysSinceTouch = lastTouch ? Math.max(0, (now - lastTouch) / 86_400_000) : Infinity;
-  // Starts high for a recent touch and decays over ~60 days to a small floor.
-  const recentTouch = lastTouch ? Math.max(0.1, 1 - daysSinceTouch / 60) : 0;
-
-  // Weighted blend — habit consistency is the true maintenance signal and
-  // carries the most weight, so reaching the top requires the recurring work
-  // to actually be happening. A recent touch or a live task keep the goal off
-  // the floor but can't alone peg it to 100.
-  const base = Math.min(1,
-    0.55 * consistency +
-    0.40 * taskCompletion +
-    0.22 * recentTouch +
-    0.10 * taskStructure +
-    0.05 * taskFocus +
-    0.05 * engagement);
-
-  // Same ±10% focus adjustment as deadline goals, scaled by priority
-  // position (focusStrength) rather than a binary "is #1" flag.
-  const focusAdj = (base - 0.5) * 0.2 * focusStrength;
-  const scored = Math.max(0, Math.min(base + focusAdj, 1.0));
-  return base > 0 ? Math.max(0.02, scored) : 0;
-}
-
-export const __test_computeOngoingHealth = computeOngoingHealth;
 export const __test_computeHealth = computeHealth;
 export const __test_toggleHabitCompletion = toggleHabitCompletion;
 
@@ -3453,6 +3382,16 @@ function stGoalMetrics(sg: Goal, goals: Goal[], habits: Habit[], focusStrength =
 }
 
 
+/**
+ * Ongoing (no-deadline) goals use the SAME activity-based formula as
+ * deadline goals (see computeHealth) — structure, habit consistency, recent
+ * throughput, and recency, blended with a light weakest-link pull and scaled
+ * down by overdue tasks. computeHealth already has no goal-deadline/pace
+ * dependency (only individual task due dates factor in, via the overdue
+ * scaling — which applies identically to any goal's tasks regardless of
+ * horizon), so "ongoing" here means exactly one thing: no countdown/expiry UI,
+ * not a different scoring method.
+ */
 function ongoingGoalMetrics(og: Goal, goals: Goal[], habits: Habit[], focusStrength = 0, graced = true): { time: number; completion: number; health: number } {
   const now    = Date.now();
   const subGoals = goals.filter((g) => g.parentGoalId === og.id);
@@ -3460,7 +3399,7 @@ function ongoingGoalMetrics(og: Goal, goals: Goal[], habits: Habit[], focusStren
   const ogHabits = habits.filter((h) => subtree.has(h.goalId));
 
   const completion = computeDone(subGoals, ogHabits, habits, now);
-  const earned     = computeOngoingHealth(subGoals, ogHabits, focusStrength);
+  const earned     = computeHealth(subGoals, ogHabits, now, focusStrength);
   const health     = graced ? applyNewGoalGrace(earned, og.createdAt) : earned;
   return { time: 0, completion, health };
 }
@@ -3653,37 +3592,20 @@ function GoalStrip({
       {showInfo && (
         <div className="health-popup">
           <div className="health-popup-row">
-            <span className="health-popup-formula">
-              {goal.horizon === 'ongoing'
-                ? 'habit consistency · completed tasks · recent activity'
-                : 'pace · habit consistency · planning engagement'}
-            </span>
+            <span className="health-popup-formula">structure · habit consistency · recent throughput · recency</span>
             <span className="health-popup-result" style={{ color: domainColor }}>{healthPct}%</span>
           </div>
           <div className="health-popup-divider" />
-          {goal.horizon === 'ongoing' ? (
-            <>
-              <div className="health-popup-weights">
-                <span>Are recurring habits being kept?</span>
-                <span>Were ongoing tasks completed recently?</span>
-                <span>Is there active work attached?</span>
-              </div>
-              <div className="health-popup-note">
-                No deadline, so no pace — health measures upkeep through habit consistency, recent completed tasks, recent touch, and active focus.
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="health-popup-weights">
-                <span>Are you on track for the time spent? (50%)</span>
-                <span>Are your habits consistent? (30%)</span>
-                <span>Have you built out your plan? (20%)</span>
-              </div>
-              <div className="health-popup-note">
-                Pace × 50% + habit consistency × 30% + planning engagement × 20%
-              </div>
-            </>
-          )}
+          <div className="health-popup-weights">
+            <span>Have you built this out? (sub-goals count more than habits, habits more than tasks)</span>
+            <span>Are your habits being kept — not missed or skipped?</span>
+            <span>Are you completing things lately (not just adding them)?</span>
+            <span>Have you touched this recently?</span>
+          </div>
+          <div className="health-popup-note">
+            Blended, then pulled a little toward the weakest of these — one soft spot can't fully hide behind a good average. Overdue dated tasks then scale the whole score down.
+            {goal.horizon === 'ongoing' && ' No deadline on this goal, so nothing here is time-pressured — only overdue TASKS (if any) count.'}
+          </div>
         </div>
       )}
     </div>
@@ -3752,17 +3674,12 @@ function GoalsDashboard({
     return () => observer.disconnect();
   }, []);
 
-  const healthNoteDeadline = (
+  // Same formula for every horizon now — deadline goals never had a pace/time
+  // factor here, so "ongoing" only differs by having no countdown/expiry UI.
+  const healthNote = (
     <div className="dash-health-note">
       <div className="dash-health-note-title">How Health is calculated</div>
-      <p>Pace (50%) · Habit consistency (30%) · Planning engagement (20%)</p>
-      <p>New goals start at 50% and settle to their earned score over the first 14 days.</p>
-    </div>
-  );
-  const healthNoteOngoing = (
-    <div className="dash-health-note">
-      <div className="dash-health-note-title">How Health is calculated</div>
-      <p>Habit consistency · Recent completed tasks · Recent activity · Active focus — no deadline, so no pace</p>
+      <p>Structure · Habit consistency · Recent throughput · Recency — blended with a light weakest-link pull, then scaled down by overdue tasks</p>
       <p>New goals start at 50% and settle to their earned score over the first 14 days.</p>
     </div>
   );
@@ -3807,7 +3724,7 @@ function GoalsDashboard({
               </div>
             );
           })}
-          {healthNoteDeadline}
+          {healthNote}
         </div>
 
         {/* Slide 1: Long-term */}
@@ -3828,7 +3745,7 @@ function GoalsDashboard({
               </div>
             );
           })}
-          {healthNoteDeadline}
+          {healthNote}
         </div>
 
         {/* Slide 2: Ongoing */}
@@ -3857,7 +3774,7 @@ function GoalsDashboard({
               </div>
             );
           })}
-          {healthNoteOngoing}
+          {healthNote}
         </div>
       </div>
 
