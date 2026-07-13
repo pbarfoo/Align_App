@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { __test_computeHealth } from './App';
+import { __test_computeHealth, __test_applyNewGoalGrace } from './App';
 import type { Goal, Habit } from './data';
 
 const day = 86_400_000;
@@ -181,6 +181,19 @@ describe('goal health — "how active am I with this goal" (event/decay model)',
     // Habits are lightly weighted, so even a perfectly-kept one lands "solid"
     // rather than pinned near the top on its own.
     expect(health([], [kept])).toBeGreaterThan(0.6);
+  });
+
+  it('a brand-new goal is born at 50 and glides to its earned score over 14 days', () => {
+    vi.setSystemTime(now);
+
+    const earned = 0.1; // a thin goal's true score
+    expect(__test_applyNewGoalGrace(earned, now)).toBeCloseTo(0.5);            // day 0: born at 50
+    const midway = __test_applyNewGoalGrace(earned, now - 7 * day);           // day 7: between
+    expect(midway).toBeGreaterThan(earned);
+    expect(midway).toBeLessThan(0.5);
+    expect(__test_applyNewGoalGrace(earned, now - 20 * day)).toBeCloseTo(earned); // past grace: earned wins
+    // Real progress above 50 is never pulled DOWN to the floor.
+    expect(__test_applyNewGoalGrace(0.8, now)).toBe(0.8);
   });
 
   it('the priority-position nudge only tilts a goal slightly', () => {

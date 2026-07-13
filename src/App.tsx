@@ -1682,23 +1682,42 @@ function AddActionForm({
   const [startDate, setStartDate] = useState(initial?.startDate ?? '');
   const [dueDate, setDueDate] = useState(initial?.dueDate ?? '');
   const [dueTime, setDueTime] = useState(initial?.dueTime ?? '');
+  // Weekly habits are keyed to a day of the week, not an arbitrary calendar
+  // date — seed it from an existing weekly habit's start date, else today.
+  const [weekday, setWeekday] = useState<number>(
+    initial?.recurrence === 'weekly' && initial?.startDate
+      ? new Date(initial.startDate + 'T12:00').getDay()
+      : new Date().getDay(),
+  );
 
-  // Daily / every-weekday repeat regardless of a start day, so a start date
-  // only anchors the schedule for the cadences whose DAY it decides (weekly →
-  // which weekday, monthly → which date, etc.).
-  const showStartDate = recurrence !== 'daily' && recurrence !== 'weekdays';
+  // Daily / every-weekday repeat regardless of a start day, and weekly picks a
+  // weekday below — so the free-form start-date field is only for the cadences
+  // whose DAY it decides that way (monthly → which date, yearly → which day).
+  const showStartDate = recurrence !== 'daily' && recurrence !== 'weekdays' && recurrence !== 'weekly';
+
+  // The next occurrence of the chosen weekday (today if it matches), as the
+  // start date that anchors a weekly habit to its day.
+  const weekdayStartDate = () => {
+    const d = new Date();
+    d.setHours(12, 0, 0, 0);
+    d.setDate(d.getDate() + ((weekday - d.getDay() + 7) % 7));
+    return toDateStr(d);
+  };
 
   const toggleDay = (d: number) =>
     setSpecificDays((prev) => prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d].sort((a, b) => a - b));
 
   const submit = () => {
     if (!title.trim()) return;
+    // Weekly is anchored to its chosen weekday; other cadences use the picked
+    // start date (or none).
+    const resolvedStartDate = recurrence === 'weekly' ? weekdayStartDate() : (startDate || undefined);
     if (onSave) {
       if (kind === 'habit') {
         onSave({ title: title.trim(), kind, recurrence,
           customInterval: Number(customInterval) || 1, customUnit,
           specificDays: recurrence === 'specific-days' ? specificDays : undefined,
-          dueDate: undefined, dueTime: undefined, startDate: startDate || undefined });
+          dueDate: undefined, dueTime: undefined, startDate: resolvedStartDate });
       } else {
         onSave({ title: title.trim(), kind, dueDate: dueDate || undefined,
           dueTime: dueTime || undefined, recurrence: undefined, startDate: undefined });
@@ -1708,7 +1727,7 @@ function AddActionForm({
         onAdd(goalId, title, 'habit', { recurrence,
           customInterval: Number(customInterval) || 1, customUnit,
           specificDays: recurrence === 'specific-days' ? specificDays : undefined,
-          startDate: startDate || undefined });
+          startDate: resolvedStartDate });
       } else {
         onAdd(goalId, title, 'task', { dueDate, dueTime });
       }
@@ -1800,6 +1819,16 @@ function AddActionForm({
                 </div>
               )}
             </>
+          )}
+          {recurrence === 'weekly' && (
+            <div className="field-row">
+              <span className="field-label">On</span>
+              <select value={weekday} onChange={(e) => setWeekday(Number(e.target.value))}>
+                {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((d, i) => (
+                  <option key={i} value={i}>{d}</option>
+                ))}
+              </select>
+            </div>
           )}
           {showStartDate && (
             <div className="field-row">
@@ -3038,16 +3067,16 @@ function valueAlignmentScore(
   );
   const allTagged = [...tagged, ...inherited];
 
-  // Activity score (0–1): average health across tagged goals. An empty goal
-  // now scores 0 on its own (no build-out, no completions), so it can't inflate
-  // alignment — no special grace-suppression flag needed.
+  // Activity score (0–1): average EARNED health across tagged goals (graced=
+  // false so the new-goal 50 floor can't inflate alignment — a brand-new empty
+  // goal contributes its true 0 here, not 50).
   let actSum = 0, actCount = 0;
   for (const g of allTagged) {
     const h = g.horizon === 'long'
-      ? vitalityFor(g, goals, habits, 0).health
+      ? vitalityFor(g, goals, habits, 0, false).health
       : g.horizon === 'ongoing'
-        ? ongoingGoalMetrics(g, goals, habits, 0).health
-        : stGoalMetrics(g, goals, habits, 0).health;
+        ? ongoingGoalMetrics(g, goals, habits, 0, false).health
+        : stGoalMetrics(g, goals, habits, 0, false).health;
     actSum += h; actCount++;
   }
   const activityComponent = actCount > 0 ? actSum / actCount : null;
@@ -3191,6 +3220,7 @@ function computeHealth(
 }
 
 export const __test_computeHealth = computeHealth;
+export const __test_applyNewGoalGrace = applyNewGoalGrace;
 export const __test_toggleHabitCompletion = toggleHabitCompletion;
 
 /**
@@ -3218,11 +3248,30 @@ function computeDone(subGoals: Goal[], treeHabits: Habit[], allHabits: Habit[], 
   return done / total;
 }
 
+/**
+ * New-goal grace: every goal is BORN at 50% (neutral — not failing, not
+ * thriving) and glides to its earned score over the first 14 days, so a
+ * freshly-created goal never shows red before it's had a chance to be worked.
+ * Real progress wins immediately — once earned health beats the 50 floor, the
+ * higher number shows. Pass graced=false for signals (e.g. value alignment)
+ * that must not be inflated by brand-new, empty goals.
+ */
+function applyNewGoalGrace(earned: number, createdAt: number): number {
+  const GRACE_DAYS = 14;
+  const START = 0.5;
+  if (earned >= START) return earned;
+  const ageDays = (Date.now() - (createdAt || 0)) / 86_400_000;
+  if (ageDays < 0 || ageDays >= GRACE_DAYS) return earned;
+  const grace = 1 - ageDays / GRACE_DAYS;
+  return earned + (START - earned) * grace;
+}
+
 function vitalityFor(
   lg: Goal,
   goals: Goal[],
   habits: Habit[],
   focusStrength = 0,
+  graced = true,
 ): { time: number; completion: number; health: number } {
   const now     = Date.now();
   const totalMs = (lg.timeframe || 1) * 365.25 * 86_400_000;
@@ -3234,7 +3283,8 @@ function vitalityFor(
 
   const completion = computeDone(subGoals, subtreeHabits, habits, now);
   // Long-horizon goals decay slowest (60-day half-life).
-  const health     = computeHealth(subGoals, subtreeHabits, now, focusStrength, 60);
+  const earned     = computeHealth(subGoals, subtreeHabits, now, focusStrength, 60);
+  const health     = graced ? applyNewGoalGrace(earned, lg.createdAt) : earned;
   return { time: elapsed, completion, health };
 }
 
@@ -3306,7 +3356,7 @@ function DayRing({
 }
 
 
-function stGoalMetrics(sg: Goal, goals: Goal[], habits: Habit[], focusStrength = 0): { time: number; completion: number; health: number } {
+function stGoalMetrics(sg: Goal, goals: Goal[], habits: Habit[], focusStrength = 0, graced = true): { time: number; completion: number; health: number } {
   const now     = Date.now();
   const totalMs = (sg.timeframe || 1) * 30.44 * 86_400_000;
   const elapsed = Math.min(1, Math.max(0, (now - sg.createdAt) / totalMs));
@@ -3317,7 +3367,8 @@ function stGoalMetrics(sg: Goal, goals: Goal[], habits: Habit[], focusStrength =
 
   const completion = computeDone(subGoals, sgHabits, habits, now);
   // Short-horizon goals decay fastest (14-day half-life).
-  const health     = computeHealth(subGoals, sgHabits, now, focusStrength, 14);
+  const earned     = computeHealth(subGoals, sgHabits, now, focusStrength, 14);
+  const health     = graced ? applyNewGoalGrace(earned, sg.createdAt) : earned;
   return { time: elapsed, completion, health };
 }
 
@@ -3328,14 +3379,15 @@ function stGoalMetrics(sg: Goal, goals: Goal[], habits: Habit[], focusStrength =
  * countdown/expiry UI, and the middle (30-day) decay half-life — not a
  * different scoring method.
  */
-function ongoingGoalMetrics(og: Goal, goals: Goal[], habits: Habit[], focusStrength = 0): { time: number; completion: number; health: number } {
+function ongoingGoalMetrics(og: Goal, goals: Goal[], habits: Habit[], focusStrength = 0, graced = true): { time: number; completion: number; health: number } {
   const now    = Date.now();
   const subGoals = goals.filter((g) => g.parentGoalId === og.id);
   const subtree  = new Set<string>([og.id, ...subGoals.map((g) => g.id)]);
   const ogHabits = habits.filter((h) => subtree.has(h.goalId));
 
   const completion = computeDone(subGoals, ogHabits, habits, now);
-  const health     = computeHealth(subGoals, ogHabits, now, focusStrength, 30);
+  const earned     = computeHealth(subGoals, ogHabits, now, focusStrength, 30);
+  const health     = graced ? applyNewGoalGrace(earned, og.createdAt) : earned;
   return { time: 0, completion, health };
 }
 

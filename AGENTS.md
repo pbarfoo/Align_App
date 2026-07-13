@@ -21,10 +21,15 @@ down and any single edit only nudges it.
 - **Missed/skipped habit day**: −7 each, decaying.
 - **Open overdue task**: −10 scaled by lateness, present drag (no decay).
 - Gentle ±15%·focusStrength priority nudge at the end.
+- Only EXPLICIT skips (`skippedDates`) are penalised, not auto-detected pending
+  grace days — clicking the red skip pill is what applies the ding.
 
 Weights live at the top of `computeHealth` and are meant to be tuned.
 
-`computeHabitConsistency` and `applyNewGoalGrace` were removed (orphaned).
+`computeHabitConsistency` was removed (orphaned). `applyNewGoalGrace` is back:
+every goal is born at 50% and glides to its earned score over 14 days (the
+wrappers apply it; value-alignment passes `graced=false` so new empty goals
+don't inflate alignment).
 NOTE: a server-side `goal_health` Supabase view still uses the OLD formula, but
 `geminiAdvisor.ts` overrides those numbers with the client-computed ones before
 the coach sees them, so the view is stale-but-unused. Consider updating/dropping
