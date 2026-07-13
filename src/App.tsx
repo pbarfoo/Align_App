@@ -3172,7 +3172,7 @@ function computeHealth(
   // single to-do, so they're worth 2.5 / 1.5 / 1 toward "built out".
   const itemCount = subGoals.length + tasks.length + habits.length;
   const structureWeight = subGoals.length * 2.5 + habits.length * 1.5 + tasks.length;
-  const structure = Math.min(structureWeight / 4, 1);
+  const structure = Math.min(structureWeight / 3, 1);
 
   // Habits kept on cadence (brand-new ones are neutral; skips count as misses).
   const consistency = computeHabitConsistency(eligibleHabits, now);
@@ -3181,7 +3181,7 @@ function computeHealth(
   // A finished sub-goal is worth more than a single task.
   const recentTaskDone = tasks.filter((t) => t.completed && t.completedAt && now - t.completedAt <= windowMs).length;
   const recentSubDone  = subGoals.filter((g) => g.completedAt && now - g.completedAt <= windowMs).length;
-  const throughput = Math.min((recentTaskDone + recentSubDone * 2) / 4, 1);
+  const throughput = Math.min((recentTaskDone + recentSubDone * 2) / 3, 1);
 
   // Recency: any completion keeps it alive; decays to 0 over ~45 idle days.
   const touchTimes: number[] = [
@@ -3192,11 +3192,11 @@ function computeHealth(
   const lastTouch = touchTimes.length ? Math.max(...touchTimes) : 0;
   const recency = lastTouch ? Math.max(0, 1 - (now - lastTouch) / (45 * 86_400_000)) : 0;
 
-  // Weighted blend over only the dimensions in play, THEN pulled toward the
-  // weakest active dimension — so 100 is genuinely hard: it needs every axis a
-  // goal uses to be strong, not just a good average. One slipping habit or a
-  // dry spell of completions caps the whole score. Still reachable when a goal
-  // is firing on all cylinders.
+  // Weighted blend over only the dimensions in play, lightly pulled toward the
+  // weakest active dimension — 100 still needs every axis a goal uses to be
+  // reasonably strong, not just a good average, but the pull is gentle (eased
+  // down from an earlier, harsher version) so a goal doing well overall isn't
+  // capped hard by one soft spot.
   const dims: Array<[number, number, boolean]> = [
     [0.35, consistency, eligibleHabits.length > 0],
     [0.30, throughput,  tasks.length > 0 || subGoals.length > 0],
@@ -3208,7 +3208,7 @@ function computeHealth(
     if (active) { wsum += wt * sc; wtot += wt; weakest = Math.min(weakest, sc); }
   });
   const avg = wtot > 0 ? wsum / wtot : 0;
-  let base = wtot > 0 ? 0.75 * avg + 0.25 * weakest : 0;
+  let base = wtot > 0 ? 0.85 * avg + 0.15 * weakest : 0;
 
   // Deadlines: overdue dated tasks scale health down (each up to full weight
   // once ~2 weeks late), floored so one slip can't zero a well-worked goal.
