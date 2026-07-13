@@ -3121,17 +3121,22 @@ function computeHabitConsistency(habits: Habit[], now: number): number {
   habits.forEach((h) => {
     if (!habitCountsYet(h, now)) return; // brand-new habit: neutral, not a miss
     const comps = h.completions ?? [];
-    const startMs = h.startDate
-      ? new Date(h.startDate + 'T12:00').getTime()
-      : comps.length
-        ? Math.min(...comps.map((d) => new Date(d + 'T12:00').getTime()))
-        : now; // no history yet → treat as fresh, not 28 days of misses
+    // Anchor age to the EARLIEST real signal — start date, first completion, OR
+    // first skipped day — not just startDate. Skipping a day advances startDate
+    // past it (to drop it from the grace-day chip), which would otherwise reset
+    // the age window: expected collapses to ~1 while the old completions still
+    // count, clamping consistency to 1.0 so a skip paradoxically RAISES health.
+    // Anchoring to the earliest signal keeps the full span, so the skipped day
+    // sits inside it as an expected-but-not-done occurrence and reads as a miss.
+    // Skipping ≠ forgiveness — no separate add-back needed (it would double-count).
+    const anchorTimes = [
+      ...(h.startDate ? [new Date(h.startDate + 'T12:00').getTime()] : []),
+      ...comps.map((d) => new Date(d + 'T12:00').getTime()),
+      ...(h.skippedDates ?? []).map((d) => new Date(d + 'T12:00').getTime()),
+    ];
+    const startMs = anchorTimes.length ? Math.min(...anchorTimes) : now;
     const ageDays  = Math.min(WINDOW, Math.max(1, (now - startMs) / 86_400_000));
-    // Explicitly-skipped days (red pill) are counted as misses: the start date
-    // was advanced past them so they're out of the age window, so add them back
-    // as expected-but-not-done occurrences. Skipping ≠ forgiveness.
-    const skipMisses = (h.skippedDates ?? []).filter((d) => d >= lookback).length;
-    const expected = Math.max(1, ageDays / naturalIntervalDays(h)) + skipMisses;
+    const expected = Math.max(1, ageDays / naturalIntervalDays(h));
     const actual   = comps.filter((d) => d >= lookback).length;
     const w = habitStreakWeight(h);
     scoreW += Math.min(actual / expected, 1) * w;

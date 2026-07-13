@@ -204,6 +204,38 @@ describe('deadline goal health — activity-based, no done/total ratio', () => {
       .toBeLessThan(__test_computeHealth([], [forgiven], now, 0));
   });
 
+  it('clicking Skip (advancing startDate past the missed day) still counts it as a miss — never raises health', () => {
+    vi.setSystemTime(now);
+
+    // The real Skip button does BOTH: advances startDate to the day after the
+    // missed day (to drop it from the grace chip) AND records it in
+    // skippedDates. Advancing startDate must not reset the consistency age
+    // window and inflate the score. Same daily habit, same day missed (Jul 3);
+    // the only difference is how that miss is represented.
+    const comps = [
+      '2026-06-20', '2026-06-21', '2026-06-22', '2026-06-23', '2026-06-24',
+      '2026-06-25', '2026-06-26', '2026-06-27', '2026-06-28', '2026-06-29',
+      '2026-06-30', '2026-07-01', '2026-07-02', '2026-07-04', '2026-07-05',
+    ]; // every day since Jun 20 EXCEPT Jul 3
+
+    // The day was completed — full consistency.
+    const kept = habit({ id: 'k', startDate: '2026-06-20', completions: [...comps, '2026-07-03'], streak: 15 });
+    // The day is a plain, un-dismissed miss.
+    const missed = habit({ id: 'k', startDate: '2026-06-20', completions: comps, streak: 12 });
+    // The day was explicitly skipped: startDate advanced past it, day recorded.
+    const skipped = habit({ id: 'k', startDate: '2026-07-04', completions: comps, skippedDates: ['2026-07-03'], streak: 12 });
+
+    const keptHealth   = __test_computeHealth([], [kept], now, 0);
+    const missedHealth = __test_computeHealth([], [missed], now, 0);
+    const skippedHealth = __test_computeHealth([], [skipped], now, 0);
+
+    // Skipping is a miss, not a completion: strictly below the kept day...
+    expect(skippedHealth).toBeLessThan(keptHealth);
+    // ...and no better than leaving it as a plain miss (the reported bug: skip
+    // used to CLIMB above this by collapsing the age window).
+    expect(skippedHealth).toBeLessThanOrEqual(missedHealth + 1e-9);
+  });
+
   it('a new empty sub-goal genuinely RAISES health when structure has headroom (not just never-lowers)', () => {
     vi.setSystemTime(now);
 
