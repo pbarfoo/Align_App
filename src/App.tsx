@@ -1311,7 +1311,7 @@ function Align({
                       </div>
                     </div>
                     <div className="node-ctrls">
-                      {h.kind === 'task' && (
+                      {h.kind === 'task' && !h.completed && (
                         <button
                           className={`node-sun${h.focusDate === todayStr ? ' on' : ''}`}
                           title={h.focusDate === todayStr ? "Remove from today's focus" : "Focus on this today"}
@@ -1613,7 +1613,7 @@ function ShortWithActions({
               </div>
             </div>
             <div className="node-ctrls">
-              {h.kind === 'task' && (
+              {h.kind === 'task' && !h.completed && (
                 <button
                   className={`node-sun${h.focusDate === todayStr ? ' on' : ''}`}
                   title={h.focusDate === todayStr ? "Remove from today's focus" : "Focus on this today"}
