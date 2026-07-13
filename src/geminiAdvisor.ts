@@ -323,7 +323,7 @@ function valueFingerprint(domains: Domain[]): string {
 
 
 function coachCacheKey(date: string, domains: Domain[]) {
-  return `gemini-coach-v28-${date}-${valueFingerprint(domains)}`;
+  return `gemini-coach-v29-${date}-${valueFingerprint(domains)}`;
 }
 
 function yesterdayCardTitle(domains: Domain[]): string | null {
@@ -331,7 +331,7 @@ function yesterdayCardTitle(domains: Domain[]): string | null {
   yesterday.setDate(yesterday.getDate() - 1);
   const yStr = toDateStr(yesterday);
   // Check recent key versions so we catch whatever ran yesterday
-  for (const v of ['v28', 'v27', 'v26', 'v25', 'v24', 'v23', 'v22', 'v21', 'v20']) {
+  for (const v of ['v29', 'v28', 'v27', 'v26', 'v25', 'v24', 'v23', 'v22', 'v21', 'v20']) {
     const raw = localStorage.getItem(`gemini-coach-${v}-${yStr}-${valueFingerprint(domains)}`);
     if (raw) {
       try { return (JSON.parse(raw) as CoachCard).title; } catch { /* skip */ }
@@ -497,8 +497,9 @@ export async function getGeminiCoachCard(
 ## Live data snapshot (server-computed, authoritative)
 ${JSON.stringify(coachCtx)}
 
-Ground all feedback in this data. Reference specific goals by name and their health scores. Call out overdue tasks and habits whose completions_last_14d is far below expected. Goals with health 0 have no tasks/habits — suggest one concrete next action for each. Use recent_coach_ratings to calibrate tone: more 'down' ratings means be more concise and practical.
-Reflection scores in this data are stored 0–3 (0=Drifted, 1=Some, 2=Mostly, 3=Aligned) but the app NEVER shows that number to the user — it shows words or percentages. Never quote a raw reflection score. Say the label ("fully Aligned", "drifting") or convert to a percentage (0→0%, 1→33%, 2→67%, 3→100%). Goal health values ARE shown as-is (0–100), so those you may quote directly.
+Ground all feedback in this data. Reference specific goals by name. Call out overdue tasks and habits whose completions_last_14d is far below expected. Goals with health 0 have no tasks/habits — suggest one concrete next action for each. Use recent_coach_ratings to calibrate tone: more 'down' ratings means be more concise and practical.
+Reflection scores in this data are stored 0–3 (0=Drifted, 1=Some, 2=Mostly, 3=Aligned). NEVER surface the number OR the bare label — no "reflection score was Some", no "score of 1". Describe how the user has felt about the value in plain, natural words: 0 → "you've been drifting from {value}"; 1 → "you've felt only loosely connected to {value}"; 2 → "you've mostly honoured {value}"; 3 → "you've felt fully aligned with {value}".
+Goal health is a 0–100 number; you may mention it, but phrase it like a person ("AI Expertise is in good shape, around 88%"), never "goal health was 88%".
 `
     : '';
 
@@ -510,7 +511,9 @@ HARD RULES — violations mean the card is wrong:
 - NEVER open with day-of-week phrases like "It's Monday", "Fresh week", "Start your week", "New week", etc.
 - Do not invent topics. Only reference what's in the data.
 - Do not reinterpret values. "Service" = serving others. "Autonomy" = independence. Use them as-is.
-- Never say a raw reflection score like "score of 3" — the user never sees those numbers. Use the scale labels (Drifted / Some / Mostly / Aligned) or a percentage instead.
+- Write like a real person speaking, NOT like an app reporting metrics. Banned jargon phrasings: "reflection score was Some", "goal health was 88%", "consistency score", quoting a scale label (Drifted/Some/Mostly/Aligned) as if it were a value. Translate every number and label into plain words (a percentage may appear naturally in passing).
+- For how the user felt about a value, use natural phrasing like "you've felt only loosely connected to Professional Respect lately" — never "reflection score was Some".
+- Every sentence must be complete and grammatical. Do NOT tack on a trailing fragment or repeat a phrase (e.g. "…continued progress. progress towards your goals.").
 - When you mention a streak, always write the plain-language phrase from the data (e.g. "4 days in a row", "3 weeks running"). NEVER write a bare number like "streak is 4" or "your streak is 4" — the user has no idea what that number counts.
 ${rotateRule ? `- ${rotateRule}` : ''}
 ${focusDomainRule}
