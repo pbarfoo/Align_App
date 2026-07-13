@@ -140,15 +140,17 @@ describe('deadline goal health — activity-based, no done/total ratio', () => {
   it('a goal firing on all cylinders can still earn ~100', () => {
     vi.setSystemTime(now);
 
-    // Every axis maxed: weekly habit kept every week (consistency 1), four
-    // recent task completions (throughput 1), 5 items (structure 1), touched
-    // today (recency 1) → even the weakest-link term is 1.
+    // Every axis maxed: weekly habit kept every week (consistency 1), five
+    // recent task completions (throughput capped at 1), 6.5 structure weight
+    // (also capped at 1 — the wider structure denominator needs a thoroughly
+    // built-out goal, not just a handful of items, to actually reach it),
+    // touched today (recency 1) → even the weakest-link term is 1.
     const keptHabit = habit({
       id: 'kept', recurrence: 'weekly', startDate: '2026-06-08',
       completions: ['2026-06-08', '2026-06-15', '2026-06-22', '2026-06-29', '2026-07-06'],
       streak: 5,
     });
-    const done = [0, 1, 2, 3].map((i) =>
+    const done = [0, 1, 2, 3, 4].map((i) =>
       task({ id: `d${i}`, completed: true, completedAt: now - i * day }));
 
     const health = __test_computeHealth([], [keptHabit, ...done], now, 0);
@@ -200,6 +202,25 @@ describe('deadline goal health — activity-based, no done/total ratio', () => {
 
     expect(__test_computeHealth([], [counted], now, 0))
       .toBeLessThan(__test_computeHealth([], [forgiven], now, 0));
+  });
+
+  it('a new empty sub-goal genuinely RAISES health when structure has headroom (not just never-lowers)', () => {
+    vi.setSystemTime(now);
+
+    // Mirrors a real goal: 1 fresh habit (no completions yet) + a few open,
+    // undated tasks + one completed task. Structure isn't already saturated,
+    // so a brand-new, empty sub-goal should visibly lift the score — not
+    // vanish into an already-maxed dimension.
+    const freshHabit = habit({ id: 'h', recurrence: 'weekdays', startDate: '2026-07-11', completions: [] });
+    const doneTask = task({ id: 'done', completed: true, completedAt: now - 4 * day });
+    const openA = task({ id: 'open-a' });
+    const openB = task({ id: 'open-b' });
+    const before = __test_computeHealth([], [freshHabit, doneTask, openA, openB], now, 0);
+
+    const newSub = subGoal({ id: 'new-sub', createdAt: now });
+    const after = __test_computeHealth([newSub], [freshHabit, doneTask, openA, openB], now, 0);
+
+    expect(after).toBeGreaterThan(before);
   });
 
   it('an overdue undone task scales health down (missed deadline bites)', () => {

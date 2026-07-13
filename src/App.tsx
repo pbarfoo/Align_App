@@ -3177,7 +3177,11 @@ function computeHealth(
   // single to-do, so they're worth 2.5 / 1.5 / 1 toward "built out".
   const itemCount = subGoals.length + tasks.length + habits.length;
   const structureWeight = subGoals.length * 2.5 + habits.length * 1.5 + tasks.length;
-  const structure = Math.min(structureWeight / 3, 1);
+  // Denominator raised so a modestly-built goal isn't ALREADY at the ceiling —
+  // a new item (even an empty one, with no completions yet) should visibly
+  // raise this dimension, not vanish into an already-saturated cap. A
+  // thoroughly-built goal can still reach the 1.0 ceiling.
+  const structure = Math.min(structureWeight / 6, 1);
 
   // Habits kept on cadence (brand-new ones are neutral; skips count as misses).
   const consistency = computeHabitConsistency(eligibleHabits, now);
