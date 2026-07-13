@@ -1676,8 +1676,14 @@ function AddActionForm({
   const [customInterval, setCustomInterval] = useState(String(initial?.customInterval ?? 1));
   const [customUnit, setCustomUnit] = useState<CustomUnit>(initial?.customUnit ?? 'weeks');
   const [specificDays, setSpecificDays] = useState<number[]>(initial?.specificDays ?? []);
+  const [startDate, setStartDate] = useState(initial?.startDate ?? '');
   const [dueDate, setDueDate] = useState(initial?.dueDate ?? '');
   const [dueTime, setDueTime] = useState(initial?.dueTime ?? '');
+
+  // Daily / every-weekday repeat regardless of a start day, so a start date
+  // only anchors the schedule for the cadences whose DAY it decides (weekly →
+  // which weekday, monthly → which date, etc.).
+  const showStartDate = recurrence !== 'daily' && recurrence !== 'weekdays';
 
   const toggleDay = (d: number) =>
     setSpecificDays((prev) => prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d].sort((a, b) => a - b));
@@ -1689,7 +1695,7 @@ function AddActionForm({
         onSave({ title: title.trim(), kind, recurrence,
           customInterval: Number(customInterval) || 1, customUnit,
           specificDays: recurrence === 'specific-days' ? specificDays : undefined,
-          dueDate: undefined, dueTime: undefined, startDate: undefined });
+          dueDate: undefined, dueTime: undefined, startDate: startDate || undefined });
       } else {
         onSave({ title: title.trim(), kind, dueDate: dueDate || undefined,
           dueTime: dueTime || undefined, recurrence: undefined, startDate: undefined });
@@ -1698,7 +1704,8 @@ function AddActionForm({
       if (kind === 'habit') {
         onAdd(goalId, title, 'habit', { recurrence,
           customInterval: Number(customInterval) || 1, customUnit,
-          specificDays: recurrence === 'specific-days' ? specificDays : undefined });
+          specificDays: recurrence === 'specific-days' ? specificDays : undefined,
+          startDate: startDate || undefined });
       } else {
         onAdd(goalId, title, 'task', { dueDate, dueTime });
       }
@@ -1790,6 +1797,11 @@ function AddActionForm({
                 </div>
               )}
             </>
+          )}
+          {showStartDate && (
+            <div className="field-row">
+              <DateBtn value={startDate} onChange={setStartDate} placeholder="Start date" />
+            </div>
           )}
         </>
       ) : (
