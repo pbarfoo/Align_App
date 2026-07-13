@@ -111,6 +111,7 @@ function habitToRow(h: Habit, userId: string): Row {
     focus_date: h.focusDate ?? null,
     skipped_dates: h.skippedDates ?? null,
     completed: h.completed ?? null, completed_at: h.completedAt ?? null,
+    created_at: h.createdAt ?? null,
     streak: h.streak ?? 0,
     completions,
   };
@@ -132,6 +133,7 @@ function habitFromRow(row: Row): Habit {
     skippedDates: row.skipped_dates ?? undefined,
     completed: row.kind === 'task' ? !!row.completed : row.completed ?? undefined,
     completedAt: row.completed_at ?? undefined,
+    createdAt: row.created_at ?? undefined,
     streak: row.streak ?? 0,
     completions,
   };
@@ -1043,6 +1045,7 @@ function Align({
       kind,
       doneToday: false,
       completions: [],
+      createdAt: Date.now(),
       ...(kind === 'habit'
         ? {
             // Anchor every habit to a start date so missed-day detection knows
@@ -2441,6 +2444,7 @@ function Today({
       kind,
       doneToday: false,
       completions: [],
+      createdAt: Date.now(),
       ...(kind === 'habit'
         ? {
             startDate: input.startDate || toDateStr(new Date()),
@@ -3034,17 +3038,16 @@ function valueAlignmentScore(
   );
   const allTagged = [...tagged, ...inherited];
 
-  // Activity score (0–1): average EARNED health across tagged goals (graced=
-  // false so creating an empty goal can't inflate alignment). Goal health
-  // already folds in habit consistency, so habits are not counted a second
-  // time here.
+  // Activity score (0–1): average health across tagged goals. An empty goal
+  // now scores 0 on its own (no build-out, no completions), so it can't inflate
+  // alignment — no special grace-suppression flag needed.
   let actSum = 0, actCount = 0;
   for (const g of allTagged) {
     const h = g.horizon === 'long'
-      ? vitalityFor(g, goals, habits, 0, false).health
+      ? vitalityFor(g, goals, habits, 0).health
       : g.horizon === 'ongoing'
-        ? ongoingGoalMetrics(g, goals, habits, 0, false).health
-        : stGoalMetrics(g, goals, habits, 0, false).health;
+        ? ongoingGoalMetrics(g, goals, habits, 0).health
+        : stGoalMetrics(g, goals, habits, 0).health;
     actSum += h; actCount++;
   }
   const activityComponent = actCount > 0 ? actSum / actCount : null;
@@ -3107,137 +3110,79 @@ function taskCountsInPace(t: Habit, now: number): boolean {
 }
 
 /**
- * 28-day habit-consistency fidelity, used by computeHealth — the single
- * activity-based formula shared by deadline AND ongoing goals alike.
- * Age-aware: a habit younger than the 28-day window is graded against how
- * many completions it could realistically have had so far, not the full
- * window — otherwise a brand-new habit done every day since it started reads
- * as barely consistent purely for lacking history.
- */
-function computeHabitConsistency(habits: Habit[], now: number): number {
-  const WINDOW = 28;
-  const lookback = toDateStr(new Date(now - WINDOW * 86_400_000));
-  let totalW = 0, scoreW = 0;
-  habits.forEach((h) => {
-    if (!habitCountsYet(h, now)) return; // brand-new habit: neutral, not a miss
-    const comps = h.completions ?? [];
-    // Anchor age to the EARLIEST real signal — start date, first completion, OR
-    // first skipped day — not just startDate. Skipping a day advances startDate
-    // past it (to drop it from the grace-day chip), which would otherwise reset
-    // the age window: expected collapses to ~1 while the old completions still
-    // count, clamping consistency to 1.0 so a skip paradoxically RAISES health.
-    // Anchoring to the earliest signal keeps the full span, so the skipped day
-    // sits inside it as an expected-but-not-done occurrence and reads as a miss.
-    // Skipping ≠ forgiveness — no separate add-back needed (it would double-count).
-    const anchorTimes = [
-      ...(h.startDate ? [new Date(h.startDate + 'T12:00').getTime()] : []),
-      ...comps.map((d) => new Date(d + 'T12:00').getTime()),
-      ...(h.skippedDates ?? []).map((d) => new Date(d + 'T12:00').getTime()),
-    ];
-    const startMs = anchorTimes.length ? Math.min(...anchorTimes) : now;
-    const ageDays  = Math.min(WINDOW, Math.max(1, (now - startMs) / 86_400_000));
-    const expected = Math.max(1, ageDays / naturalIntervalDays(h));
-    const actual   = comps.filter((d) => d >= lookback).length;
-    const w = habitStreakWeight(h);
-    scoreW += Math.min(actual / expected, 1) * w;
-    totalW += w;
-  });
-  return totalW > 0 ? scoreW / totalW : 0;
-}
-
-/**
- * Activity-based health — "are you actually WORKING this goal?", never a
- * done/total burn-down (tasks get added throughout, so a completed-vs-created
- * ratio would punish planning and is deliberately NOT a factor). Used for
- * EVERY goal horizon — long, short, AND ongoing (see ongoingGoalMetrics) —
- * because it has no goal-deadline/pace dependency to begin with; "ongoing"
- * only changes the UI (no countdown, can't expire), never the scoring. It
- * blends, over only the dimensions a goal actually uses (so a habit-only or
- * task-only goal can still earn a full 100 by doing its thing well):
- *   - structure:    is it filled out? having real items is itself healthy;
- *   - consistency:  habits kept on cadence (misses & skips count);
- *   - throughput:   are tasks / sub-goals being COMPLETED lately (a rate, not
- *                   a fraction of the backlog);
- *   - recency:      is it being touched at all, decaying if ignored.
- * The blend is then pulled a little toward its weakest active dimension, and
- * overdue DATED TASKS (any goal can have these, regardless of horizon) scale
- * the whole score down — a missed deadline is the clearest "not on top of it"
- * signal, so it always bites.
+ * Goal health (0–1) — a decaying tally of "how active am I with this goal".
+ * Every EVENT contributes points that fade from their own date (half-life set
+ * by the goal's horizon, so shorter-term goals decay faster), which means
+ * neglect visibly bleeds the score down and any single edit only nudges it:
+ *   + Build-out (rule 1): each sub-goal / habit / task you add — worth more the
+ *     bigger the commitment (sub-goal > habit > task), fading from when it was
+ *     added. No cap: more structure is always more health.
+ *   + Completion (rule 2): finishing a sub-goal / habit-day / task — worth MORE
+ *     than merely building out, same ordering.
+ *   − Missed or skipped habit days (rule 4).
+ *   − Missed deadlines (rule 5): a task finished late earns reduced credit, and
+ *     an open overdue task keeps dragging while it sits there.
+ * The raw point total is clamped to 0–100 and returned as a 0–1 fraction. Used
+ * for EVERY horizon; "ongoing" just picks the middle decay rate.
  */
 function computeHealth(
   subGoals: Goal[],
   treeHabits: Habit[],
   now: number,
-  /** 0–1: how strongly priority position scales the focus adjustment. #1 in
-   * its domain = 1, tapering to 0 by ~position 4 (see focusStrengthByDomain). */
+  /** 0–1: gentle priority-position nudge (#1 in its domain = 1). */
   focusStrength = 0,
+  /** decay half-life in days — shorter horizons fade faster (rule 3). */
+  halfLifeDays = 30,
 ): number {
-  const windowMs = 28 * 86_400_000;
-  const tasks    = treeHabits.filter((h) => h.kind === 'task');
-  const habits   = treeHabits.filter((h) => h.kind === 'habit');
-  const eligibleHabits = habits.filter((h) => habitCountsYet(h, now));
+  const DAY = 86_400_000;
+  const decay = (ms: number) => Math.pow(0.5, Math.max(0, (now - ms) / DAY) / halfLifeDays);
+  const dayMs = (d: string) => new Date(d + 'T12:00').getTime();
 
-  // Filled out: real structure is itself healthy — and the KIND matters. A
-  // sub-goal is a whole milestone, a habit an ongoing commitment, a task a
-  // single to-do, so they're worth 2.5 / 1.5 / 1 toward "built out".
-  const itemCount = subGoals.length + tasks.length + habits.length;
-  const structureWeight = subGoals.length * 2.5 + habits.length * 1.5 + tasks.length;
-  // No ceiling: a new item (even an empty one, with no completions yet) should
-  // ALWAYS visibly raise this dimension, never vanish into an already-
-  // saturated cap. It's free to exceed 1 for a heavily built-out goal — the
-  // overall score is still clamped to 100% at the very end (below), so this
-  // only ever helps offset a weaker dimension, never overflows the display.
-  const structure = structureWeight / 6;
+  // Point values (0–100 scale). Completion > build-out; sub-goal > habit > task.
+  const BUILD = { sub: 10, habit: 7, task: 5 };
+  const DONE  = { sub: 40, habitDay: 7, task: 13, taskLate: 5 };
+  const MISS_HABIT = 7;  // per skipped / missed scheduled habit day
+  const OVERDUE    = 10; // per open overdue task, scaled by how late
 
-  // Habits kept on cadence (brand-new ones are neutral; skips count as misses).
-  const consistency = computeHabitConsistency(eligibleHabits, now);
+  const tasks  = treeHabits.filter((h) => h.kind === 'task');
+  const habits = treeHabits.filter((h) => h.kind === 'habit');
 
-  // Throughput: recent COMPLETIONS, not a ratio of the ever-growing backlog.
-  // A finished sub-goal is worth more than a single task.
-  const recentTaskDone = tasks.filter((t) => t.completed && t.completedAt && now - t.completedAt <= windowMs).length;
-  const recentSubDone  = subGoals.filter((g) => g.completedAt && now - g.completedAt <= windowMs).length;
-  const throughput = Math.min((recentTaskDone + recentSubDone * 2) / 3, 1);
+  let pos = 0, pen = 0;
 
-  // Recency: any completion keeps it alive; decays to 0 over ~45 idle days.
-  const touchTimes: number[] = [
-    ...habits.flatMap((h) => (h.completions ?? []).map((d) => new Date(d + 'T12:00').getTime())),
-    ...tasks.filter((t) => t.completed && t.completedAt).map((t) => t.completedAt!),
-    ...subGoals.filter((g) => g.completedAt).map((g) => g.completedAt!),
-  ].filter((t) => Number.isFinite(t));
-  const lastTouch = touchTimes.length ? Math.max(...touchTimes) : 0;
-  const recency = lastTouch ? Math.max(0, 1 - (now - lastTouch) / (45 * 86_400_000)) : 0;
+  // Build-out — structural credit, fading from when each item was added.
+  for (const g of subGoals) pos += BUILD.sub   * decay(g.createdAt || now);
+  for (const h of habits)   pos += BUILD.habit * decay(h.createdAt ?? now);
+  for (const t of tasks)    pos += BUILD.task  * decay(t.createdAt ?? now);
 
-  // Weighted blend over only the dimensions in play, lightly pulled toward the
-  // weakest active dimension — 100 still needs every axis a goal uses to be
-  // reasonably strong, not just a good average, but the pull is gentle (eased
-  // down from an earlier, harsher version) so a goal doing well overall isn't
-  // capped hard by one soft spot.
-  const dims: Array<[number, number, boolean]> = [
-    [0.35, consistency, eligibleHabits.length > 0],
-    [0.30, throughput,  tasks.length > 0 || subGoals.length > 0],
-    [0.20, structure,   itemCount > 0],
-    [0.15, recency,     itemCount > 0],
-  ];
-  let wsum = 0, wtot = 0, weakest = 1;
-  dims.forEach(([wt, sc, active]) => {
-    if (active) { wsum += wt * sc; wtot += wt; weakest = Math.min(weakest, sc); }
-  });
-  const avg = wtot > 0 ? wsum / wtot : 0;
-  let base = wtot > 0 ? 0.85 * avg + 0.15 * weakest : 0;
+  // Completion — worth more than build-out.
+  for (const g of subGoals) if (g.completedAt) pos += DONE.sub * decay(g.completedAt);
+  for (const t of tasks) {
+    if (t.completed && t.completedAt) {
+      const late = t.dueDate && toDateStr(new Date(t.completedAt)) > t.dueDate;
+      pos += (late ? DONE.taskLate : DONE.task) * decay(t.completedAt);
+    }
+  }
+  for (const h of habits) for (const d of (h.completions ?? [])) pos += DONE.habitDay * decay(dayMs(d));
 
-  // Deadlines: overdue dated tasks scale health down (each up to full weight
-  // once ~2 weeks late), floored so one slip can't zero a well-worked goal.
-  const overdue = tasks.filter((t) => !t.completed && t.dueDate && new Date(t.dueDate + 'T23:59:59').getTime() < now);
-  if (overdue.length > 0) {
-    const severity = overdue.reduce((s, t) => {
-      const daysLate = (now - new Date(t.dueDate + 'T23:59:59').getTime()) / 86_400_000;
-      return s + Math.min(daysLate / 14, 1);
-    }, 0);
-    base *= Math.max(0.3, 1 - severity * 0.25);
+  // Missed / skipped habit days — each fades from the day it happened. Union so
+  // an explicitly-skipped day isn't also double-counted as a plain miss.
+  for (const h of habits) {
+    const missed = new Set<string>([...(h.skippedDates ?? []), ...getGraceDays(h)]);
+    for (const d of missed) pen += MISS_HABIT * decay(dayMs(d));
   }
 
-  // Priority-position focus taper: ±10% at full strength, neutral at 0.5.
-  const focusAdj = (base - 0.5) * 0.2 * focusStrength;
+  // Open overdue tasks — a present drag (not a faded past event), scaled by how
+  // late, until the task is completed or removed.
+  for (const t of tasks) {
+    if (!t.completed && t.dueDate) {
+      const dueMs = new Date(t.dueDate + 'T23:59:59').getTime();
+      if (dueMs < now) pen += OVERDUE * Math.min(1, 0.3 + (now - dueMs) / DAY / 14);
+    }
+  }
+
+  const base = Math.max(0, Math.min((pos - pen) / 100, 1));
+  // Priority-position nudge: a gentle ± for where the goal ranks in its domain.
+  const focusAdj = (base - 0.5) * 0.15 * focusStrength;
   return Math.max(0, Math.min(base + focusAdj, 1));
 }
 
@@ -3269,30 +3214,11 @@ function computeDone(subGoals: Goal[], treeHabits: Habit[], allHabits: Habit[], 
   return done / total;
 }
 
-/**
- * New-goal grace: health starts at 50% (neutral yellow — not failing, not
- * thriving) and glides down to the EARNED score over the first 14 days, so a
- * brand-new goal isn't born red. Build the goal out and work it and earned
- * health takes over as soon as it beats the grace floor; ignore it and the
- * number bleeds toward the honest score.
- * Mirrored server-side in the goal_health view so the coach agrees.
- */
-function applyNewGoalGrace(earned: number, createdAt: number): number {
-  const GRACE_DAYS = 14;
-  const START = 0.5;
-  if (earned >= START) return earned; // real progress always wins
-  const ageDays = (Date.now() - (createdAt || 0)) / 86_400_000;
-  if (ageDays < 0 || ageDays >= GRACE_DAYS) return earned;
-  const grace = 1 - ageDays / GRACE_DAYS;
-  return earned + (START - earned) * grace;
-}
-
 function vitalityFor(
   lg: Goal,
   goals: Goal[],
   habits: Habit[],
   focusStrength = 0,
-  graced = true, // pass false for signals (e.g. value alignment) that must not be inflated by the new-goal grace
 ): { time: number; completion: number; health: number } {
   const now     = Date.now();
   const totalMs = (lg.timeframe || 1) * 365.25 * 86_400_000;
@@ -3303,8 +3229,8 @@ function vitalityFor(
   const subtreeHabits = habits.filter((h) => subtree.has(h.goalId));
 
   const completion = computeDone(subGoals, subtreeHabits, habits, now);
-  const earned     = computeHealth(subGoals, subtreeHabits, now, focusStrength);
-  const health     = graced ? applyNewGoalGrace(earned, lg.createdAt) : earned;
+  // Long-horizon goals decay slowest (60-day half-life).
+  const health     = computeHealth(subGoals, subtreeHabits, now, focusStrength, 60);
   return { time: elapsed, completion, health };
 }
 
@@ -3376,7 +3302,7 @@ function DayRing({
 }
 
 
-function stGoalMetrics(sg: Goal, goals: Goal[], habits: Habit[], focusStrength = 0, graced = true): { time: number; completion: number; health: number } {
+function stGoalMetrics(sg: Goal, goals: Goal[], habits: Habit[], focusStrength = 0): { time: number; completion: number; health: number } {
   const now     = Date.now();
   const totalMs = (sg.timeframe || 1) * 30.44 * 86_400_000;
   const elapsed = Math.min(1, Math.max(0, (now - sg.createdAt) / totalMs));
@@ -3386,31 +3312,26 @@ function stGoalMetrics(sg: Goal, goals: Goal[], habits: Habit[], focusStrength =
   const sgHabits  = habits.filter((h) => subtree.has(h.goalId));
 
   const completion = computeDone(subGoals, sgHabits, habits, now);
-  const earned     = computeHealth(subGoals, sgHabits, now, focusStrength);
-  const health     = graced ? applyNewGoalGrace(earned, sg.createdAt) : earned;
+  // Short-horizon goals decay fastest (14-day half-life).
+  const health     = computeHealth(subGoals, sgHabits, now, focusStrength, 14);
   return { time: elapsed, completion, health };
 }
 
 
 /**
- * Ongoing (no-deadline) goals use the SAME activity-based formula as
- * deadline goals (see computeHealth) — structure, habit consistency, recent
- * throughput, and recency, blended with a light weakest-link pull and scaled
- * down by overdue tasks. computeHealth already has no goal-deadline/pace
- * dependency (only individual task due dates factor in, via the overdue
- * scaling — which applies identically to any goal's tasks regardless of
- * horizon), so "ongoing" here means exactly one thing: no countdown/expiry UI,
- * not a different scoring method.
+ * Ongoing (no-deadline) goals use the SAME activity-based formula as deadline
+ * goals (see computeHealth); "ongoing" means exactly one thing here — no
+ * countdown/expiry UI, and the middle (30-day) decay half-life — not a
+ * different scoring method.
  */
-function ongoingGoalMetrics(og: Goal, goals: Goal[], habits: Habit[], focusStrength = 0, graced = true): { time: number; completion: number; health: number } {
+function ongoingGoalMetrics(og: Goal, goals: Goal[], habits: Habit[], focusStrength = 0): { time: number; completion: number; health: number } {
   const now    = Date.now();
   const subGoals = goals.filter((g) => g.parentGoalId === og.id);
   const subtree  = new Set<string>([og.id, ...subGoals.map((g) => g.id)]);
   const ogHabits = habits.filter((h) => subtree.has(h.goalId));
 
   const completion = computeDone(subGoals, ogHabits, habits, now);
-  const earned     = computeHealth(subGoals, ogHabits, now, focusStrength);
-  const health     = graced ? applyNewGoalGrace(earned, og.createdAt) : earned;
+  const health     = computeHealth(subGoals, ogHabits, now, focusStrength, 30);
   return { time: 0, completion, health };
 }
 

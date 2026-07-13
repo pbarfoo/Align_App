@@ -4,6 +4,9 @@ import type { Goal, Habit } from './data';
 
 const day = 86_400_000;
 const now = new Date('2026-07-06T12:00:00Z').getTime();
+const HL = 30; // ongoing half-life used by most tests
+
+const ymd = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 
 function task(overrides: Partial<Habit>): Habit {
   return {
@@ -13,6 +16,7 @@ function task(overrides: Partial<Habit>): Habit {
     kind: 'task',
     doneToday: false,
     completed: false,
+    createdAt: now,
     ...overrides,
   };
 }
@@ -25,8 +29,12 @@ function habit(overrides: Partial<Habit>): Habit {
     kind: 'habit',
     doneToday: false,
     recurrence: 'daily',
+    // Real habits always get a start date at creation, so missed-day detection
+    // never flags days before the habit existed. Default to "started today".
+    startDate: ymd(now),
     completions: [],
     streak: 0,
+    createdAt: now,
     ...overrides,
   };
 }
@@ -39,248 +47,151 @@ function subGoal(overrides: Partial<Goal> = {}): Goal {
     horizon: 'short',
     title: 'Subgoal',
     parentGoalId: 'g-ongoing',
-    createdAt: now - 10 * day,
+    createdAt: now,
     timeframe: 1,
     ...overrides,
   };
 }
 
-describe('ongoing goal health — shares the exact deadline-goal formula', () => {
-  // Ongoing goals no longer have their own scoring function: computeHealth
-  // has no goal-deadline/pace dependency (only individual task due dates
-  // factor in, via the overdue scaling, which applies the same regardless of
-  // the parent goal's horizon), so ongoingGoalMetrics calls it directly. These
-  // tests re-confirm the handful of ongoing-specific behaviors that matter —
-  // everything else (adding never lowers, backlog neutral, skip counts as a
-  // miss, overdue scales down, earn-100, weakest-link) is already proven once
-  // in the "deadline goal health" block below, against the same function.
+const health = (subs: Goal[], habits: Habit[], hl = HL) =>
+  __test_computeHealth(subs, habits, now, 0, hl);
 
-  it('rewards a consistently-kept recurring habit as the strongest signal', () => {
+describe('goal health — "how active am I with this goal" (event/decay model)', () => {
+  it('an empty goal scores 0 — nothing built out, nothing done', () => {
     vi.setSystemTime(now);
-
-    const health = __test_computeHealth([], [habit({
-      recurrence: 'weekly', startDate: '2026-06-08',
-      completions: ['2026-06-08', '2026-06-15', '2026-06-22', '2026-06-29', '2026-07-06'],
-      streak: 5,
-    })], now, 0);
-
-    expect(health).toBeGreaterThan(0.5);
+    expect(health([], [])).toBe(0);
   });
 
-  it('a lone recent touch is off the floor but far from great, and decays as it ages', () => {
+  it('building out RAISES health, and bigger commitments raise it more (sub-goal > habit > task)', () => {
     vi.setSystemTime(now);
 
-    const touchedRecently = __test_computeHealth([subGoal({ completedAt: now - 3 * day })], [], now, 0);
-    const touchedLongAgo = __test_computeHealth([subGoal({ completedAt: now - 45 * day })], [], now, 0);
+    const withTask  = health([], [task({ id: 't' })]);
+    const withHabit = health([], [habit({ id: 'h' })]);
+    const withSub   = health([subGoal({ id: 's' })], []);
 
-    expect(touchedRecently).toBeGreaterThan(0);
-    expect(touchedLongAgo).toBeLessThan(touchedRecently);
+    expect(withTask).toBeGreaterThan(0);          // adding raises off zero
+    expect(withHabit).toBeGreaterThan(withTask);  // habit > task
+    expect(withSub).toBeGreaterThan(withHabit);   // sub-goal > habit
   });
 
-  it('scales the focus adjustment by priority strength instead of an all-or-nothing flag', () => {
+  it('adding a fresh (future/undated) item never lowers health', () => {
     vi.setSystemTime(now);
 
-    // A genuinely weak goal (base health well below 0.5: a sub-goal touched
-    // long enough ago that recency and throughput have both decayed to ~0) —
-    // the negative focus adjustment should shrink toward zero as priority
-    // strength drops from full (#1) to none (well below the top few positions).
-    const weakGoal = [subGoal({ completedAt: now - 45 * day })];
-    const noFocus = __test_computeHealth(weakGoal, [], now, 0);
-    const halfFocus = __test_computeHealth(weakGoal, [], now, 0.5);
-    const fullFocus = __test_computeHealth(weakGoal, [], now, 1);
-
-    // Full priority strength penalises a weak goal hardest; no priority
-    // strength leaves it unadjusted; half strength lands strictly in between.
-    expect(fullFocus).toBeLessThan(halfFocus);
-    expect(halfFocus).toBeLessThan(noFocus);
-  });
-});
-
-describe('deadline goal health — activity-based, no done/total ratio', () => {
-  const todayStr = '2026-07-06';
-
-  it('a future task, a fresh habit, or a new sub-goal added to a goal does not drop health', () => {
-    vi.setSystemTime(now);
-
-    const doneTask = task({ id: 'done', completed: true, completedAt: now - day, dueDate: '2026-07-01' });
-    const base = __test_computeHealth([], [doneTask], now, 0);
-
-    // Not-yet-due task: backlog, not a miss.
-    const futureTask = task({ id: 'fut', dueDate: '2026-08-01' });
-    const withFuture = __test_computeHealth([], [doneTask, futureTask], now, 0);
-
-    // Brand-new daily habit (starts today, no completions): neutral until it
-    // has had its first interval to be done.
-    const freshHabit = habit({ id: 'fresh', startDate: todayStr, completions: [] });
-    const withHabit = __test_computeHealth([], [doneTask, freshHabit], now, 0);
-
-    // Brand-new empty sub-goal (created just now): neutral to the parent.
-    const newSub = subGoal({ id: 'newsub', createdAt: now });
-    const withSub = __test_computeHealth([newSub], [doneTask], now, 0);
-
+    const base = health([], [task({ id: 'done', completed: true, completedAt: now - day })]);
+    const withFuture = health([], [
+      task({ id: 'done', completed: true, completedAt: now - day }),
+      task({ id: 'new', dueDate: '2026-09-01' }),
+    ]);
     expect(withFuture).toBeGreaterThanOrEqual(base);
-    expect(withHabit).toBeGreaterThanOrEqual(base);
-    expect(withSub).toBeGreaterThanOrEqual(base);
   });
 
-  it('a big backlog of open tasks does NOT lower health (no completed/created ratio)', () => {
+  it('completing an item is worth MORE than merely adding it', () => {
     vi.setSystemTime(now);
 
-    const doneTask = task({ id: 'done', completed: true, completedAt: now - day });
-    const lean = __test_computeHealth([], [doneTask], now, 0);
-
-    // Pile on ten future/undated open tasks — a burn-down ratio would tank
-    // this, but health is activity-based, so it must not drop.
-    const backlog = Array.from({ length: 10 }, (_, i) => task({ id: `open-${i}` }));
-    const withBacklog = __test_computeHealth([], [doneTask, ...backlog], now, 0);
-
-    expect(withBacklog).toBeGreaterThanOrEqual(lean);
+    const added     = health([], [task({ id: 't' })]);
+    const completed = health([], [task({ id: 't', completed: true, completedAt: now })]);
+    expect(completed).toBeGreaterThan(added);
   });
 
-  it('a goal firing on all cylinders can still earn ~100', () => {
+  it('completing a task moves health by a modest amount — no 25-point whiplash', () => {
     vi.setSystemTime(now);
 
-    // Every axis maxed: weekly habit kept every week (consistency 1), five
-    // recent task completions (throughput capped at 1), 6.5 structure weight
-    // (also capped at 1 — the wider structure denominator needs a thoroughly
-    // built-out goal, not just a handful of items, to actually reach it),
-    // touched today (recency 1) → even the weakest-link term is 1.
-    const keptHabit = habit({
-      id: 'kept', recurrence: 'weekly', startDate: '2026-06-08',
-      completions: ['2026-06-08', '2026-06-15', '2026-06-22', '2026-06-29', '2026-07-06'],
-      streak: 5,
-    });
-    const done = [0, 1, 2, 3, 4].map((i) =>
-      task({ id: `d${i}`, completed: true, completedAt: now - i * day }));
-
-    const health = __test_computeHealth([], [keptHabit, ...done], now, 0);
-    expect(health).toBeGreaterThan(0.98);
-  });
-
-  it('one weak axis keeps a goal off 100 (weakest-link term)', () => {
-    vi.setSystemTime(now);
-
-    // Same as above but the habit has been missed lately (low consistency) —
-    // strong on everything else, yet the weak axis must cap it below the top.
-    const missedHabit = habit({
-      id: 'slip', recurrence: 'daily', startDate: '2026-05-01',
-      completions: ['2026-07-06'], streak: 1,
-    });
-    const done = [0, 1, 2, 3].map((i) =>
-      task({ id: `w${i}`, completed: true, completedAt: now - i * day }));
-
-    const health = __test_computeHealth([], [missedHabit, ...done], now, 0);
-    expect(health).toBeLessThan(0.85);
-  });
-
-  it('a sub-goal is worth more to structure than a habit, which beats a task', () => {
-    vi.setSystemTime(now);
-    const todayStr = '2026-07-06';
-
-    const doneTask = task({ id: 'd', completed: true, completedAt: now - day });
-    const withTask  = __test_computeHealth([], [doneTask, task({ id: 't2', dueDate: '2026-08-01' })], now, 0);
-    const withHabit = __test_computeHealth([], [doneTask, habit({ id: 'h2', startDate: todayStr, completions: [] })], now, 0);
-    const withSub   = __test_computeHealth([subGoal({ id: 's2', createdAt: now })], [doneTask], now, 0);
-
-    // Adding a sub-goal lifts "filled out" more than a habit, which lifts it
-    // more than a plain task.
-    expect(withSub).toBeGreaterThan(withHabit);
-    expect(withHabit).toBeGreaterThan(withTask);
-  });
-
-  it('a skipped habit day (red pill) lowers deadline-goal health — skip counts as a miss', () => {
-    vi.setSystemTime(now);
-
-    const comps = ['2026-07-01', '2026-07-02', '2026-07-03', '2026-07-04', '2026-07-05'];
-    // Same habit; the only difference is whether a recent scheduled day was
-    // explicitly skipped. The skip must register as a miss, lowering health.
-    const forgiven = habit({ id: 'k', startDate: '2026-07-01', completions: comps, streak: 5 });
-    const counted = habit({
-      id: 'k', startDate: '2026-07-01', completions: comps, streak: 5,
-      skippedDates: ['2026-06-30'],
-    });
-
-    expect(__test_computeHealth([], [counted], now, 0))
-      .toBeLessThan(__test_computeHealth([], [forgiven], now, 0));
-  });
-
-  it('clicking Skip (advancing startDate past the missed day) still counts it as a miss — never raises health', () => {
-    vi.setSystemTime(now);
-
-    // The real Skip button does BOTH: advances startDate to the day after the
-    // missed day (to drop it from the grace chip) AND records it in
-    // skippedDates. Advancing startDate must not reset the consistency age
-    // window and inflate the score. Same daily habit, same day missed (Jul 3);
-    // the only difference is how that miss is represented.
-    const comps = [
-      '2026-06-20', '2026-06-21', '2026-06-22', '2026-06-23', '2026-06-24',
-      '2026-06-25', '2026-06-26', '2026-06-27', '2026-06-28', '2026-06-29',
-      '2026-06-30', '2026-07-01', '2026-07-02', '2026-07-04', '2026-07-05',
-    ]; // every day since Jun 20 EXCEPT Jul 3
-
-    // The day was completed — full consistency.
-    const kept = habit({ id: 'k', startDate: '2026-06-20', completions: [...comps, '2026-07-03'], streak: 15 });
-    // The day is a plain, un-dismissed miss.
-    const missed = habit({ id: 'k', startDate: '2026-06-20', completions: comps, streak: 12 });
-    // The day was explicitly skipped: startDate advanced past it, day recorded.
-    const skipped = habit({ id: 'k', startDate: '2026-07-04', completions: comps, skippedDates: ['2026-07-03'], streak: 12 });
-
-    const keptHealth   = __test_computeHealth([], [kept], now, 0);
-    const missedHealth = __test_computeHealth([], [missed], now, 0);
-    const skippedHealth = __test_computeHealth([], [skipped], now, 0);
-
-    // Skipping is a miss, not a completion: strictly below the kept day...
-    expect(skippedHealth).toBeLessThan(keptHealth);
-    // ...and no better than leaving it as a plain miss (the reported bug: skip
-    // used to CLIMB above this by collapsing the age window).
-    expect(skippedHealth).toBeLessThanOrEqual(missedHealth + 1e-9);
-  });
-
-  it('a new empty sub-goal genuinely RAISES health when structure has headroom (not just never-lowers)', () => {
-    vi.setSystemTime(now);
-
-    // Mirrors a real goal: 1 fresh habit (no completions yet) + a few open,
-    // undated tasks + one completed task. Structure isn't already saturated,
-    // so a brand-new, empty sub-goal should visibly lift the score — not
-    // vanish into an already-maxed dimension.
-    const freshHabit = habit({ id: 'h', recurrence: 'weekdays', startDate: '2026-07-11', completions: [] });
-    const doneTask = task({ id: 'done', completed: true, completedAt: now - 4 * day });
-    const openA = task({ id: 'open-a' });
-    const openB = task({ id: 'open-b' });
-    const before = __test_computeHealth([], [freshHabit, doneTask, openA, openB], now, 0);
-
-    const newSub = subGoal({ id: 'new-sub', createdAt: now });
-    const after = __test_computeHealth([newSub], [freshHabit, doneTask, openA, openB], now, 0);
+    // A built-out goal (several tasks) with one just completed vs none completed.
+    const tasks = (doneIdx: number) =>
+      [0, 1, 2, 3].map((i) => task({ id: `t${i}`, ...(i === doneIdx ? { completed: true, completedAt: now } : {}) }));
+    const before = health([], tasks(-1));
+    const after  = health([], tasks(0));
 
     expect(after).toBeGreaterThan(before);
+    expect(after - before).toBeLessThan(0.2); // gentle, not a cliff
   });
 
-  it('structure has no ceiling — a heavily built-out goal keeps scoring higher than a modest one', () => {
+  it('a skipped habit day counts as a miss — lowers health vs the same habit un-skipped', () => {
     vi.setSystemTime(now);
 
-    // Both have the same single completed task (so throughput/recency match);
-    // the only difference is how many MORE open tasks are piled on. Under the
-    // old hard cap, both would already be pinned at the ceiling and read
-    // identically — health should still climb with the extra items now.
-    const doneTask = task({ id: 'done', completed: true, completedAt: now - day });
-    const modest = [0, 1, 2, 3, 4, 5].map((i) => task({ id: `m${i}` })); // weight 7 total — already past the old cap of 6
-    const heavilyBuilt = [...modest, ...[6, 7, 8, 9, 10, 11].map((i) => task({ id: `h${i}` }))]; // weight 13
+    const kept = habit({
+      id: 'k', startDate: '2026-07-01', streak: 5,
+      completions: ['2026-07-01', '2026-07-02', '2026-07-03', '2026-07-04', '2026-07-05'],
+    });
+    // Same habit, but the 4th was skipped instead of done: one fewer completion
+    // AND an explicit miss penalty.
+    const skipped = habit({
+      id: 'k', startDate: '2026-07-01', streak: 5,
+      completions: ['2026-07-01', '2026-07-02', '2026-07-03', '2026-07-05'],
+      skippedDates: ['2026-07-04'],
+    });
 
-    const modestHealth = __test_computeHealth([], [doneTask, ...modest], now, 0);
-    const heavyHealth  = __test_computeHealth([], [doneTask, ...heavilyBuilt], now, 0);
-
-    expect(heavyHealth).toBeGreaterThan(modestHealth);
+    expect(health([], [skipped])).toBeLessThan(health([], [kept]));
   });
 
-  it('an overdue undone task scales health down (missed deadline bites)', () => {
+  it('a task completed late earns less than the same task completed on time', () => {
     vi.setSystemTime(now);
 
-    const doneTask = task({ id: 'done', completed: true, completedAt: now - day, dueDate: '2026-07-01' });
-    const base = __test_computeHealth([], [doneTask], now, 0);
+    const onTime = health([], [task({ id: 't', completed: true, completedAt: now, dueDate: ymd(now) })]);
+    const late   = health([], [task({ id: 't', completed: true, completedAt: now, dueDate: ymd(now - 5 * day) })]);
+    expect(late).toBeLessThan(onTime);
+  });
 
-    const overdueTask = task({ id: 'late', dueDate: '2026-06-20' });
-    const withOverdue = __test_computeHealth([], [doneTask, overdueTask], now, 0);
+  it('an OPEN overdue task drags health down while it sits there', () => {
+    vi.setSystemTime(now);
 
-    expect(withOverdue).toBeLessThan(base);
+    const base    = health([], [task({ id: 'done', completed: true, completedAt: now })]);
+    const overdue = health([], [
+      task({ id: 'done', completed: true, completedAt: now }),
+      task({ id: 'late', dueDate: ymd(now - 10 * day) }),
+    ]);
+    expect(overdue).toBeLessThan(base);
+  });
+
+  it('deleting an open overdue task raises health only modestly (the reported bug: it used to spring up)', () => {
+    vi.setSystemTime(now);
+
+    const withOverdue = health([subGoal({ id: 's1' }), subGoal({ id: 's2' })], [
+      task({ id: 'done', completed: true, completedAt: now - 5 * day, dueDate: '2026-07-01' }),
+      task({ id: 'late', dueDate: ymd(now - 14 * day) }),
+    ]);
+    const afterDelete = health([subGoal({ id: 's1' }), subGoal({ id: 's2' })], [
+      task({ id: 'done', completed: true, completedAt: now - 5 * day, dueDate: '2026-07-01' }),
+    ]);
+
+    expect(afterDelete).toBeGreaterThan(withOverdue); // removing a live miss does lift it...
+    expect(afterDelete - withOverdue).toBeLessThan(0.2); // ...but only a little, not a leap
+  });
+
+  it('activity decays over time — a fresh completion is worth more than an old one', () => {
+    vi.setSystemTime(now);
+
+    const fresh = health([], [task({ id: 't', completed: true, completedAt: now })]);
+    const stale = health([], [task({ id: 't', completed: true, completedAt: now - 60 * day })]);
+    expect(stale).toBeLessThan(fresh);
+  });
+
+  it('shorter horizons decay faster than longer ones for the same aged activity', () => {
+    vi.setSystemTime(now);
+
+    const old = [task({ id: 't', completed: true, completedAt: now - 30 * day })];
+    const shortHorizon = health([], old, 14); // short goal
+    const longHorizon  = health([], old, 60); // long goal
+    expect(shortHorizon).toBeLessThan(longHorizon);
+  });
+
+  it('a consistently-kept daily habit reads as a strong, high score', () => {
+    vi.setSystemTime(now);
+
+    const kept = habit({
+      id: 'k', recurrence: 'daily', startDate: ymd(now - 20 * day),
+      completions: Array.from({ length: 21 }, (_, i) => ymd(now - i * day)),
+      streak: 21,
+    });
+    expect(health([], [kept])).toBeGreaterThan(0.7);
+  });
+
+  it('the priority-position nudge only tilts a goal slightly', () => {
+    vi.setSystemTime(now);
+
+    const items = [task({ id: 't', completed: true, completedAt: now }), habit({ id: 'h' })];
+    const neutral = __test_computeHealth([], items, now, 0, HL);
+    const boosted = __test_computeHealth([], items, now, 1, HL);
+    expect(Math.abs(boosted - neutral)).toBeLessThan(0.1);
   });
 });

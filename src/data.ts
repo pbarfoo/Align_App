@@ -48,6 +48,9 @@ export interface Habit {
   title: string;
   kind: ActionKind;
   doneToday: boolean;
+  /** unix ms when this item was added — anchors the build-out decay in the
+   * health model (an item's structural credit fades from when it was created). */
+  createdAt?: number;
   /** habit only */
   startDate?: string;
   recurrence?: Recurrence;

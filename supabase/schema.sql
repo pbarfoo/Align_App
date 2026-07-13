@@ -49,6 +49,7 @@ create table if not exists public.habits (
   completions jsonb default '[]'::jsonb,
   completed boolean,
   completed_at bigint,
+  created_at bigint default (extract(epoch from now()) * 1000)::bigint,
   streak int default 0
 );
 
