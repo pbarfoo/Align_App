@@ -284,6 +284,22 @@ describe('deadline goal health — activity-based, no done/total ratio', () => {
     expect(withHabit).toBeGreaterThan(withTask);
   });
 
+  it('a skipped habit day (red pill) lowers deadline-goal health — skip counts as a miss', () => {
+    vi.setSystemTime(now);
+
+    const comps = ['2026-07-01', '2026-07-02', '2026-07-03', '2026-07-04', '2026-07-05'];
+    // Same habit; the only difference is whether a recent scheduled day was
+    // explicitly skipped. The skip must register as a miss, lowering health.
+    const forgiven = habit({ id: 'k', startDate: '2026-07-01', completions: comps, streak: 5 });
+    const counted = habit({
+      id: 'k', startDate: '2026-07-01', completions: comps, streak: 5,
+      skippedDates: ['2026-06-30'],
+    });
+
+    expect(__test_computeHealth([], [counted], now, 0))
+      .toBeLessThan(__test_computeHealth([], [forgiven], now, 0));
+  });
+
   it('an overdue undone task scales health down (missed deadline bites)', () => {
     vi.setSystemTime(now);
 

@@ -2601,7 +2601,7 @@ function Today({
                 onClick={(e) => {
                   e.stopPropagation();
                   setHabits((prev) => prev.map((x) =>
-                    x.id !== h.id ? x : { ...x, startDate: dayAfter(frozenDate) }
+                    x.id !== h.id ? x : { ...x, startDate: dayAfter(frozenDate), skippedDates: [...(x.skippedDates ?? []), frozenDate] }
                   ));
                 }}
               >
