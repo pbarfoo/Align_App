@@ -223,6 +223,23 @@ describe('deadline goal health — activity-based, no done/total ratio', () => {
     expect(after).toBeGreaterThan(before);
   });
 
+  it('structure has no ceiling — a heavily built-out goal keeps scoring higher than a modest one', () => {
+    vi.setSystemTime(now);
+
+    // Both have the same single completed task (so throughput/recency match);
+    // the only difference is how many MORE open tasks are piled on. Under the
+    // old hard cap, both would already be pinned at the ceiling and read
+    // identically — health should still climb with the extra items now.
+    const doneTask = task({ id: 'done', completed: true, completedAt: now - day });
+    const modest = [0, 1, 2, 3, 4, 5].map((i) => task({ id: `m${i}` })); // weight 7 total — already past the old cap of 6
+    const heavilyBuilt = [...modest, ...[6, 7, 8, 9, 10, 11].map((i) => task({ id: `h${i}` }))]; // weight 13
+
+    const modestHealth = __test_computeHealth([], [doneTask, ...modest], now, 0);
+    const heavyHealth  = __test_computeHealth([], [doneTask, ...heavilyBuilt], now, 0);
+
+    expect(heavyHealth).toBeGreaterThan(modestHealth);
+  });
+
   it('an overdue undone task scales health down (missed deadline bites)', () => {
     vi.setSystemTime(now);
 
