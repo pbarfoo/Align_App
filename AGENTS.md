@@ -26,10 +26,13 @@ down and any single edit only nudges it.
 
 Weights live at the top of `computeHealth` and are meant to be tuned.
 
-`computeHabitConsistency` was removed (orphaned). `applyNewGoalGrace` is back:
-every goal is born at 50% and glides to its earned score over 14 days (the
-wrappers apply it; value-alignment passes `graced=false` so new empty goals
-don't inflate alignment).
+`computeHabitConsistency` and `applyNewGoalGrace` were removed. New goals start
+at 50 via a **birth credit**: `computeHealth`'s optional `goalCreatedAt` adds
+`50 * decay(goalCreatedAt)` to the tally, so a goal is 50 the moment it's
+created and — left alone — fades from there through the SAME decay as everything
+else (no special glide). Build-out/completions add on top. The wrappers pass
+`goalCreatedAt` only when `graced` (default true); value-alignment passes
+`graced=false` so a brand-new empty goal scores its true 0 there.
 NOTE: a server-side `goal_health` Supabase view still uses the OLD formula, but
 `geminiAdvisor.ts` overrides those numbers with the client-computed ones before
 the coach sees them, so the view is stale-but-unused. Consider updating/dropping

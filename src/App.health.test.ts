@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { __test_computeHealth, __test_applyNewGoalGrace } from './App';
+import { __test_computeHealth } from './App';
 import type { Goal, Habit } from './data';
 
 const day = 86_400_000;
@@ -183,17 +183,24 @@ describe('goal health — "how active am I with this goal" (event/decay model)',
     expect(health([], [kept])).toBeGreaterThan(0.6);
   });
 
-  it('a brand-new goal is born at 50 and glides to its earned score over 14 days', () => {
+  it('a new goal is born at 50 and decays from there on its own (birth credit)', () => {
     vi.setSystemTime(now);
 
-    const earned = 0.1; // a thin goal's true score
-    expect(__test_applyNewGoalGrace(earned, now)).toBeCloseTo(0.5);            // day 0: born at 50
-    const midway = __test_applyNewGoalGrace(earned, now - 7 * day);           // day 7: between
-    expect(midway).toBeGreaterThan(earned);
-    expect(midway).toBeLessThan(0.5);
-    expect(__test_applyNewGoalGrace(earned, now - 20 * day)).toBeCloseTo(earned); // past grace: earned wins
-    // Real progress above 50 is never pulled DOWN to the floor.
-    expect(__test_applyNewGoalGrace(0.8, now)).toBe(0.8);
+    // Empty goal, created just now (30-day half-life) → ~50.
+    const born = __test_computeHealth([], [], now, 0, 30, now);
+    expect(born).toBeCloseTo(0.5, 1);
+
+    // Same empty goal one half-life later → ~25, purely from normal decay.
+    const aged = __test_computeHealth([], [], now, 0, 30, now - 30 * day);
+    expect(aged).toBeLessThan(born);
+    expect(aged).toBeCloseTo(0.25, 1);
+
+    // Building it out lifts it ABOVE the 50 start (birth credit is additive).
+    const built = __test_computeHealth([subGoal({ id: 's' })], [], now, 0, 30, now);
+    expect(built).toBeGreaterThan(born);
+
+    // No creation time (value-alignment path) → no birth credit, true 0.
+    expect(__test_computeHealth([], [], now, 0, 30)).toBe(0);
   });
 
   it('the priority-position nudge only tilts a goal slightly', () => {

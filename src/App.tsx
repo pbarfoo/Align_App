@@ -3162,6 +3162,11 @@ function computeHealth(
   focusStrength = 0,
   /** decay half-life in days — shorter horizons fade faster (rule 3). */
   halfLifeDays = 30,
+  /** goal's creation time. When given, a +50 "birth credit" is added and
+   * decayed like everything else, so a goal starts at 50 and — left alone —
+   * fades from there via the normal decay (no special glide). Omit to disable
+   * (e.g. value-alignment, where a brand-new empty goal must score its true 0). */
+  goalCreatedAt?: number,
 ): number {
   const DAY = 86_400_000;
   const decay = (ms: number) => Math.pow(0.5, Math.max(0, (now - ms) / DAY) / halfLifeDays);
@@ -3179,6 +3184,11 @@ function computeHealth(
   const habits = treeHabits.filter((h) => h.kind === 'habit');
 
   let pos = 0, pen = 0;
+
+  // Birth credit — a goal is worth 50 the moment it's created, then this fades
+  // at the same half-life as everything else. Build-out/completions add on top;
+  // left alone, the goal decays down from 50 on its own.
+  if (goalCreatedAt != null) pos += 50 * decay(goalCreatedAt);
 
   // Build-out — structural credit, fading from when each item was added.
   for (const g of subGoals) pos += BUILD.sub   * decay(g.createdAt || now);
@@ -3220,7 +3230,6 @@ function computeHealth(
 }
 
 export const __test_computeHealth = computeHealth;
-export const __test_applyNewGoalGrace = applyNewGoalGrace;
 export const __test_toggleHabitCompletion = toggleHabitCompletion;
 
 /**
@@ -3248,30 +3257,12 @@ function computeDone(subGoals: Goal[], treeHabits: Habit[], allHabits: Habit[], 
   return done / total;
 }
 
-/**
- * New-goal grace: every goal is BORN at 50% (neutral — not failing, not
- * thriving) and glides to its earned score over the first 14 days, so a
- * freshly-created goal never shows red before it's had a chance to be worked.
- * Real progress wins immediately — once earned health beats the 50 floor, the
- * higher number shows. Pass graced=false for signals (e.g. value alignment)
- * that must not be inflated by brand-new, empty goals.
- */
-function applyNewGoalGrace(earned: number, createdAt: number): number {
-  const GRACE_DAYS = 14;
-  const START = 0.5;
-  if (earned >= START) return earned;
-  const ageDays = (Date.now() - (createdAt || 0)) / 86_400_000;
-  if (ageDays < 0 || ageDays >= GRACE_DAYS) return earned;
-  const grace = 1 - ageDays / GRACE_DAYS;
-  return earned + (START - earned) * grace;
-}
-
 function vitalityFor(
   lg: Goal,
   goals: Goal[],
   habits: Habit[],
   focusStrength = 0,
-  graced = true,
+  graced = true, // false suppresses the 50 birth credit (e.g. value alignment)
 ): { time: number; completion: number; health: number } {
   const now     = Date.now();
   const totalMs = (lg.timeframe || 1) * 365.25 * 86_400_000;
@@ -3283,8 +3274,7 @@ function vitalityFor(
 
   const completion = computeDone(subGoals, subtreeHabits, habits, now);
   // Long-horizon goals decay slowest (60-day half-life).
-  const earned     = computeHealth(subGoals, subtreeHabits, now, focusStrength, 60);
-  const health     = graced ? applyNewGoalGrace(earned, lg.createdAt) : earned;
+  const health     = computeHealth(subGoals, subtreeHabits, now, focusStrength, 60, graced ? lg.createdAt : undefined);
   return { time: elapsed, completion, health };
 }
 
@@ -3367,8 +3357,7 @@ function stGoalMetrics(sg: Goal, goals: Goal[], habits: Habit[], focusStrength =
 
   const completion = computeDone(subGoals, sgHabits, habits, now);
   // Short-horizon goals decay fastest (14-day half-life).
-  const earned     = computeHealth(subGoals, sgHabits, now, focusStrength, 14);
-  const health     = graced ? applyNewGoalGrace(earned, sg.createdAt) : earned;
+  const health     = computeHealth(subGoals, sgHabits, now, focusStrength, 14, graced ? sg.createdAt : undefined);
   return { time: elapsed, completion, health };
 }
 
@@ -3386,8 +3375,7 @@ function ongoingGoalMetrics(og: Goal, goals: Goal[], habits: Habit[], focusStren
   const ogHabits = habits.filter((h) => subtree.has(h.goalId));
 
   const completion = computeDone(subGoals, ogHabits, habits, now);
-  const earned     = computeHealth(subGoals, ogHabits, now, focusStrength, 30);
-  const health     = graced ? applyNewGoalGrace(earned, og.createdAt) : earned;
+  const health     = computeHealth(subGoals, ogHabits, now, focusStrength, 30, graced ? og.createdAt : undefined);
   return { time: 0, completion, health };
 }
 
