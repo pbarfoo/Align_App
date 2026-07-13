@@ -183,7 +183,9 @@ describe('goal health — "how active am I with this goal" (event/decay model)',
       completions: Array.from({ length: 21 }, (_, i) => ymd(now - i * day)),
       streak: 21,
     });
-    expect(health([], [kept])).toBeGreaterThan(0.7);
+    // Habits are lightly weighted, so even a perfectly-kept one lands "solid"
+    // rather than pinned near the top on its own.
+    expect(health([], [kept])).toBeGreaterThan(0.6);
   });
 
   it('the priority-position nudge only tilts a goal slightly', () => {

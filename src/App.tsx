@@ -3139,8 +3139,10 @@ function computeHealth(
   const dayMs = (d: string) => new Date(d + 'T12:00').getTime();
 
   // Point values (0–100 scale). Completion > build-out; sub-goal > habit > task.
-  const BUILD = { sub: 10, habit: 7, task: 5 };
-  const DONE  = { sub: 40, habitDay: 7, task: 13, taskLate: 5 };
+  // Tasks & habits are deliberately light so a goal's health is driven mostly by
+  // sub-goals (real milestones); a pile of tasks/habits alone stays modest.
+  const BUILD = { sub: 10, habit: 4, task: 2 };
+  const DONE  = { sub: 40, habitDay: 4, task: 6, taskLate: 3 };
   const MISS_HABIT = 7;  // per skipped / missed scheduled habit day
   const OVERDUE    = 10; // per open overdue task, scaled by how late
 

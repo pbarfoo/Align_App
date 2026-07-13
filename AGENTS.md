@@ -13,9 +13,10 @@ Every event contributes points that decay from their own date; the half-life is
 set by horizon (short 14d / ongoing 30d / long 60d), so neglect bleeds the score
 down and any single edit only nudges it.
 
-- **Build-out** (adding items): sub-goal +10, habit +7, task +5 — decays from
-  each item's `created_at`. No cap.
-- **Completion**: sub-goal +40, habit-day +7, task +13 (late task +5) — decays
+- **Build-out** (adding items): sub-goal +10, habit +4, task +2 — decays from
+  each item's `created_at`. No cap. Tasks/habits are deliberately light so
+  health is driven mostly by sub-goals (real milestones).
+- **Completion**: sub-goal +40, habit-day +4, task +6 (late task +3) — decays
   from completion date. Worth more than build-out.
 - **Missed/skipped habit day**: −7 each, decaying.
 - **Open overdue task**: −10 scaled by lateness, present drag (no decay).
