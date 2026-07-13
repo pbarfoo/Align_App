@@ -3166,11 +3166,13 @@ function computeHealth(
   }
   for (const h of habits) for (const d of (h.completions ?? [])) pos += DONE.habitDay * decay(dayMs(d));
 
-  // Missed / skipped habit days — each fades from the day it happened. Union so
-  // an explicitly-skipped day isn't also double-counted as a plain miss.
+  // Skipped habit days — the explicit "I'm not doing this" miss (the red pill).
+  // Each dings, fading from the day it happened. Only EXPLICIT skips are
+  // penalised here: clicking skip is what applies the ding. A day you simply
+  // haven't logged isn't double-counted — a habit that isn't being kept already
+  // fades on its own for lack of incoming completion points.
   for (const h of habits) {
-    const missed = new Set<string>([...(h.skippedDates ?? []), ...getGraceDays(h)]);
-    for (const d of missed) pen += MISS_HABIT * decay(dayMs(d));
+    for (const d of (h.skippedDates ?? [])) pen += MISS_HABIT * decay(dayMs(d));
   }
 
   // Open overdue tasks — a present drag (not a faded past event), scaled by how

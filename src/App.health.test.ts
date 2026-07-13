@@ -106,22 +106,17 @@ describe('goal health — "how active am I with this goal" (event/decay model)',
     expect(after - before).toBeLessThan(0.2); // gentle, not a cliff
   });
 
-  it('a skipped habit day counts as a miss — lowers health vs the same habit un-skipped', () => {
+  it('clicking skip dings health — an EXPLICIT skip is a miss (a merely-un-logged day is not)', () => {
     vi.setSystemTime(now);
 
-    const kept = habit({
-      id: 'k', startDate: '2026-07-01', streak: 5,
-      completions: ['2026-07-01', '2026-07-02', '2026-07-03', '2026-07-04', '2026-07-05'],
-    });
-    // Same habit, but the 4th was skipped instead of done: one fewer completion
-    // AND an explicit miss penalty.
-    const skipped = habit({
-      id: 'k', startDate: '2026-07-01', streak: 5,
-      completions: ['2026-07-01', '2026-07-02', '2026-07-03', '2026-07-05'],
-      skippedDates: ['2026-07-04'],
-    });
+    // Identical completion history (Jul 4 not logged either way). The ONLY
+    // difference is whether Jul 4 was explicitly skipped (red pill). The skip
+    // must lower health; the un-actioned pending miss must not be double-dinged.
+    const comps = ['2026-07-01', '2026-07-02', '2026-07-03', '2026-07-05'];
+    const pending = habit({ id: 'k', startDate: '2026-07-01', completions: comps });
+    const skipped = habit({ id: 'k', startDate: '2026-07-01', completions: comps, skippedDates: ['2026-07-04'] });
 
-    expect(health([], [skipped])).toBeLessThan(health([], [kept]));
+    expect(health([], [skipped])).toBeLessThan(health([], [pending]));
   });
 
   it('a task completed late earns less than the same task completed on time', () => {
