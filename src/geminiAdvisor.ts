@@ -323,7 +323,7 @@ function valueFingerprint(domains: Domain[]): string {
 
 
 function coachCacheKey(date: string, domains: Domain[]) {
-  return `gemini-coach-v29-${date}-${valueFingerprint(domains)}`;
+  return `gemini-coach-v30-${date}-${valueFingerprint(domains)}`;
 }
 
 function yesterdayCardTitle(domains: Domain[]): string | null {
@@ -331,7 +331,7 @@ function yesterdayCardTitle(domains: Domain[]): string | null {
   yesterday.setDate(yesterday.getDate() - 1);
   const yStr = toDateStr(yesterday);
   // Check recent key versions so we catch whatever ran yesterday
-  for (const v of ['v29', 'v28', 'v27', 'v26', 'v25', 'v24', 'v23', 'v22', 'v21', 'v20']) {
+  for (const v of ['v30', 'v29', 'v28', 'v27', 'v26', 'v25', 'v24', 'v23', 'v22', 'v21', 'v20']) {
     const raw = localStorage.getItem(`gemini-coach-${v}-${yStr}-${valueFingerprint(domains)}`);
     if (raw) {
       try { return (JSON.parse(raw) as CoachCard).title; } catch { /* skip */ }
@@ -453,7 +453,7 @@ export async function getGeminiCoachCard(
       const g = goalMap.get(h.goalId);
       const goalTitle = g?.title ?? '?';
       if (h.kind === 'task') {
-        const status = h.completed ? `done` : `due:${h.dueDate ?? 'none'}`;
+        const status = h.completed ? `DONE (already completed)` : `due:${h.dueDate ?? 'none'}`;
         return `- "${h.title}" | goal:"${goalTitle}" | task | ${status}`;
       }
       const recent = (h.completions ?? []).slice(-7).join(', ') || 'none';
@@ -515,6 +515,7 @@ HARD RULES — violations mean the card is wrong:
 - For how the user felt about a value, use natural phrasing like "you've felt only loosely connected to Professional Respect lately" — never "reflection score was Some".
 - Every sentence must be complete and grammatical. Do NOT tack on a trailing fragment or repeat a phrase (e.g. "…continued progress. progress towards your goals.").
 - When you mention a streak, always write the plain-language phrase from the data (e.g. "4 days in a row", "3 weeks running"). NEVER write a bare number like "streak is 4" or "your streak is 4" — the user has no idea what that number counts.
+- NEVER propose a task marked "DONE (already completed)" as today's nudge, or invent a follow-on step for one (no "gather the supplies", "finish packing" for a prep task that's already done). A DONE task may ONLY be acknowledged as a past accomplishment — the concrete nudge (goal #3) MUST be an open task (status "due:...") or a habit due today.
 ${rotateRule ? `- ${rotateRule}` : ''}
 ${focusDomainRule}
 
