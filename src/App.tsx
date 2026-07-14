@@ -881,7 +881,9 @@ function Align({
   // Goal pending a delete-confirmation (null = no dialog open).
   const [pendingDeleteGoalId, setPendingDeleteGoalId] = useState<string | null>(null);
   const [hideCompleted, setHideCompleted] = useState<boolean>(() => {
-    try { return JSON.parse(localStorage.getItem('align-hide-completed-v1') ?? 'false'); } catch { return false; }
+    // Default to hiding completed items. Key bumped to v2 so returning users who
+    // had the old default (show) persisted also pick up the new hidden default.
+    try { return JSON.parse(localStorage.getItem('align-hide-completed-v2') ?? 'true'); } catch { return true; }
   });
   // Open the Align tab fully collapsed — every goal AND sub-goal starts closed,
   // a clean overview you expand into rather than a fully unrolled tree.
@@ -947,7 +949,7 @@ function Align({
   };
 
   useEffect(() => {
-    localStorage.setItem('align-hide-completed-v1', JSON.stringify(hideCompleted));
+    localStorage.setItem('align-hide-completed-v2', JSON.stringify(hideCompleted));
   }, [hideCompleted]);
 
   const domain = domains.find((d) => d.id === domainId)!;
