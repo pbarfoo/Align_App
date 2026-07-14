@@ -875,7 +875,6 @@ function Align({
   onDeleteHabitFromDb: (id: string) => void;
 }) {
   const [domainId, setDomainId] = useState<DomainId>('career');
-  const [lit, setLit] = useState<string | null>(null);
   const [addingFor, setAddingFor] = useState<string | null>(null);
   const [addingForKind, setAddingForKind] = useState<'short' | 'action' | null>(null);
   const [editValuesFor, setEditValuesFor] = useState<string | null>(null);
@@ -970,39 +969,6 @@ function Align({
     return idx >= 0 ? THREAD_PALETTE[idx % THREAD_PALETTE.length] : 'var(--line)';
   })();
 
-  const litChain = useMemo(() => {
-    if (!lit) return null;
-    const set = new Set<string>([lit]);
-    let goalId: string | undefined;
-    if (lit.startsWith('h:')) {
-      goalId = habits.find((x) => x.id === lit.slice(2))?.goalId;
-    } else if (lit.startsWith('g:')) {
-      goalId = lit.slice(2);
-    } else if (lit.startsWith('v:')) {
-      // light all goals (and their children + habits) that carry this value
-      const vi = Number(lit.slice(2));
-      goals.forEach((g) => {
-        if (g.valueIndexes.includes(vi)) set.add(`g:${g.id}`);
-      });
-      goals.forEach((g) => {
-        if (g.parentGoalId && set.has(`g:${g.parentGoalId}`)) set.add(`g:${g.id}`);
-      });
-      habits.forEach((h) => {
-        if (set.has(`g:${h.goalId}`)) set.add(`h:${h.id}`);
-      });
-      return set;
-    }
-    while (goalId) {
-      set.add(`g:${goalId}`);
-      const g = goals.find((x) => x.id === goalId);
-      if (g) g.valueIndexes.forEach((i) => set.add(`v:${i}`));
-      goalId = g?.parentGoalId;
-    }
-    return set;
-  }, [lit, goals, habits]);
-
-  const cls = (id: string, base = 'node') =>
-    `${base}${litChain ? (litChain.has(id) ? ' lit' : ' dim') : ''}`;
 
   // Health badges — single shared calculation (computeGoalHealthMap) so the
   // badge, the dashboard, and the coach all report the same number. Live:
@@ -1167,7 +1133,6 @@ function Align({
             className={`pill${d.id === domainId ? ' active' : ''}`}
             onClick={() => {
               setDomainId(d.id);
-              setLit(null);
               setAddingFor(null);
               setAddingForKind(null);
               setEditValuesFor(null);
@@ -1182,14 +1147,10 @@ function Align({
 
       {domain.values.length > 0 && (
         <div className="value-row">
-          {domain.values.map((v, vi) => (
-            <button
-              key={v}
-              className={cls(`v:${vi}`, 'value-chip')}
-              onClick={() => setLit(lit === `v:${vi}` ? null : `v:${vi}`)}
-            >
+          {domain.values.map((v) => (
+            <span key={v} className="value-chip">
               {v}
-            </button>
+            </span>
           ))}
         </div>
       )}
@@ -1232,8 +1193,6 @@ function Align({
               editValuesActive={editValuesFor === goal.id}
               onEditValues={() => setEditValuesFor(editValuesFor === goal.id ? null : goal.id)}
               onChangeValues={(idxs) => updateGoalValues(goal.id, idxs)}
-              className={cls(`g:${goal.id}`)}
-              onClick={() => setLit(lit === `g:${goal.id}` ? null : `g:${goal.id}`)}
               canAddChild
               addActive={addingFor === goal.id}
               onAddChild={() => {
@@ -1263,8 +1222,7 @@ function Align({
                 return (
                   <React.Fragment key={h.id}>
                   <div
-                    className={`${cls(`h:${h.id}`)} node short action-row${done ? ' completed' : ''}`}
-                    onClick={() => setLit(lit === `h:${h.id}` ? null : `h:${h.id}`)}
+                    className={`node short action-row${done ? ' completed' : ''}`}
                   >
                     <button
                       className={`node-check${done ? ' on' : ''}`}
@@ -1343,9 +1301,6 @@ function Align({
                   displayValues={[]}
                   habits={habits}
                   health={goalHealthMap[sg.id]}
-                  cls={cls}
-                  lit={lit}
-                  setLit={setLit}
                   addingFor={addingFor}
                   setAddingFor={setAddingFor}
                   onAddAction={addAction}
@@ -1417,8 +1372,6 @@ function Align({
                   <GoalNode
                     goal={goal}
                     values={goal.valueIndexes.map((i) => domain.values[i]).filter(Boolean)}
-                    className={cls(`g:${goal.id}`)}
-                    onClick={() => setLit(lit === `g:${goal.id}` ? null : `g:${goal.id}`)}
                     onDelete={() => setPendingDeleteGoalId(goal.id)}
                     showDragHandle
                   />
@@ -1437,8 +1390,6 @@ function Align({
               <GoalNode
                 goal={activeDragGoal}
                 values={activeDragGoal.valueIndexes.map((i) => domain.values[i]).filter(Boolean)}
-                className={cls(`g:${activeDragGoal.id}`)}
-                onClick={() => {}}
                 health={goalHealthMap[activeDragGoal.id]}
                 isComplete={!!activeDragGoal.completedAt}
               />
@@ -1456,9 +1407,6 @@ function ShortWithActions({
   displayValues,
   habits,
   health,
-  cls,
-  lit,
-  setLit,
   addingFor,
   setAddingFor,
   onAddAction,
@@ -1489,9 +1437,6 @@ function ShortWithActions({
   health?: GoalHealthInfo;
   domainValues?: string[];
   domainVision?: string;
-  cls: (id: string, base?: string) => string;
-  lit: string | null;
-  setLit: (s: string | null) => void;
   addingFor: string | null;
   setAddingFor: (s: string | null) => void;
   onAddAction: (
@@ -1528,8 +1473,6 @@ function ShortWithActions({
         goal={goal}
         values={displayValues}
         short
-        className={cls(`g:${goal.id}`)}
-        onClick={() => setLit(lit === `g:${goal.id}` ? null : `g:${goal.id}`)}
         canAddChild
         addActive={addingFor === goal.id}
         onAddChild={() =>
@@ -1563,8 +1506,7 @@ function ShortWithActions({
           return (
           <React.Fragment key={h.id}>
           <div
-            className={`${cls(`h:${h.id}`)} habit action-row${done ? ' completed' : ''}`}
-            onClick={() => setLit(lit === `h:${h.id}` ? null : `h:${h.id}`)}
+            className={`node habit action-row${done ? ' completed' : ''}`}
           >
             <button
               className={`node-check${done ? ' on' : ''}`}
@@ -1954,8 +1896,7 @@ function GoalNode({
   domainValues,
   valueIndexes,
   short,
-  className,
-  onClick,
+  className = 'node',
   canAddChild,
   addActive,
   onAddChild,
@@ -1978,8 +1919,7 @@ function GoalNode({
   domainValues?: string[];
   valueIndexes?: number[];
   short?: boolean;
-  className: string;
-  onClick: () => void;
+  className?: string;
   canAddChild?: boolean;
   addActive?: boolean;
   onAddChild?: () => void;
@@ -2024,7 +1964,6 @@ function GoalNode({
     <div
       className={`${className}${short ? ' short' : ''}${isComplete ? ' completed' : ''}${hasFocus ? ' focus-goal' : ''}`}
       style={hasFocus ? ({ '--focus-strength': focusStrength } as React.CSSProperties) : undefined}
-      onClick={onClick}
     >
       <div className="node-left-col">
         {onToggleCollapse && (
