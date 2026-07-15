@@ -1078,9 +1078,24 @@ function Align({
   };
 
   const deleteHabit = (id: string) => {
+    // Snapshot the removed row with its index so Undo can splice it back into
+    // place. Restoring to state re-triggers the upsert sync, which re-creates
+    // the DB row.
+    const removed = habits
+      .map((h, i) => ({ h, i }))
+      .filter(({ h }) => h.id === id);
     setHabits((prev) => prev.filter((h) => h.id !== id));
     onDeleteHabitFromDb(id);
-    flash('Deleted');
+    flash('Deleted', false, {
+      label: 'Undo',
+      run: () => {
+        setHabits((prev) => {
+          const next = [...prev];
+          removed.forEach(({ h, i }) => next.splice(Math.min(i, next.length), 0, h));
+          return next;
+        });
+      },
+    });
   };
 
   // ☀ Flag / unflag a task as a priority for TODAY — surfaces it in the Today
@@ -2332,10 +2347,9 @@ function Today({
   };
 
   // --- Overdue tasks: rendered inline in the Today list with their decision
-  // actions (check off / reschedule / break down / delete). Days-overdue comes
+  // actions (check off / reschedule / delete). Days-overdue comes
   // from the stale_tasks view when available, else computed locally so nothing
   // slips through between loads.
-  const [breakdownFor, setBreakdownFor] = useState<string | null>(null);
   const staleById = new Map(staleTasks.map((st) => [st.id, st]));
   const daysOverdueOf = (task: Habit): number => {
     const st = staleById.get(task.id);
@@ -2351,8 +2365,24 @@ function Today({
   };
 
   const deleteTask = (id: string) => {
+    // Snapshot the removed row with its index so Undo can splice it back into
+    // place. Restoring to state re-triggers the upsert sync, which re-creates
+    // the DB row.
+    const removed = habits
+      .map((h, i) => ({ h, i }))
+      .filter(({ h }) => h.id === id);
     setHabits((prev) => prev.filter((h) => h.id !== id));
     onDeleteHabitFromDb(id);
+    flash('Deleted', false, {
+      label: 'Undo',
+      run: () => {
+        setHabits((prev) => {
+          const next = [...prev];
+          removed.forEach(({ h, i }) => next.splice(Math.min(i, next.length), 0, h));
+          return next;
+        });
+      },
+    });
   };
 
   // Expired goals: deadline passed, still open — they need a decision too.
@@ -2403,33 +2433,6 @@ function Today({
       },
     });
   };
-
-  // Mirrors Align's addAction — used by the "Break down" flow to add smaller
-  // tasks/habits onto the same goal as the stale task.
-  const addAction = (goalId: string, title: string, kind: ActionKind, input: ActionInput) => {
-    setHabits((prev) => [...prev, {
-      id: uid('h'),
-      goalId,
-      title,
-      kind,
-      doneToday: false,
-      completions: [],
-      createdAt: Date.now(),
-      ...(kind === 'habit'
-        ? {
-            startDate: input.startDate || toDateStr(new Date()),
-            recurrence: input.recurrence ?? 'daily',
-            customInterval: input.customInterval ?? 1,
-            customUnit: input.customUnit ?? 'weeks',
-            specificDays: input.specificDays ?? undefined,
-          }
-        : {
-            dueDate: input.dueDate || undefined,
-            dueTime: input.dueTime || undefined,
-          }),
-    }]);
-  };
-
 
   // --- The Today list: your chosen focus tasks (☀) up top, then overdue /
   // due-today needing action, then the day's habits.
@@ -2754,26 +2757,12 @@ function Today({
                         onChange={(v) => rescheduleTask(task.id, v)}
                         placeholder="Reschedule"
                       />
-                      <button
-                        className="mini-ghost"
-                        onClick={() => setBreakdownFor(breakdownFor === task.id ? null : task.id)}
-                      >
-                        {breakdownFor === task.id ? 'Cancel' : 'Break down'}
-                      </button>
                       <button className="mini-ghost triage-delete" onClick={() => deleteTask(task.id)}>
                         Delete
                       </button>
                     </div>
                   </div>
                 </div>
-                {breakdownFor === task.id && (
-                  <AddActionForm
-                    goalId={task.goalId}
-                    defaultKind="task"
-                    onAdd={(goalId, title, kind, input) => { addAction(goalId, title, kind, input); setBreakdownFor(null); }}
-                    onClose={() => setBreakdownFor(null)}
-                  />
-                )}
               </React.Fragment>
             );
           })}
