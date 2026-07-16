@@ -118,7 +118,7 @@ function habitToRow(h: Habit, userId: string): Row {
 }
 function habitFromRow(row: Row): Habit {
   const completions = Array.isArray(row.completions) ? row.completions : [];
-  return {
+  const habit: Habit = {
     id: row.id, goalId: row.goal_id,
     title: row.title, kind: row.kind as 'habit' | 'task',
     doneToday: row.done_today ?? false,
@@ -137,6 +137,14 @@ function habitFromRow(row: Row): Habit {
     streak: row.streak ?? 0,
     completions,
   };
+  // The stored `streak` is only refreshed when a habit is toggled, so a habit
+  // that goes cold keeps a stale (often inflated) streak forever — which is how
+  // the coach ended up bragging about streaks that had actually lapsed. Always
+  // recompute from `completions` on load so the number reflects today.
+  if (habit.kind === 'habit') {
+    habit.streak = computeStreakFromCompletions(completions, habit);
+  }
+  return habit;
 }
 
 function reflToRow(r: ReflectionEntry, userId: string): Row {
@@ -3161,6 +3169,8 @@ function computeHealth(
 
 export const __test_computeHealth = computeHealth;
 export const __test_toggleHabitCompletion = toggleHabitCompletion;
+export const __test_habitFromRow = habitFromRow;
+export const __test_computeStreakFromCompletions = computeStreakFromCompletions;
 
 /**
  * Done = weighted count ratio across sub-goals, habits, and tasks.

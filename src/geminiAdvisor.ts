@@ -155,12 +155,15 @@ function streakUnit(h: Habit): string {
   }
 }
 
-/** Human-readable streak phrase for the coach prompt, e.g. "4 days in a row". */
+/** Human-readable streak phrase for the coach prompt, e.g. "4-day streak".
+ * Deliberately NOT "N days in a row": the streak counter tolerates a small
+ * grace gap (see computeStreakFromCompletions), so the completions need not be
+ * strictly consecutive — claiming "in a row" overstates a grace-stretched run. */
 function streakPhrase(h: Habit): string {
   const n = h.streak ?? 0;
   if (n <= 0) return 'no active streak';
   const unit = streakUnit(h);
-  return `${n} ${unit}${n === 1 ? '' : 's'} in a row`;
+  return `${n}-${unit} streak`;
 }
 
 function daysSince(completions: string[]): number | null {
@@ -514,7 +517,7 @@ HARD RULES — violations mean the card is wrong:
 - Write like a real person speaking, NOT like an app reporting metrics. Banned jargon phrasings: "reflection score was Some", "goal health was 88%", "consistency score", quoting a scale label (Drifted/Some/Mostly/Aligned) as if it were a value. Translate every number and label into plain words (a percentage may appear naturally in passing).
 - For how the user felt about a value, use natural phrasing like "you've felt only loosely connected to Professional Respect lately" — never "reflection score was Some".
 - Every sentence must be complete and grammatical. Do NOT tack on a trailing fragment or repeat a phrase (e.g. "…continued progress. progress towards your goals.").
-- When you mention a streak, always write the plain-language phrase from the data (e.g. "4 days in a row", "3 weeks running"). NEVER write a bare number like "streak is 4" or "your streak is 4" — the user has no idea what that number counts.
+- When you mention a streak, use the exact phrase from the data (e.g. "4-day streak", "3-week streak"). Do NOT upgrade it to "in a row" / "consecutive" / "every day" — the streak tolerates the occasional missed day, so those words overstate it. NEVER write a bare number like "streak is 4" — the user has no idea what that number counts.
 - NEVER propose a task marked "DONE (already completed)" as today's nudge, or invent a follow-on step for one (no "gather the supplies", "finish packing" for a prep task that's already done). A DONE task may ONLY be acknowledged as a past accomplishment — the concrete nudge (goal #3) MUST be an open task (status "due:...") or a habit due today.
 ${rotateRule ? `- ${rotateRule}` : ''}
 ${focusDomainRule}
