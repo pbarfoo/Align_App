@@ -2971,7 +2971,39 @@ function Reflect({
 
 /* ---------------- ReviewPanel ---------------- */
 
-// Blended 0–10 score: 50% from reflection history, 50% from goal/habit completion
+/* ---------------- Value Alignment ----------------
+ * Value alignment is intentionally SEPARATE from goal health. It answers
+ * "am I living this value?" and is REFLECTION-FIRST: your weekly self-rating is
+ * the anchor (majority weight), with behaviour as minority corroboration.
+ *
+ * Up to four elements, each 0–1, are blended by nominal weight — but only the
+ * elements that actually have data participate, and their weights are
+ * renormalised over what's present (see the blend below). So a value you live
+ * but haven't built goals around scores on reflection ALONE (never dragged to
+ * zero for lacking structure), while a value with full structure uses the whole
+ * blend. Goal health is deliberately a SMALL voice here, so re-tuning the
+ * goal-health model barely moves alignment — the decoupling we want.
+ */
+const VA_WEIGHTS = {
+  reflection:  0.55, // decayed weekly self-rating — the anchor (majority)
+  actions:     0.25, // recent value-tagged completions, own ~4-week decay
+  health:      0.12, // avg goal health across tagged goals (structural momentum)
+  consistency: 0.08, // habit-days kept vs skipped on tagged habits
+} as const;
+/** Behaviour with no reflection yet can't read as fully aligned — cap it, so a
+ *  value never looks "great" purely from checking tasks before you've reflected. */
+const VA_NO_REFLECTION_CAP = 0.7;
+/** Lived-actions half-saturation: ~this many decayed points ≈ 0.5 (rewards
+ *  living the value, not grinding throughput). */
+const VA_ACTION_K = 4;
+/** Lived-action point values — milestone > task ≈ habit-day (mirrors health's
+ *  ordering, but its OWN tally, not computeHealth). */
+const VA_ACT = { sub: 3, task: 1, habitDay: 1 } as const;
+/** Lived-actions & consistency run on reflection's ~4-week clock (unified
+ *  timescale — NOT goal health's horizon-based half-lives). */
+const VA_HALF_LIFE_DAYS = 28;
+const VA_WINDOW_DAYS = 28;
+
 function valueAlignmentScore(
   key: string,
   goals: Goal[],
@@ -2979,53 +3011,118 @@ function valueAlignmentScore(
   reflections: ReflectionEntry[],
   domains: Domain[],
 ): number {
+  const now = Date.now();
+  const DAY = 86_400_000;
+  const decay = (ms: number) => Math.pow(0.5, Math.max(0, (now - ms) / DAY) / VA_HALF_LIFE_DAYS);
+  const dayMs = (d: string) => new Date(d + 'T12:00').getTime();
+
   const colonIdx = key.indexOf(':');
   const domainId = key.slice(0, colonIdx);
   const valueName = key.slice(colonIdx + 1);
   const dom = domains.find((d) => d.id === domainId);
   const vi = dom ? dom.values.indexOf(valueName) : -1;
 
-  // Goals directly tagged with this value
+  // Goals directly tagged with this value, plus sub-goals that inherit it from
+  // ANY tagged parent (long, short, ongoing).
   const tagged = goals.filter(
     (g) => g.domainId === domainId && vi >= 0 && g.valueIndexes.includes(vi),
   );
-  // Sub-goals inherit the value from ANY tagged parent (long, short, ongoing)
   const taggedParentIds = new Set(tagged.map((g) => g.id));
   const inherited = goals.filter(
     (g) => g.parentGoalId && taggedParentIds.has(g.parentGoalId)
       && !tagged.some((t) => t.id === g.id),
   );
   const allTagged = [...tagged, ...inherited];
+  const taggedGoalIds = new Set(allTagged.map((g) => g.id));
+  const taggedHabits = habits.filter((h) => taggedGoalIds.has(h.goalId));
 
-  // Activity score (0–1): average EARNED health across tagged goals (graced=
-  // false so the new-goal 50 floor can't inflate alignment — a brand-new empty
-  // goal contributes its true 0 here, not 50).
-  let actSum = 0, actCount = 0;
-  for (const g of allTagged) {
-    const h = g.horizon === 'long'
-      ? vitalityFor(g, goals, habits, 0, false).health
-      : g.horizon === 'ongoing'
-        ? ongoingGoalMetrics(g, goals, habits, 0, false).health
-        : stGoalMetrics(g, goals, habits, 0, false).health;
-    actSum += h; actCount++;
-  }
-  const activityComponent = actCount > 0 ? actSum / actCount : null;
+  // Behavioural elements are judged only once there's something to judge. A
+  // brand-new, un-acted-on goal has no behaviour, so the behavioural elements
+  // stay N/A and CAN'T drag alignment down — same "adding structure never
+  // lowers your score" rule the goal-health model follows (via the shared
+  // maturity gates). Neglect still shows: a matured-but-undone habit or an
+  // overdue task flips this on, and then a near-zero tally reads as low.
+  const anyBehaviour =
+    allTagged.some((g) => g.completedAt) ||
+    taggedHabits.some((h) =>
+      h.kind === 'task'
+        ? (h.completed || taskCountsInPace(h, now))
+        : ((h.completions?.length ?? 0) > 0
+          || (h.skippedDates?.length ?? 0) > 0
+          || habitCountsYet(h, now)));
 
-  // Reflection component (0–1)
+  // --- Element 1: Reflection (the anchor) --------------------------------
   const hasRefl = reflections.some((r) => r.scores[key] !== undefined);
-  const reflComponent = hasRefl ? decayedAvg(key, reflections) / 3 : null;
+  const reflection = hasRefl ? decayedAvg(key, reflections) / 3 : null;
 
-  // Blend
-  let score: number;
-  if (reflComponent !== null && activityComponent !== null) {
-    score = 0.5 * reflComponent + 0.5 * activityComponent;
-  } else if (reflComponent !== null) {
-    score = reflComponent;
-  } else if (activityComponent !== null) {
-    score = activityComponent;
-  } else {
-    score = 0;
+  // --- Element 2: Lived actions (recent value-expressing behaviour) -------
+  // A saturating, time-decayed tally of completions on tagged goals — its OWN
+  // formula, not goal health. Milestone (sub-goal) > task ≈ habit-day; explicit
+  // skips lightly subtract.
+  let actions: number | null = null;
+  if (anyBehaviour) {
+    let raw = 0;
+    for (const g of allTagged) if (g.completedAt) raw += VA_ACT.sub * decay(g.completedAt);
+    for (const h of taggedHabits) {
+      if (h.kind === 'task') {
+        if (h.completed && h.completedAt) raw += VA_ACT.task * decay(h.completedAt);
+      } else {
+        for (const d of (h.completions ?? [])) raw += VA_ACT.habitDay * decay(dayMs(d));
+        for (const d of (h.skippedDates ?? [])) raw -= VA_ACT.habitDay * decay(dayMs(d));
+      }
+    }
+    raw = Math.max(0, raw);
+    actions = raw / (raw + VA_ACTION_K);
   }
+
+  // --- Element 3: Goal health (SMALL structural-momentum voice) -----------
+  // The ONLY place the goal-health model feeds alignment, and deliberately
+  // minor. graced=false so a brand-new empty goal contributes its true 0 here,
+  // not the 50 birth-credit floor.
+  let health: number | null = null;
+  if (anyBehaviour) {
+    let sum = 0;
+    for (const g of allTagged) {
+      sum += g.horizon === 'long'
+        ? vitalityFor(g, goals, habits, 0, false).health
+        : g.horizon === 'ongoing'
+          ? ongoingGoalMetrics(g, goals, habits, 0, false).health
+          : stGoalMetrics(g, goals, habits, 0, false).health;
+    }
+    health = sum / allTagged.length;
+  }
+
+  // --- Element 4: Consistency (habit upkeep — kept vs skipped) ------------
+  // Per tagged habit over the recent window: kept / (kept + skipped). Only
+  // habits with activity in the window count; N/A when none do.
+  let consistency: number | null = null;
+  {
+    const windowStart = toDateStr(new Date(now - VA_WINDOW_DAYS * DAY));
+    let kept = 0, skipped = 0;
+    for (const h of taggedHabits) {
+      if (h.kind !== 'habit') continue;
+      kept    += (h.completions ?? []).filter((d) => d >= windowStart).length;
+      skipped += (h.skippedDates ?? []).filter((d) => d >= windowStart).length;
+    }
+    if (kept + skipped > 0) consistency = kept / (kept + skipped);
+  }
+
+  // --- Blend: weighted average over the PRESENT elements (renormalised) ---
+  // Missing elements drop out and the rest re-share the weight, so reflection's
+  // relative dominance holds no matter which elements exist.
+  const parts: Array<[value: number, weight: number]> = [];
+  if (reflection  !== null) parts.push([reflection,  VA_WEIGHTS.reflection]);
+  if (actions     !== null) parts.push([actions,     VA_WEIGHTS.actions]);
+  if (health      !== null) parts.push([health,      VA_WEIGHTS.health]);
+  if (consistency !== null) parts.push([consistency, VA_WEIGHTS.consistency]);
+
+  if (parts.length === 0) return 0;
+  const wTotal = parts.reduce((s, [, w]) => s + w, 0);
+  let score = parts.reduce((s, [v, w]) => s + v * w, 0) / wTotal;
+
+  // Behaviour without any reflection can't read as fully aligned.
+  if (reflection === null) score = Math.min(score, VA_NO_REFLECTION_CAP);
+
   return score * 10; // 0–10
 }
 
@@ -3161,6 +3258,7 @@ function computeHealth(
 
 export const __test_computeHealth = computeHealth;
 export const __test_toggleHabitCompletion = toggleHabitCompletion;
+export const __test_valueAlignmentScore = valueAlignmentScore;
 
 /**
  * Done = weighted count ratio across sub-goals, habits, and tasks.

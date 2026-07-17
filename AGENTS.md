@@ -1,5 +1,36 @@
 # Align App Agent Handoff
 
+## Value Alignment Model (decoupled from goal health, 2026-07)
+
+`valueAlignmentScore` (`src/App.tsx`) was rewritten to be **separate** from goal
+health. It used to be a flat 50/50 blend of reflection + goal health, so tuning
+goal health silently moved alignment. It's now **reflection-first**: a weighted
+average of up to four 0–1 elements, only the ones with data participating
+(weights **renormalise** over what's present, so relative dominance holds):
+
+- **Reflection 0.55** — decayed weekly self-rating (`decayedAvg/3`). The anchor.
+- **Lived actions 0.25** — its OWN saturating, ~4-week-decay tally of completions
+  on tagged goals (sub-goal 3 > task 1 ≈ habit-day 1; skips subtract). NOT
+  `computeHealth`.
+- **Goal health 0.12** — avg `computeHealth` across tagged goals (graced=false).
+  Deliberately a small voice, so goal-health tuning barely moves alignment.
+- **Consistency 0.08** — habit-days kept vs skipped on tagged habits, 28d window.
+
+Key rules:
+- Behavioural elements (actions/health) are **N/A until there's judgeable
+  behaviour** (`anyBehaviour`, via the shared maturity gates `taskCountsInPace`
+  /`habitCountsYet`/completion+skip presence). So adding an empty goal never
+  drags alignment down; a matured-but-undone habit or an overdue task flips them
+  on and then reads low (real neglect still shows).
+- **No-reflection cap 0.7**: with zero reflections, behaviour alone can't read as
+  fully aligned.
+- Weights/constants (`VA_WEIGHTS`, `VA_NO_REFLECTION_CAP`, `VA_ACTION_K`,
+  `VA_ACT`, `VA_HALF_LIFE_DAYS`, `VA_WINDOW_DAYS`) live above the function, meant
+  to be tuned. Tests: `src/App.alignment.test.ts`.
+- Known behaviour: the N/A→0 transition when the first bad-behaviour signal
+  appears (e.g. one overdue task) can drop alignment a couple of points — a
+  deliberate "you now have work you're not doing" signal, tune via weights.
+
 ## Goal Health Model (rewritten 2026-07)
 
 Goal health was fully rewritten from the old multi-dimension blend (structure /
