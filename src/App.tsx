@@ -2996,6 +2996,11 @@ const VA_NO_REFLECTION_CAP = 0.7;
 /** Lived-actions half-saturation: ~this many decayed points ≈ 0.5 (rewards
  *  living the value, not grinding throughput). */
 const VA_ACTION_K = 4;
+/** Behaviour-confidence half-saturation. The behavioural elements' weights ramp
+ *  in with a confidence factor ρ = evidence / (evidence + this), so the first
+ *  bit of judgeable behaviour (e.g. one overdue task) barely counts and grows
+ *  smoothly toward full weight — no N/A→full cliff. Higher = gentler ramp. */
+const VA_CONFIDENCE_K = 4;
 /** Lived-action point values — milestone > task ≈ habit-day (mirrors health's
  *  ordering, but its OWN tally, not computeHealth). */
 const VA_ACT = { sub: 3, task: 1, habitDay: 1 } as const;
@@ -3035,21 +3040,26 @@ function valueAlignmentScore(
   const allTagged = [...tagged, ...inherited];
   const taggedGoalIds = new Set(allTagged.map((g) => g.id));
   const taggedHabits = habits.filter((h) => taggedGoalIds.has(h.goalId));
+  const hasStructure = allTagged.length > 0;
 
-  // Behavioural elements are judged only once there's something to judge. A
-  // brand-new, un-acted-on goal has no behaviour, so the behavioural elements
-  // stay N/A and CAN'T drag alignment down — same "adding structure never
-  // lowers your score" rule the goal-health model follows (via the shared
-  // maturity gates). Neglect still shows: a matured-but-undone habit or an
-  // overdue task flips this on, and then a near-zero tally reads as low.
-  const anyBehaviour =
-    allTagged.some((g) => g.completedAt) ||
-    taggedHabits.some((h) =>
-      h.kind === 'task'
-        ? (h.completed || taskCountsInPace(h, now))
-        : ((h.completions?.length ?? 0) > 0
-          || (h.skippedDates?.length ?? 0) > 0
-          || habitCountsYet(h, now)));
+  // Behaviour confidence (ρ, 0–1): how much judgeable behaviour this value has.
+  // It scales the behavioural elements' WEIGHTS in the blend, so they ramp in
+  // smoothly rather than snapping on. A brand-new, un-acted-on goal has ρ≈0 —
+  // behaviour can't drag alignment down (same "adding structure never lowers
+  // your score" rule the goal-health model follows, via the shared maturity
+  // gates). One overdue task or a single matured-undone habit is a little
+  // evidence (small ρ, gentle dip); an established value saturates ρ→1 and uses
+  // the full behavioural weight. Neglect still shows — it just eases in.
+  let evidence = 0;
+  for (const g of allTagged) if (g.completedAt) evidence += 1;
+  for (const h of taggedHabits) {
+    if (h.kind === 'task') {
+      if (h.completed || taskCountsInPace(h, now)) evidence += 1; // done or overdue
+    } else if (habitCountsYet(h, now) || (h.skippedDates?.length ?? 0) > 0) {
+      evidence += 1; // a habit that's had a real chance to be kept
+    }
+  }
+  const confidence = evidence / (evidence + VA_CONFIDENCE_K); // 0 when no evidence
 
   // --- Element 1: Reflection (the anchor) --------------------------------
   const hasRefl = reflections.some((r) => r.scores[key] !== undefined);
@@ -3060,7 +3070,7 @@ function valueAlignmentScore(
   // formula, not goal health. Milestone (sub-goal) > task ≈ habit-day; explicit
   // skips lightly subtract.
   let actions: number | null = null;
-  if (anyBehaviour) {
+  if (hasStructure) {
     let raw = 0;
     for (const g of allTagged) if (g.completedAt) raw += VA_ACT.sub * decay(g.completedAt);
     for (const h of taggedHabits) {
@@ -3080,7 +3090,7 @@ function valueAlignmentScore(
   // minor. graced=false so a brand-new empty goal contributes its true 0 here,
   // not the 50 birth-credit floor.
   let health: number | null = null;
-  if (anyBehaviour) {
+  if (hasStructure) {
     let sum = 0;
     for (const g of allTagged) {
       sum += g.horizon === 'long'
@@ -3109,15 +3119,18 @@ function valueAlignmentScore(
 
   // --- Blend: weighted average over the PRESENT elements (renormalised) ---
   // Missing elements drop out and the rest re-share the weight, so reflection's
-  // relative dominance holds no matter which elements exist.
+  // relative dominance holds no matter which elements exist. The three
+  // behavioural elements have their weight scaled by `confidence`, so they ramp
+  // in with evidence instead of snapping on (softens the N/A→present step). At
+  // ρ≈0 only reflection is left; at ρ→1 the nominal weights apply.
   const parts: Array<[value: number, weight: number]> = [];
   if (reflection  !== null) parts.push([reflection,  VA_WEIGHTS.reflection]);
-  if (actions     !== null) parts.push([actions,     VA_WEIGHTS.actions]);
-  if (health      !== null) parts.push([health,      VA_WEIGHTS.health]);
-  if (consistency !== null) parts.push([consistency, VA_WEIGHTS.consistency]);
+  if (actions     !== null) parts.push([actions,     VA_WEIGHTS.actions * confidence]);
+  if (health      !== null) parts.push([health,      VA_WEIGHTS.health * confidence]);
+  if (consistency !== null) parts.push([consistency, VA_WEIGHTS.consistency * confidence]);
 
-  if (parts.length === 0) return 0;
   const wTotal = parts.reduce((s, [, w]) => s + w, 0);
+  if (wTotal === 0) return 0; // no reflection and no behavioural confidence yet
   let score = parts.reduce((s, [v, w]) => s + v * w, 0) / wTotal;
 
   // Behaviour without any reflection can't read as fully aligned.

@@ -17,19 +17,21 @@ average of up to four 0–1 elements, only the ones with data participating
 - **Consistency 0.08** — habit-days kept vs skipped on tagged habits, 28d window.
 
 Key rules:
-- Behavioural elements (actions/health) are **N/A until there's judgeable
-  behaviour** (`anyBehaviour`, via the shared maturity gates `taskCountsInPace`
-  /`habitCountsYet`/completion+skip presence). So adding an empty goal never
-  drags alignment down; a matured-but-undone habit or an overdue task flips them
-  on and then reads low (real neglect still shows).
+- **Behaviour confidence ramp**: the three behavioural elements' weights are
+  scaled by `confidence` ρ = evidence / (evidence + `VA_CONFIDENCE_K`), where
+  evidence counts judgeable signals (completed sub-goals/tasks, overdue tasks,
+  matured/skipped habits — via the shared maturity gates `taskCountsInPace`
+  /`habitCountsYet`). So they ramp in smoothly instead of snapping on: a
+  brand-new empty goal has ρ≈0 (adding structure never drags alignment down),
+  one overdue task is small evidence (gentle dip), an established value
+  saturates ρ→1 (full behavioural weight). This replaced an earlier hard
+  `anyBehaviour` gate that caused an N/A→0 cliff (~2.6-pt drop on one overdue
+  task; now ~0.8).
 - **No-reflection cap 0.7**: with zero reflections, behaviour alone can't read as
   fully aligned.
 - Weights/constants (`VA_WEIGHTS`, `VA_NO_REFLECTION_CAP`, `VA_ACTION_K`,
-  `VA_ACT`, `VA_HALF_LIFE_DAYS`, `VA_WINDOW_DAYS`) live above the function, meant
-  to be tuned. Tests: `src/App.alignment.test.ts`.
-- Known behaviour: the N/A→0 transition when the first bad-behaviour signal
-  appears (e.g. one overdue task) can drop alignment a couple of points — a
-  deliberate "you now have work you're not doing" signal, tune via weights.
+  `VA_CONFIDENCE_K`, `VA_ACT`, `VA_HALF_LIFE_DAYS`, `VA_WINDOW_DAYS`) live above
+  the function, meant to be tuned. Tests: `src/App.alignment.test.ts`.
 
 ## Goal Health Model (rewritten 2026-07)
 

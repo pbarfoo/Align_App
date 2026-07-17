@@ -134,6 +134,18 @@ describe('value alignment — reflection-first, multi-element blend', () => {
     expect(Math.abs(clean - withOverdue)).toBeLessThan(1.0);
   });
 
+  it('the behaviour ramp softens the first-signal dip — one overdue task eases alignment down, not a cliff', () => {
+    vi.setSystemTime(now);
+    const refls = [refl(2)];
+    // No behaviour yet → reflection carries the score fully (empty goal).
+    const idle = score([goal()], [], refls);
+    // A single overdue task is only a little evidence (confidence ρ = 1/(1+K)
+    // is small), so its behavioural weight is small and the dip is gentle.
+    const oneOverdue = score([goal()], [task({ id: 'late', dueDate: ymd(now - 20 * day) })], refls);
+    expect(oneOverdue).toBeLessThan(idle); // it does register...
+    expect(idle - oneOverdue).toBeLessThan(1.2); // ...but only gently (was ~2.6 with a hard gate)
+  });
+
   it('behaviour without any reflection is capped below "fully aligned"', () => {
     vi.setSystemTime(now);
     // Heavy recent activity, but the user has never reflected on this value.
