@@ -2826,3 +2826,28 @@ h1 {
   cursor: pointer;
 }
 .date-input-wrap:focus-within .date-facade { outline: 1px solid var(--accent); }
+/* Clear (✕) button: sits above the transparent overlay so it stays tappable,
+   letting a set date/time be wiped back to blank. */
+.date-clear {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--surface-1, rgba(0, 0, 0, 0.25));
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+.date-clear:hover { color: var(--text); background: var(--line); }
+/* Keep the facade's value text from sliding under the clear button. */
+.date-input-wrap:has(.date-clear) .date-facade { padding-right: 38px; }
