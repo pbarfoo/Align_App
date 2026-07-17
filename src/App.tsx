@@ -584,8 +584,8 @@ function formatTimeDisplay(v: string): string {
   const h12 = h % 12 === 0 ? 12 : h % 12;
   return `${h12}:${String(min ?? 0).padStart(2, '0')} ${ampm}`;
 }
-function DateTimeField({ type, value, onChange, label, compact }: {
-  type: 'date' | 'time'; value: string; onChange: (v: string) => void; label: string; compact?: boolean;
+function DateTimeField({ type, value, onChange, label, compact, clearable }: {
+  type: 'date' | 'time'; value: string; onChange: (v: string) => void; label: string; compact?: boolean; clearable?: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const icon = type === 'date' ? '📅' : '🕐';
@@ -618,17 +618,30 @@ function DateTimeField({ type, value, onChange, label, compact }: {
           onChange={(e) => onChange(e.target.value)}
           className="date-input-overlay"
         />
+        {clearable && value && (
+          <button
+            type="button"
+            className="date-clear"
+            aria-label={`Clear ${label.toLowerCase()}`}
+            title={`Clear ${label.toLowerCase()}`}
+            // Sits above the overlay; stop the click bubbling so it doesn't also
+            // open the picker on the wrapping label.
+            onClick={(e) => { e.stopPropagation(); onChange(''); }}
+          >
+            ✕
+          </button>
+        )}
       </span>
     </label>
   );
 }
 
-function DateBtn({ value, onChange, placeholder, compact }: { value: string; onChange: (v: string) => void; placeholder: string; compact?: boolean }) {
-  return <DateTimeField type="date" value={value} onChange={onChange} label={placeholder} compact={compact} />;
+function DateBtn({ value, onChange, placeholder, compact, clearable }: { value: string; onChange: (v: string) => void; placeholder: string; compact?: boolean; clearable?: boolean }) {
+  return <DateTimeField type="date" value={value} onChange={onChange} label={placeholder} compact={compact} clearable={clearable} />;
 }
 
-function TimeBtn({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
-  return <DateTimeField type="time" value={value} onChange={onChange} label={placeholder} />;
+function TimeBtn({ value, onChange, placeholder, clearable }: { value: string; onChange: (v: string) => void; placeholder: string; clearable?: boolean }) {
+  return <DateTimeField type="time" value={value} onChange={onChange} label={placeholder} clearable={clearable} />;
 }
 
 /* ---------------- Foundation ---------------- */
@@ -1797,8 +1810,8 @@ function AddActionForm({
         </>
       ) : (
         <div className="field-row">
-          <DateBtn value={dueDate} onChange={setDueDate} placeholder="Due date" />
-          <TimeBtn value={dueTime} onChange={setDueTime} placeholder="Due time" />
+          <DateBtn value={dueDate} onChange={setDueDate} placeholder="Due date" clearable />
+          <TimeBtn value={dueTime} onChange={setDueTime} placeholder="Due time" clearable />
         </div>
       )}
 
@@ -2360,8 +2373,9 @@ function Today({
   };
 
   const rescheduleTask = (id: string, newDate: string) => {
-    if (!newDate) return;
-    setHabits((prev) => prev.map((h) => (h.id === id ? { ...h, dueDate: newDate } : h)));
+    // An empty value clears the due date (task becomes undated) rather than
+    // being ignored.
+    setHabits((prev) => prev.map((h) => (h.id === id ? { ...h, dueDate: newDate || undefined } : h)));
   };
 
   const deleteTask = (id: string) => {
@@ -2753,6 +2767,7 @@ function Today({
                     <div className="triage-actions">
                       <DateBtn
                         compact
+                        clearable
                         value={task.dueDate ?? ''}
                         onChange={(v) => rescheduleTask(task.id, v)}
                         placeholder="Reschedule"
