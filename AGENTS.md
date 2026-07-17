@@ -32,6 +32,14 @@ Key rules:
 - Weights/constants (`VA_WEIGHTS`, `VA_NO_REFLECTION_CAP`, `VA_ACTION_K`,
   `VA_CONFIDENCE_K`, `VA_ACT`, `VA_HALF_LIFE_DAYS`, `VA_WINDOW_DAYS`) live above
   the function, meant to be tuned. Tests: `src/App.alignment.test.ts`.
+- **Status tiers (UI cue for "which values need alignment")**:
+  `valueAlignmentTier` buckets each value into `untracked` / `attention` /
+  `developing` / `aligned` (thresholds `VA_TIER_ATTENTION` 40, `VA_TIER_ALIGNED`
+  70; `untracked` = no reflection AND no tagged goal → "not yet rated", distinct
+  from a real low score). `taggedGoalsFor` was extracted so score + tier share
+  the tag logic. The ReviewPanel renders a top "N values need attention"
+  callout, a per-row status dot + tier-coloured bar, and a "Needs attention"
+  pill; `VA_TIER_META` holds tier labels/colours.
 
 ## Goal Health Model (rewritten 2026-07)
 

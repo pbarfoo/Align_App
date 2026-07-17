@@ -3009,6 +3009,60 @@ const VA_ACT = { sub: 3, task: 1, habitDay: 1 } as const;
 const VA_HALF_LIFE_DAYS = 28;
 const VA_WINDOW_DAYS = 28;
 
+/** Goals that carry a value (directly tagged, plus sub-goals inheriting it from
+ *  ANY tagged parent — long, short, ongoing). Shared by the score and status. */
+function taggedGoalsFor(key: string, goals: Goal[], domains: Domain[]): Goal[] {
+  const colonIdx = key.indexOf(':');
+  const domainId = key.slice(0, colonIdx);
+  const valueName = key.slice(colonIdx + 1);
+  const dom = domains.find((d) => d.id === domainId);
+  const vi = dom ? dom.values.indexOf(valueName) : -1;
+
+  const tagged = goals.filter(
+    (g) => g.domainId === domainId && vi >= 0 && g.valueIndexes.includes(vi),
+  );
+  const taggedParentIds = new Set(tagged.map((g) => g.id));
+  const inherited = goals.filter(
+    (g) => g.parentGoalId && taggedParentIds.has(g.parentGoalId)
+      && !tagged.some((t) => t.id === g.id),
+  );
+  return [...tagged, ...inherited];
+}
+
+/** Alignment status tier for a value, driving the UI's "which values need
+ *  attention" cues. `untracked` = no reflection AND no tagged goal yet (nothing
+ *  to judge — shown as "not yet rated", distinct from a genuinely low score). */
+type VaTier = 'untracked' | 'attention' | 'developing' | 'aligned';
+const VA_TIER_ATTENTION = 40; // below this % → needs attention
+const VA_TIER_ALIGNED = 70;   // at/above this % → aligned
+
+const VA_TIER_META: Record<VaTier, { label: string; color: string }> = {
+  attention:  { label: 'Needs attention', color: '#e0663c' }, // red-orange
+  developing: { label: 'Developing',      color: '#e0a63c' }, // amber
+  aligned:    { label: 'Aligned',         color: '#5bb85b' }, // green
+  untracked:  { label: 'Not yet rated',   color: 'var(--muted)' },
+};
+
+function valueAlignmentTier(
+  key: string,
+  goals: Goal[],
+  habits: Habit[],
+  reflections: ReflectionEntry[],
+  domains: Domain[],
+): { pct: number; tier: VaTier } {
+  const pct = valueAlignmentScore(key, goals, habits, reflections, domains) * 10; // 0–100
+  const hasRefl = reflections.some((r) => r.scores[key] !== undefined);
+  const tracked = hasRefl || taggedGoalsFor(key, goals, domains).length > 0;
+  const tier: VaTier = !tracked
+    ? 'untracked'
+    : pct < VA_TIER_ATTENTION
+      ? 'attention'
+      : pct < VA_TIER_ALIGNED
+        ? 'developing'
+        : 'aligned';
+  return { pct, tier };
+}
+
 function valueAlignmentScore(
   key: string,
   goals: Goal[],
@@ -3021,23 +3075,7 @@ function valueAlignmentScore(
   const decay = (ms: number) => Math.pow(0.5, Math.max(0, (now - ms) / DAY) / VA_HALF_LIFE_DAYS);
   const dayMs = (d: string) => new Date(d + 'T12:00').getTime();
 
-  const colonIdx = key.indexOf(':');
-  const domainId = key.slice(0, colonIdx);
-  const valueName = key.slice(colonIdx + 1);
-  const dom = domains.find((d) => d.id === domainId);
-  const vi = dom ? dom.values.indexOf(valueName) : -1;
-
-  // Goals directly tagged with this value, plus sub-goals that inherit it from
-  // ANY tagged parent (long, short, ongoing).
-  const tagged = goals.filter(
-    (g) => g.domainId === domainId && vi >= 0 && g.valueIndexes.includes(vi),
-  );
-  const taggedParentIds = new Set(tagged.map((g) => g.id));
-  const inherited = goals.filter(
-    (g) => g.parentGoalId && taggedParentIds.has(g.parentGoalId)
-      && !tagged.some((t) => t.id === g.id),
-  );
-  const allTagged = [...tagged, ...inherited];
+  const allTagged = taggedGoalsFor(key, goals, domains);
   const taggedGoalIds = new Set(allTagged.map((g) => g.id));
   const taggedHabits = habits.filter((h) => taggedGoalIds.has(h.goalId));
   const hasStructure = allTagged.length > 0;
@@ -3272,6 +3310,7 @@ function computeHealth(
 export const __test_computeHealth = computeHealth;
 export const __test_toggleHabitCompletion = toggleHabitCompletion;
 export const __test_valueAlignmentScore = valueAlignmentScore;
+export const __test_valueAlignmentTier = valueAlignmentTier;
 
 /**
  * Done = weighted count ratio across sub-goals, habits, and tasks.
@@ -3952,6 +3991,27 @@ function ReviewPanel({
 
           {/* Domain-grouped value breakdown */}
           <div className="review-values-section">
+            {(() => {
+              // Which values need attention, lowest first — the at-a-glance cue.
+              const needsAttention = domains
+                .flatMap((d) => d.values.map((v) => ({
+                  label: v,
+                  ...valueAlignmentTier(`${d.id}:${v}`, goals, habits, reflections, domains),
+                })))
+                .filter((x) => x.tier === 'attention')
+                .sort((a, b) => a.pct - b.pct);
+              if (needsAttention.length === 0) return null;
+              const n = needsAttention.length;
+              return (
+                <div className="review-attention-callout">
+                  <span className="review-attention-icon">⚠</span>
+                  <span>
+                    <strong>{n} value{n > 1 ? 's' : ''} need{n > 1 ? '' : 's'} attention:</strong>{' '}
+                    {needsAttention.map((x) => x.label).join(', ')}
+                  </span>
+                </div>
+              );
+            })()}
             {domains.map((d) => {
               const domainColor = DOMAIN_COLORS[d.id] ?? 'var(--accent)';
               const allValueRows = d.values.map((v) => ({ label: v, key: `${d.id}:${v}` }));
@@ -3975,19 +4035,29 @@ function ReviewPanel({
                     </span>
                   </button>
                   {!isCollapsed && allValueRows.map(({ label, key }) => {
-                    const score = valueAlignmentScore(key, goals, habits, reflections, domains);
-                    const pct = score / 10;
+                    const { pct, tier } = valueAlignmentTier(key, goals, habits, reflections, domains);
+                    const { label: tierLabel, color: tierColor } = VA_TIER_META[tier];
                     return (
                       <div key={key} className="review-value-row">
-                        <div className="review-value-btn">
-                          <span className="review-value-name">{label}</span>
+                        <div className="review-value-btn" data-tier={tier}>
+                          <span className="review-value-name">
+                            <span className="review-value-dot" style={{ background: tierColor }} />
+                            {label}
+                            {tier === 'attention' && (
+                              <span className="review-value-pill" style={{ color: tierColor, borderColor: tierColor }}>
+                                {tierLabel}
+                              </span>
+                            )}
+                          </span>
                           <div className="review-value-bar-wrap">
                             <div
                               className="review-value-bar"
-                              style={{ width: `${Math.round(pct * 100)}%`, background: domainColor }}
+                              style={{ width: `${Math.round(pct)}%`, background: tierColor }}
                             />
                           </div>
-                          <span className="review-value-score">{Math.round(pct * 100)}%</span>
+                          <span className="review-value-score">
+                            {tier === 'untracked' ? '—' : `${Math.round(pct)}%`}
+                          </span>
                         </div>
                       </div>
                     );
@@ -3996,7 +4066,7 @@ function ReviewPanel({
               );
             })}
             <div className="review-decay-note">
-              Score 0–100%: reflection 50%, goal &amp; habit activity 50%
+              Score 0–100%, reflection-first. Bar colour: red needs attention, amber developing, green aligned.
             </div>
           </div>
 

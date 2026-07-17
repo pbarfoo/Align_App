@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { __test_valueAlignmentScore as vaScore } from './App';
+import { __test_valueAlignmentScore as vaScore, __test_valueAlignmentTier as vaTier } from './App';
 import type { Domain, Goal, Habit, ReflectionEntry } from './data';
 
 const day = 86_400_000;
@@ -171,6 +171,20 @@ describe('value alignment — reflection-first, multi-element blend', () => {
       refls,
     );
     expect(skipped).toBeLessThan(kept);
+  });
+
+  it('tiers a value: untracked when nothing exists, attention when low, aligned when high', () => {
+    vi.setSystemTime(now);
+    const tier = (goals: Goal[], habits: Habit[], reflections: ReflectionEntry[]) =>
+      vaTier(KEY, goals, habits, reflections, domains).tier;
+
+    // No reflection and no tagged goal → not yet rated (distinct from a low score).
+    expect(tier([], [], [])).toBe('untracked');
+    // A tagged goal but no reflection → tracked; empty goal reads low → attention.
+    expect(tier([goal()], [], [])).toBe('attention');
+    // A weak self-rating → attention; a strong one → aligned.
+    expect(tier([], [], [refl(0.9)])).toBe('attention'); // ~30%
+    expect(tier([], [], [refl(3)])).toBe('aligned'); // 100%
   });
 
   it('recent reflections outweigh older ones (decayed average)', () => {
