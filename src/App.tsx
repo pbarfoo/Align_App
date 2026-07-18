@@ -3287,6 +3287,7 @@ function computeHealth(
 export const __test_computeHealth = computeHealth;
 export const __test_toggleHabitCompletion = toggleHabitCompletion;
 export const __test_valueAlignmentScore = valueAlignmentScore;
+export const __test_isHabitScheduledToday = isHabitScheduledToday;
 
 /**
  * Done = weighted count ratio across sub-goals, habits, and tasks.
@@ -4203,8 +4204,13 @@ function isHabitScheduledToday(h: Habit): boolean {
       return day !== 0 && day !== 6;
     case 'specific-days':
       return (h.specificDays ?? []).includes(day);
-    // weekly / monthly / yearly / custom are open commitments: shown until
-    // completed for the current period, then they fall into Done.
+    case 'weekly':
+      // Anchored to the weekday of its startDate (matching the streak/missed
+      // logic). Shown only on that weekday; if no startDate is set, it has no
+      // anchor, so fall back to showing it every day.
+      return h.startDate ? new Date(h.startDate + 'T12:00').getDay() === day : true;
+    // monthly / yearly / custom are open commitments: shown until completed for
+    // the current period, then they fall into Done.
     default:
       return true;
   }
