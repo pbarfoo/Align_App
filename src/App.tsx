@@ -4260,10 +4260,13 @@ function isNeglected(h: Habit): boolean {
 /**
  * Returns missed scheduled dates (YYYY-MM-DD), oldest first, that the habit was
  * due on but never logged. Works for EVERY cadence:
- *   - calendar-day schedules (daily / weekdays / specific-days): the recent
- *     scheduled weekdays that elapsed un-logged, up to 2;
- *   - period schedules (weekly / monthly / yearly / custom): the most recent
- *     period that fully elapsed with no completion in it.
+ *   - calendar-day schedules (daily / weekdays / specific-days / weekly): the
+ *     recent scheduled weekdays that elapsed un-logged, up to 2. A weekly habit
+ *     is anchored to the weekday of its startDate, so "Weekly on Friday" flags
+ *     the moment its Friday passes un-logged — it does NOT wait for the whole
+ *     ISO week to elapse (which left a missed Friday invisible until Monday);
+ *   - period schedules (monthly / yearly / custom): the most recent period that
+ *     fully elapsed with no completion in it.
  * A habit never flags days before its startDate, so a habit created today never
  * shows a spurious "missed yesterday" chip.
  */
@@ -4278,11 +4281,16 @@ function getGraceDays(h: Habit): string[] {
   const rec = h.recurrence ?? 'daily';
 
   // ---- Calendar-day cadences: enumerate the actual missed weekday occurrences.
-  if (rec === 'daily' || rec === 'weekdays' || rec === 'specific-days') {
+  // `weekly` is treated as a specific-weekday schedule anchored to its startDate,
+  // so a "Weekly on Friday" habit flags its missed Friday the next day rather
+  // than waiting for the whole ISO week to elapse.
+  if (rec === 'daily' || rec === 'weekdays' || rec === 'specific-days' || rec === 'weekly') {
+    const weeklyDow = startDateStr ? new Date(startDateStr + 'T12:00').getDay() : today.getDay();
     const isScheduled = (d: Date): boolean => {
       const dow = d.getDay(); // 0=Sun … 6=Sat
       if (rec === 'weekdays') return dow !== 0 && dow !== 6;
       if (rec === 'specific-days') return (h.specificDays ?? []).includes(dow);
+      if (rec === 'weekly') return dow === weeklyDow;
       return true; // daily
     };
     const missed: string[] = [];
@@ -4301,7 +4309,8 @@ function getGraceDays(h: Habit): string[] {
     return missed.reverse(); // oldest first so user processes in order
   }
 
-  // ---- Period cadences: flag the previous period if it elapsed with no log.
+  // ---- Period cadences (monthly / yearly / custom): flag the previous period
+  // if it elapsed with no log.
   if (isHabitDoneThisPeriod(h)) return [];            // current period satisfied
   const interval = Math.round(naturalIntervalDays(h));
   const prev = new Date(today);
