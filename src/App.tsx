@@ -1288,7 +1288,7 @@ function Align({
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setHabits((prev) => prev.map((x) =>
-                                  x.id !== h.id ? x : { ...x, startDate: dayAfter(frozenDate), skippedDates: [...(x.skippedDates ?? []), frozenDate] }
+                                  x.id !== h.id ? x : { ...x, ...skipDayPatch(x, frozenDate) }
                                 ));
                               }}
                             >
@@ -1575,7 +1575,7 @@ function ShortWithActions({
                       title="Skip this day — clears it without marking complete"
                       onClick={(e) => {
                         e.stopPropagation();
-                        onEditHabit(h.id, { startDate: dayAfter(frozenDate), skippedDates: [...(h.skippedDates ?? []), frozenDate] });
+                        onEditHabit(h.id, skipDayPatch(h, frozenDate));
                       }}
                     >
                       <CalIcon /> {graceLabel} ↺
@@ -2592,7 +2592,7 @@ function Today({
                 onClick={(e) => {
                   e.stopPropagation();
                   setHabits((prev) => prev.map((x) =>
-                    x.id !== h.id ? x : { ...x, startDate: dayAfter(frozenDate), skippedDates: [...(x.skippedDates ?? []), frozenDate] }
+                    x.id !== h.id ? x : { ...x, ...skipDayPatch(x, frozenDate) }
                   ));
                 }}
               >
@@ -4134,6 +4134,27 @@ function dayAfter(dateStr: string): string {
   const d = new Date(dateStr + 'T12:00');
   d.setDate(d.getDate() + 1);
   return toDateStr(d);
+}
+
+/**
+ * The patch the skip (↺) pill applies to a habit to dismiss one missed day.
+ * Always records the day in skippedDates. For calendar-anchored cadences
+ * (daily / weekdays / specific-days / weekly) that is ALL it does — the
+ * missed-day walk-back stops at a skipped date, and startDate must NOT move:
+ * for weekly it is the schedule's weekday anchor, so advancing it by one day
+ * per skip rotated the habit onto weekdays it was never scheduled for (label
+ * and pills drifting Wed → Thu → Fri with each click). Period cadences
+ * (monthly / yearly / custom) still advance startDate past the dismissed day,
+ * which their rolling-window detection relies on.
+ */
+function skipDayPatch(h: Habit, frozenDate: string): Partial<Habit> {
+  const rec = h.recurrence ?? 'daily';
+  const calendarCadence =
+    rec === 'daily' || rec === 'weekdays' || rec === 'specific-days' || rec === 'weekly';
+  return {
+    ...(calendarCadence ? {} : { startDate: dayAfter(frozenDate) }),
+    skippedDates: [...(h.skippedDates ?? []), frozenDate],
+  };
 }
 
 function dateInCurrentPeriod(dateStr: string, h: Habit): boolean {
