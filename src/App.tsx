@@ -118,7 +118,7 @@ function habitToRow(h: Habit, userId: string): Row {
 }
 function habitFromRow(row: Row): Habit {
   const completions = Array.isArray(row.completions) ? row.completions : [];
-  return {
+  const h: Habit = {
     id: row.id, goalId: row.goal_id,
     title: row.title, kind: row.kind as 'habit' | 'task',
     doneToday: row.done_today ?? false,
@@ -137,6 +137,12 @@ function habitFromRow(row: Row): Habit {
     streak: row.streak ?? 0,
     completions,
   };
+  // Streak is derived state. The stored `streak` column is only written when a
+  // habit is toggled and never decays, so a broken streak keeps its old value
+  // and the coach reports e.g. "15 days in a row" long after it lapsed.
+  // Recompute it live from completions on load so it always reflects today.
+  if (h.kind === 'habit') h.streak = computeStreakFromCompletions(completions, h);
+  return h;
 }
 
 function reflToRow(r: ReflectionEntry, userId: string): Row {
@@ -3312,6 +3318,7 @@ export const __test_valueAlignmentScore = valueAlignmentScore;
 export const __test_isHabitScheduledToday = isHabitScheduledToday;
 export const __test_focusFlagDate = focusFlagDate;
 export const __test_isFocusFlagActive = isFocusFlagActive;
+export const __test_computeStreakFromCompletions = computeStreakFromCompletions;
 
 /**
  * Done = weighted count ratio across sub-goals, habits, and tasks.
@@ -4314,7 +4321,12 @@ function computeStreakFromCompletions(completions: string[], h: Habit): number {
     if (gapDays < 0) continue; // future date, skip
     if (gapDays <= interval + graceDays) {
       streak++;
-      cursor = new Date(day.getTime() - interval * 86_400_000);
+      // Advance to the matched completion itself, NOT day - interval. Using
+      // day - interval let the grace window compound: every step re-granted a
+      // fresh interval+grace of slack, so completions up to 2*interval+grace
+      // apart (4 days for a daily habit) counted as "in a row". Anchoring the
+      // cursor to the actual day caps each gap at interval+grace as intended.
+      cursor = new Date(day.getTime());
     } else {
       break;
     }
