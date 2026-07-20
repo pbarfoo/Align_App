@@ -601,7 +601,12 @@ function DateTimeField({ type, value, onChange, label, compact, clearable }: {
     }
   };
   return (
-    <label className={`date-field${compact ? ' date-field--compact' : ''}`}>
+    // Deliberately NOT a <label>: a label forwards any tap inside it — clear
+    // button included — to its input as a browser default action, and on iOS
+    // focusing a date input opens the picker and re-fills the value the ✕ had
+    // just cleared. Tap-to-open still works because the transparent input
+    // itself covers the whole field; the input carries an aria-label.
+    <span className={`date-field${compact ? ' date-field--compact' : ''}`}>
       {/* Caption above the field (skipped in compact mode, where the value is
           always present, e.g. rescheduling an existing due date). */}
       {!compact && <span className="date-field-label">{label}</span>}
@@ -624,12 +629,12 @@ function DateTimeField({ type, value, onChange, label, compact, clearable }: {
             className="date-clear"
             aria-label={`Clear ${label.toLowerCase()}`}
             title={`Clear ${label.toLowerCase()}`}
-            // Sits above the overlay. Besides stopping the bubble (which would
-            // hit openPicker), the DEFAULT action must die too: a click inside
-            // the wrapping <label> forwards focus to the date input, and on iOS
-            // a focused date input opens the picker and immediately re-fills
-            // the value that was just cleared.
+            // Sits above the overlay. Stop the bubble (which would hit
+            // openPicker) and the default on the press itself, so the tap
+            // can't focus the underlying date input — iOS opens the picker on
+            // focus and re-fills the value the ✕ just cleared.
             onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+            onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); inputRef.current?.blur(); onChange(''); }}
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
@@ -641,7 +646,7 @@ function DateTimeField({ type, value, onChange, label, compact, clearable }: {
           </button>
         )}
       </span>
-    </label>
+    </span>
   );
 }
 
@@ -3247,7 +3252,9 @@ function computeHealth(
   // sub-goals (real milestones); a pile of tasks/habits alone stays modest.
   const BUILD = { sub: 10, habit: 4, task: 2 };
   const DONE  = { sub: 40, habitDay: 4, task: 6, taskLate: 3 };
-  const MISS_HABIT = 7;  // per skipped / missed scheduled habit day
+  const MISS_HABIT = 1;  // per skipped / missed scheduled habit day — a gentle
+                         // ~1-point nudge; missing also forfeits the +4 the day
+                         // would have earned, so the real cost is already ~5.
   const OVERDUE    = 10; // per open overdue task, scaled by how late
 
   const tasks  = treeHabits.filter((h) => h.kind === 'task');

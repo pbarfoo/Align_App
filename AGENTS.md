@@ -51,7 +51,8 @@ down and any single edit only nudges it.
   health is driven mostly by sub-goals (real milestones).
 - **Completion**: sub-goal +40, habit-day +4, task +6 (late task +3) — decays
   from completion date. Worth more than build-out.
-- **Missed/skipped habit day**: −7 each, decaying.
+- **Missed/skipped habit day**: −1 each, decaying (softened from −7, 2026-07:
+  missing already forfeits the day's +4, so the felt cost is ~5).
 - **Open overdue task**: −10 scaled by lateness, present drag (no decay).
 - Gentle ±15%·focusStrength priority nudge at the end.
 - Only EXPLICIT skips (`skippedDates`) are penalised, not auto-detected pending
