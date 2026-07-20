@@ -624,9 +624,18 @@ function DateTimeField({ type, value, onChange, label, compact, clearable }: {
             className="date-clear"
             aria-label={`Clear ${label.toLowerCase()}`}
             title={`Clear ${label.toLowerCase()}`}
-            // Sits above the overlay; stop the click bubbling so it doesn't also
-            // open the picker on the wrapping label.
-            onClick={(e) => { e.stopPropagation(); onChange(''); }}
+            // Sits above the overlay. Besides stopping the bubble (which would
+            // hit openPicker), the DEFAULT action must die too: a click inside
+            // the wrapping <label> forwards focus to the date input, and on iOS
+            // a focused date input opens the picker and immediately re-fills
+            // the value that was just cleared.
+            onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              inputRef.current?.blur();
+              onChange('');
+            }}
           >
             ✕
           </button>
