@@ -63,7 +63,8 @@ export interface Habit {
   completed?: boolean;
   /** unix ms of last time this habit/task was checked off */
   completedAt?: number;
-  /** habit only: consecutive periods completed in a row */
+  /** habit only: consecutive periods completed in a row. Derived from
+   * `completions` on load (see habitFromRow) — not persisted to the DB. */
   streak?: number;
   /** habit only: "YYYY-MM-DD" strings for every logged completion */
   completions?: string[];

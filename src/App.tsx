@@ -112,7 +112,6 @@ function habitToRow(h: Habit, userId: string): Row {
     skipped_dates: h.skippedDates ?? null,
     completed: h.completed ?? null, completed_at: h.completedAt ?? null,
     created_at: h.createdAt ?? null,
-    streak: h.streak ?? 0,
     completions,
   };
 }
@@ -134,13 +133,13 @@ function habitFromRow(row: Row): Habit {
     completed: row.kind === 'task' ? !!row.completed : row.completed ?? undefined,
     completedAt: row.completed_at ?? undefined,
     createdAt: row.created_at ?? undefined,
-    streak: row.streak ?? 0,
+    streak: 0,
     completions,
   };
-  // Streak is derived state. The stored `streak` column is only written when a
-  // habit is toggled and never decays, so a broken streak keeps its old value
-  // and the coach reports e.g. "15 days in a row" long after it lapsed.
-  // Recompute it live from completions on load so it always reflects today.
+  // Streak is derived state, not persisted: recompute it live from completions
+  // on load so it always reflects today. (Persisting it went stale — a lapsed
+  // streak kept its old value, so the coach reported "15 days in a row" long
+  // after it ended. The DB `streak` column has been dropped accordingly.)
   if (h.kind === 'habit') h.streak = computeStreakFromCompletions(completions, h);
   return h;
 }
