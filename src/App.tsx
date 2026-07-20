@@ -1113,11 +1113,14 @@ function Align({
 
   // ☀ Flag / unflag a task as a priority for TODAY — surfaces it in the Today
   // tab's chosen-focus section. Day-scoped: focusDate holds the date it was
-  // flagged for, so flags naturally lapse at midnight.
+  // flagged for, so flags naturally lapse at midnight — except evening clicks
+  // (5 PM+) stamp tomorrow, so the flag holds through the whole next day.
   const todayStr = toDateStr(new Date());
   const toggleTaskFocus = (id: string) =>
     setHabits((prev) => prev.map((h) =>
-      h.id === id ? { ...h, focusDate: h.focusDate === todayStr ? undefined : todayStr } : h
+      h.id === id
+        ? { ...h, focusDate: isFocusFlagActive(h.focusDate, todayStr) ? undefined : focusFlagDate() }
+        : h
     ));
 
   const toggleGoalComplete = (id: string) =>
@@ -1301,8 +1304,8 @@ function Align({
                     <div className="node-ctrls">
                       {h.kind === 'task' && !h.completed && (
                         <button
-                          className={`node-sun${h.focusDate === todayStr ? ' on' : ''}`}
-                          title={h.focusDate === todayStr ? "Remove from today's focus" : "Focus on this today"}
+                          className={`node-sun${isFocusFlagActive(h.focusDate, todayStr) ? ' on' : ''}`}
+                          title={isFocusFlagActive(h.focusDate, todayStr) ? "Remove from today's focus" : "Focus on this today"}
                           onClick={(e) => { e.stopPropagation(); toggleTaskFocus(h.id); }}
                         ><SunIcon /></button>
                       )}
@@ -1587,8 +1590,8 @@ function ShortWithActions({
             <div className="node-ctrls">
               {h.kind === 'task' && !h.completed && (
                 <button
-                  className={`node-sun${h.focusDate === todayStr ? ' on' : ''}`}
-                  title={h.focusDate === todayStr ? "Remove from today's focus" : "Focus on this today"}
+                  className={`node-sun${isFocusFlagActive(h.focusDate, todayStr) ? ' on' : ''}`}
+                  title={isFocusFlagActive(h.focusDate, todayStr) ? "Remove from today's focus" : "Focus on this today"}
                   onClick={(e) => { e.stopPropagation(); onToggleTaskFocus(h.id); }}
                 >
                   <SunIcon />
@@ -2271,7 +2274,8 @@ function Today({
     (t) => t.completed && t.completedAt && toDateStr(new Date(t.completedAt)) === today,
   );
   // Tasks the user hand-flagged (☀) as today's priority, in the Align tab.
-  const focusTasks = openTasks.filter((t) => t.focusDate === today);
+  // Tomorrow-dated flags (evening clicks) count too, so they show immediately.
+  const focusTasks = openTasks.filter((t) => isFocusFlagActive(t.focusDate, today));
   const focusTaskIds = new Set(focusTasks.map((t) => t.id));
 
   const doneItems = [...doneHabits, ...completedToday];
@@ -2280,7 +2284,9 @@ function Today({
   // Today section can remove a task from itself.
   const toggleTaskFocus = (id: string) =>
     setHabits((prev) => prev.map((h) =>
-      h.id === id ? { ...h, focusDate: h.focusDate === today ? undefined : today } : h
+      h.id === id
+        ? { ...h, focusDate: isFocusFlagActive(h.focusDate, today) ? undefined : focusFlagDate() }
+        : h
     ));
 
   // Once a day, drop stale per-day keys left by earlier picker experiments so
@@ -2603,8 +2609,8 @@ function Today({
         </div>
         {h.kind === 'task' && !isDone && (
           <button
-            className={`row-sun${h.focusDate === today ? ' on' : ''}`}
-            title={h.focusDate === today ? "Remove from today's focus" : "Focus on this today"}
+            className={`row-sun${isFocusFlagActive(h.focusDate, today) ? ' on' : ''}`}
+            title={isFocusFlagActive(h.focusDate, today) ? "Remove from today's focus" : "Focus on this today"}
             onClick={(e) => { e.stopPropagation(); toggleTaskFocus(h.id); }}
             aria-label="Toggle today focus"
           >
@@ -3288,6 +3294,8 @@ export const __test_computeHealth = computeHealth;
 export const __test_toggleHabitCompletion = toggleHabitCompletion;
 export const __test_valueAlignmentScore = valueAlignmentScore;
 export const __test_isHabitScheduledToday = isHabitScheduledToday;
+export const __test_focusFlagDate = focusFlagDate;
+export const __test_isFocusFlagActive = isFocusFlagActive;
 
 /**
  * Done = weighted count ratio across sub-goals, habits, and tasks.
@@ -4135,6 +4143,26 @@ function dayAfter(dateStr: string): string {
   const d = new Date(dateStr + 'T12:00');
   d.setDate(d.getDate() + 1);
   return toDateStr(d);
+}
+
+// ☀ Evening rollover for the today-focus flag. A sun click at/after this hour
+// stamps TOMORROW's date, so a task flagged the night before carries through
+// the whole next day instead of lapsing at the coming midnight.
+const FOCUS_ROLLOVER_HOUR = 17; // 5 PM
+
+/** The date a ☀ click should stamp: today, or tomorrow for evening clicks. */
+function focusFlagDate(now: Date = new Date()): string {
+  const todayStr = toDateStr(now);
+  return now.getHours() >= FOCUS_ROLLOVER_HOUR ? dayAfter(todayStr) : todayStr;
+}
+
+/**
+ * Whether a task's ☀ flag is live on `todayStr`. A flag is live on its own
+ * date, and also the evening before: a tomorrow-dated flag can only come from
+ * an evening click, which should light up immediately, not wait for midnight.
+ */
+function isFocusFlagActive(focusDate: string | undefined, todayStr: string): boolean {
+  return !!focusDate && (focusDate === todayStr || focusDate === dayAfter(todayStr));
 }
 
 /**
