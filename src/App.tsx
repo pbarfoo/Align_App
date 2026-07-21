@@ -1375,6 +1375,8 @@ function Align({
                   onToggleGoalComplete={toggleGoalComplete}
                   onToggleHabit={toggleHabit}
                   onToggleTaskFocus={toggleTaskFocus}
+                  isSprintFocus={!!sg.sprintFocusAt}
+                  onToggleSprintFocus={() => setSprintFocus(sg.id)}
                   todayStr={todayStr}
                   hideCompleted={hideCompleted}
                   domainValues={domain.values}
@@ -1491,6 +1493,8 @@ function ShortWithActions({
   isCollapsed,
   onToggleCollapse,
   focusStrength,
+  isSprintFocus,
+  onToggleSprintFocus,
   showDragHandle,
   domainVision: _domainVision,
 }: {
@@ -1525,6 +1529,8 @@ function ShortWithActions({
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
   focusStrength?: number;
+  isSprintFocus?: boolean;
+  onToggleSprintFocus?: () => void;
   showDragHandle?: boolean;
 }) {
   const [editingHabitId, setEditingHabitId] = useState<string | null>(null);
@@ -1554,6 +1560,8 @@ function ShortWithActions({
         isCollapsed={isCollapsed}
         onToggleCollapse={onToggleCollapse}
         focusStrength={focusStrength}
+        isSprintFocus={isSprintFocus}
+        onToggleSprintFocus={onToggleSprintFocus}
         showDragHandle={showDragHandle}
         health={health}
       />

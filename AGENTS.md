@@ -16,10 +16,11 @@ which is a separate concept).
   current focus toggles it off. Enforced client-side (not the DB) so the upsert
   sync carries the whole cleared set back. Wired via `setSprintFocus` in the
   Align tab's `GoalManager`. Tests: `src/App.sprintFocus.test.ts`.
-- **UI**: a target (◎) button in each top-level `GoalNode`'s controls
-  (`node-focus`); the chosen goal gets an accent frame (`.sprint-focus`) + inline
-  "Sprint focus" pill. The Today tab shows a `sprint-focus-banner` above the coach
-  card with the goal title, its domain, and its health chip. Styles in
+- **UI**: a target (◎) button in every goal card's controls (`node-focus`) —
+  both top-level goals and sub-goals (sub-goals thread the props through
+  `ShortWithActions`). The chosen goal gets an accent frame (`.sprint-focus`) +
+  inline "Sprint focus" pill. The Today tab shows a `sprint-focus-banner` above
+  the coach card with the goal title, its domain, and its health chip. Styles in
   `src/styles.css` under the `.node-sun.on` block.
 
 ## Value Alignment Model (decoupled from goal health, 2026-07)
