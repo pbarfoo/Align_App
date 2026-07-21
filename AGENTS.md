@@ -25,6 +25,14 @@ which is a separate concept).
   goal's **subtree** (walk `sprintFocusGoalIds` = itself + descendant sub-goals,
   so a top-level focus pulls in its sub-goals' items). Rows reuse Today's
   `renderRow`. Styles in `src/styles.css` under the `.node-sun.on` block.
+- **AI ideas**: the banner has an on-demand "✦ Get ideas for this sprint" panel.
+  `getSprintFocusIdeas` (`src/geminiAdvisor.ts`) prompts Gemini (via the same
+  `gemini-proxy` edge function the coach uses) with the focus goal, its
+  sub-goals, its tasks/habits, and the value/vision it serves, and returns a
+  `SprintAdvice` = `{ perspective, ideas[] }`. Fetched on click, cached per goal
+  per day in localStorage (`gemini-sprint-v1-<goalId>-<date>`), with a Refresh
+  (bust) button. State in Today is tagged with the goal id so switching focus
+  drops stale advice. No auto-fetch (unlike the coach card) — one deliberate tap.
 
 ## Value Alignment Model (decoupled from goal health, 2026-07)
 

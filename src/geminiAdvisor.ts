@@ -11,6 +11,18 @@ export interface CoachCard {
   blurb: string;
 }
 
+export interface SprintIdea {
+  title: string;
+  detail: string;
+}
+
+export interface SprintAdvice {
+  /** One or two sentences: a fresh angle or reframe on the sprint focus goal. */
+  perspective: string;
+  /** A few concrete, do-able ideas that push the goal forward. */
+  ideas: SprintIdea[];
+}
+
 export interface CoachFeedback {
   date: string;
   title: string;
@@ -556,4 +568,116 @@ Return JSON only: {"title": "...", "blurb": "..."}`;
 
   localStorage.setItem(coachCacheKey(today, domains), JSON.stringify(card));
   return card;
+}
+
+function sprintCacheKey(goalId: string, date: string) {
+  return `gemini-sprint-v1-${goalId}-${date}`;
+}
+
+/**
+ * Ideas + a fresh perspective on the user's chosen sprint focus goal. Grounded
+ * in the goal itself, its sub-goals, its current tasks/habits, and the value/
+ * vision it serves — so the suggestions are specific, not generic. Cached per
+ * goal per day (localStorage); pass bust=true for a fresh set on demand.
+ */
+export async function getSprintFocusIdeas(
+  focusGoal: Goal,
+  subGoals: Goal[],
+  items: Habit[],
+  domain: Domain | undefined,
+  goalHealth: number | undefined,
+  bust = false,
+): Promise<SprintAdvice> {
+  const today = toDateStr(new Date());
+  if (!bust) {
+    const cached = localStorage.getItem(sprintCacheKey(focusGoal.id, today));
+    if (cached) {
+      try { return JSON.parse(cached) as SprintAdvice; } catch { /* fall through */ }
+    }
+  }
+
+  const resolveGoalValues = (g: Goal): string => {
+    if (!domain) return '';
+    return g.valueIndexes
+      .filter((i) => i < domain.values.length)
+      .map((i) => domain.values[i])
+      .join(', ');
+  };
+
+  const horizonLabel =
+    focusGoal.horizon === 'ongoing'
+      ? 'ongoing'
+      : `${focusGoal.timeframe}${focusGoal.horizon === 'long' ? ' year' : ' month'}${focusGoal.timeframe === 1 ? '' : 's'}`;
+
+  const itemLines = items.length
+    ? items.map((h) => {
+        if (h.kind === 'task') {
+          return `- task | "${h.title}" | ${h.completed ? 'done' : `due:${h.dueDate ?? 'none'}`}`;
+        }
+        return `- habit | "${h.title}" | ${h.recurrence ?? 'daily'} | ${streakPhrase(h)}`;
+      })
+    : ['- (no tasks or habits yet)'];
+
+  const contextLines: string[] = [
+    `## Sprint focus goal`,
+    `- Title: "${focusGoal.title}"`,
+    `- Domain: ${domain?.name ?? '?'}`,
+    `- Horizon: ${horizonLabel}`,
+    resolveGoalValues(focusGoal) ? `- Values it serves: ${resolveGoalValues(focusGoal)}` : '',
+    domain?.vision ? `- Domain vision: "${domain.vision}"` : '',
+    goalHealth != null ? `- Current momentum (0–100, higher = more active lately): ${goalHealth}` : '',
+    '',
+    '## Sub-goals under it',
+    ...(subGoals.length ? subGoals.map((g) => `- "${g.title}"`) : ['- (none)']),
+    '',
+    '## Current tasks & habits under it',
+    ...itemLines,
+  ].filter((l) => l !== '');
+
+  const prompt = `You are a thoughtful coach helping someone make progress on ONE goal they've chosen as their current sprint focus. Give them fresh ideas and a useful perspective — the kind of thing a sharp friend who knows the goal would offer.
+
+${contextLines.join('\n')}
+
+Write:
+1. "perspective": one or two sentences offering a genuinely useful angle, reframe, or encouragement on THIS specific goal. Ground it in the goal, its value, or its current momentum — not generic motivation. No "It's a new week" filler.
+2. "ideas": 3 (occasionally 4) concrete, do-able ideas that would move this goal forward. Each idea has a short "title" (3–6 words, imperative) and a "detail" (1 sentence, specific and actionable). Prefer ideas that open NEW angles or unblock things — do not just restate the tasks/habits already listed above. If the goal has no tasks or habits yet, suggest good first ones.
+
+Be specific to this goal. Warm, direct, no jargon, no metrics-speak.
+
+Return JSON only: {"perspective":"...","ideas":[{"title":"...","detail":"..."}, ...]}`;
+
+  const body = {
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: {
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: 'OBJECT',
+        properties: {
+          perspective: { type: 'STRING' },
+          ideas: {
+            type: 'ARRAY',
+            items: {
+              type: 'OBJECT',
+              properties: {
+                title: { type: 'STRING' },
+                detail: { type: 'STRING' },
+              },
+              required: ['title', 'detail'],
+            },
+            minItems: 2,
+            maxItems: 4,
+          },
+        },
+        required: ['perspective', 'ideas'],
+      },
+      temperature: 0.85,
+    },
+  };
+
+  const data = await callGemini(body);
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+  const advice = JSON.parse(text) as SprintAdvice;
+
+  localStorage.setItem(sprintCacheKey(focusGoal.id, today), JSON.stringify(advice));
+  return advice;
 }
