@@ -20,8 +20,11 @@ which is a separate concept).
   both top-level goals and sub-goals (sub-goals thread the props through
   `ShortWithActions`). The chosen goal gets an accent frame (`.sprint-focus`) +
   inline "Sprint focus" pill. The Today tab shows a `sprint-focus-banner` above
-  the coach card with the goal title, its domain, and its health chip. Styles in
-  `src/styles.css` under the `.node-sun.on` block.
+  the coach card with the goal title, its domain, and its health chip, and below
+  that lists the goal's whole to-do: every habit plus still-open task in the focus
+  goal's **subtree** (walk `sprintFocusGoalIds` = itself + descendant sub-goals,
+  so a top-level focus pulls in its sub-goals' items). Rows reuse Today's
+  `renderRow`. Styles in `src/styles.css` under the `.node-sun.on` block.
 
 ## Value Alignment Model (decoupled from goal health, 2026-07)
 

@@ -2291,6 +2291,36 @@ function Today({
   const sprintFocusDomain = sprintFocusGoal
     ? domains.find((d) => d.id === sprintFocusGoal.domainId)
     : undefined;
+  // Every goal id in the focus goal's subtree — itself plus all descendant
+  // sub-goals — so a top-level focus pulls in the tasks/habits hanging off its
+  // sub-goals too, not just the ones tagged directly on it.
+  const sprintFocusGoalIds = (() => {
+    if (!sprintFocusGoal) return new Set<string>();
+    const ids = new Set<string>([sprintFocusGoal.id]);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const g of goals) {
+        if (!ids.has(g.id) && g.parentGoalId && ids.has(g.parentGoalId)) {
+          ids.add(g.id);
+          grew = true;
+        }
+      }
+    }
+    return ids;
+  })();
+  // The focus goal's whole to-do: every habit under it, plus its still-open
+  // tasks (completed tasks drop off). Tasks first (soonest due first, undated
+  // last), then habits — a stable, actionable order.
+  const sprintFocusItems = sprintFocusGoal
+    ? habits
+        .filter((h) => sprintFocusGoalIds.has(h.goalId) && (h.kind === 'task' ? !h.completed : true))
+        .sort((a, b) => {
+          if (a.kind !== b.kind) return a.kind === 'task' ? -1 : 1;
+          if (a.kind === 'task') return (a.dueDate ?? '9999').localeCompare(b.dueDate ?? '9999');
+          return 0;
+        })
+    : [];
 
   const [coachCard, setCoachCard] = useState<CoachCard | null>(null);
   const [coachLoading, setCoachLoading] = useState(false);
@@ -2738,6 +2768,15 @@ function Today({
                 </span>
               );
             })()}
+          </div>
+          <div className="sprint-focus-items">
+            {sprintFocusItems.length > 0 ? (
+              sprintFocusItems.map((h) => renderRow(h))
+            ) : (
+              <p className="sprint-focus-empty">
+                No tasks or habits under this goal yet — add some in Align.
+              </p>
+            )}
           </div>
         </div>
       )}
