@@ -82,6 +82,7 @@ function goalToRow(g: Goal, userId: string): Row {
     completed_at: g.completedAt ?? null,
     sort_order: g.sortOrder ?? null,
     archived_at: g.archivedAt ?? null,
+    sprint_focus_at: g.sprintFocusAt ?? null,
   };
 }
 function goalFromRow(row: Row): Goal {
@@ -96,6 +97,7 @@ function goalFromRow(row: Row): Goal {
     completedAt: row.completed_at ?? undefined,
     sortOrder: row.sort_order ?? undefined,
     archivedAt: row.archived_at ?? undefined,
+    sprintFocusAt: row.sprint_focus_at ?? undefined,
   };
 }
 
@@ -1147,6 +1149,13 @@ function Align({
       g.id === id ? { ...g, completedAt: g.completedAt ? undefined : Date.now() } : g
     ));
 
+  // Choose (or clear) THE single sprint focus. There's only ever one: setting a
+  // goal as the focus stamps it now and clears sprintFocusAt on every other
+  // goal; clicking the already-focused goal clears it. Enforced here (not the
+  // DB) so the upsert sync carries the whole cleared set back to Supabase.
+  const setSprintFocus = (id: string) =>
+    setGoals((prev) => applySprintFocus(prev, id));
+
   const toggleHabit = (id: string) =>
     setHabits((prev) => prev.map((h) => {
       if (h.id !== id) return h;
@@ -1259,6 +1268,8 @@ function Align({
               isCollapsed={collapsedGoals.has(goal.id)}
               onToggleCollapse={hasChildren ? () => toggleCollapse(goal.id) : undefined}
               focusStrength={focusStrength}
+              isSprintFocus={!!goal.sprintFocusAt}
+              onToggleSprintFocus={() => setSprintFocus(goal.id)}
               showDragHandle
               health={goalHealthMap[goal.id]}
             />
@@ -1963,6 +1974,8 @@ function GoalNode({
   isCollapsed,
   onToggleCollapse,
   focusStrength,
+  isSprintFocus,
+  onToggleSprintFocus,
   showDragHandle,
   health,
 }: {
@@ -1989,6 +2002,10 @@ function GoalNode({
    * persists (drag-to-reorder), so this tapers by position rather than being
    * an all-or-nothing badge on the top card alone. */
   focusStrength?: number;
+  /** true when this goal is THE current sprint focus (the one starred goal). */
+  isSprintFocus?: boolean;
+  /** toggles this goal as the single sprint focus (selecting clears any other). */
+  onToggleSprintFocus?: () => void;
   showDragHandle?: boolean;
   health?: GoalHealthInfo;
 }) {
@@ -2014,7 +2031,7 @@ function GoalNode({
 
   return (
     <div
-      className={`${className}${short ? ' short' : ''}${isComplete ? ' completed' : ''}${hasFocus ? ' focus-goal' : ''}`}
+      className={`${className}${short ? ' short' : ''}${isComplete ? ' completed' : ''}${hasFocus ? ' focus-goal' : ''}${isSprintFocus ? ' sprint-focus' : ''}`}
       style={hasFocus ? ({ '--focus-strength': focusStrength } as React.CSSProperties) : undefined}
     >
       <div className="node-left-col">
@@ -2119,6 +2136,11 @@ function GoalNode({
             </button>
           )}
           <span className="goal-date">{getGoalCountdown(goal)}</span>
+          {isSprintFocus && (
+            <span className="sprint-focus-badge" title="Your current sprint focus">
+              <TargetIcon /> Sprint focus
+            </span>
+          )}
           {health && !isComplete && (
             <span
               className={`goal-health ${
@@ -2165,6 +2187,18 @@ function GoalNode({
         )}
       </div>
       <div className="node-ctrls">
+        {onToggleSprintFocus && (
+          <button
+            className={`node-focus${isSprintFocus ? ' on' : ''}`}
+            title={isSprintFocus ? 'Clear sprint focus' : 'Make this the sprint focus'}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleSprintFocus();
+            }}
+          >
+            <TargetIcon />
+          </button>
+        )}
         {canAddChild && (
           <button
             className={`node-add${addActive ? ' on' : ''}`}
@@ -2242,6 +2276,13 @@ function Today({
 
   // Shared health map: row chips + coach grounding all read the same numbers.
   const goalHealthMap = useMemo(() => computeGoalHealthMap(goals, habits), [goals, habits]);
+
+  // The single sprint focus (chosen in Align). Parked goals are already filtered
+  // out above, so a paused focus goal simply doesn't surface here.
+  const sprintFocusGoal = goals.find((g) => g.sprintFocusAt && !g.completedAt);
+  const sprintFocusDomain = sprintFocusGoal
+    ? domains.find((d) => d.id === sprintFocusGoal.domainId)
+    : undefined;
 
   const [coachCard, setCoachCard] = useState<CoachCard | null>(null);
   const [coachLoading, setCoachLoading] = useState(false);
@@ -2662,6 +2703,36 @@ function Today({
         Not a to-do list. Just the habits and tasks that move your values
         forward.
       </p>
+
+      {sprintFocusGoal && (
+        <div className="today-section sprint-focus-banner">
+          <span className="sprint-focus-banner-eyebrow">
+            <TargetIcon /> Sprint focus
+          </span>
+          <div className="sprint-focus-banner-title">{sprintFocusGoal.title}</div>
+          <div className="sprint-focus-banner-meta">
+            {sprintFocusDomain && (
+              <span className="sprint-focus-banner-domain">{sprintFocusDomain.name}</span>
+            )}
+            {(() => {
+              const gh = goalHealthMap[sprintFocusGoal.id];
+              if (!gh) return null;
+              return (
+                <span
+                  className={`goal-health ${
+                    gh.health <= 33 ? 'goal-health--red'
+                    : gh.health <= 66 ? 'goal-health--yellow'
+                    : 'goal-health--green'
+                  }`}
+                  title="Goal health (0–100)"
+                >
+                  ♥ {gh.health}
+                </span>
+              );
+            })()}
+          </div>
+        </div>
+      )}
 
       {/* Coach card — progress counter + daily coaching blurb */}
       <div className="today-section coach-card">
@@ -3317,6 +3388,7 @@ export const __test_valueAlignmentScore = valueAlignmentScore;
 export const __test_isHabitScheduledToday = isHabitScheduledToday;
 export const __test_focusFlagDate = focusFlagDate;
 export const __test_isFocusFlagActive = isFocusFlagActive;
+export const __test_applySprintFocus = applySprintFocus;
 export const __test_computeStreakFromCompletions = computeStreakFromCompletions;
 
 /**
@@ -4188,6 +4260,20 @@ function isFocusFlagActive(focusDate: string | undefined, todayStr: string): boo
 }
 
 /**
+ * Single-select the sprint focus: return `goals` with `id` stamped as THE sprint
+ * focus and every other goal's `sprintFocusAt` cleared. Toggling the goal that's
+ * already the focus clears it (no focus at all). Object identity is preserved for
+ * any row that doesn't change, so React/state churn stays minimal.
+ */
+function applySprintFocus(goals: Goal[], id: string, now: number = Date.now()): Goal[] {
+  const turningOff = goals.some((g) => g.id === id && g.sprintFocusAt);
+  return goals.map((g) => {
+    const next = turningOff || g.id !== id ? undefined : now;
+    return g.sprintFocusAt === next ? g : { ...g, sprintFocusAt: next };
+  });
+}
+
+/**
  * The patch the skip (↺) pill applies to a habit to dismiss one missed day.
  * Always records the day in skippedDates. For calendar-anchored cadences
  * (daily / weekdays / specific-days / weekly) that is ALL it does — the
@@ -4527,6 +4613,17 @@ function SunIcon() {
         d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"
         stroke="currentColor" strokeWidth="2" strokeLinecap="round"
       />
+    </svg>
+  );
+}
+
+function TargetIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"
+         style={{ display: 'inline', verticalAlign: 'middle' }}>
+      <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="2" />
+      <circle cx="12" cy="12" r="3.2" stroke="currentColor" strokeWidth="2" />
+      <circle cx="12" cy="12" r="1" fill="currentColor" />
     </svg>
   );
 }

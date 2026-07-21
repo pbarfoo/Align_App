@@ -26,7 +26,11 @@ create table if not exists public.goals (
   timeframe numeric,
   completed_at bigint,
   sort_order int,
-  archived_at bigint
+  archived_at bigint,
+  -- unix ms when this goal was chosen as THE single sprint focus. At most one
+  -- goal per user carries a non-null value (enforced client-side: setting one
+  -- clears the rest). null = not the sprint focus.
+  sprint_focus_at bigint
 );
 
 -- HABITS

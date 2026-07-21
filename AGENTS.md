@@ -1,5 +1,27 @@
 # Align App Agent Handoff
 
+## Sprint Focus (single chosen goal, 2026-07)
+
+The user can nominate **one** goal as the current "sprint focus". It is a pure
+selection + surfacing feature — it deliberately does NOT touch the health or
+coach math (that stays driven by the per-domain priority taper `focusStrength`,
+which is a separate concept).
+
+- **Data**: `Goal.sprintFocusAt?: number` (`src/data.ts`) — unix ms when chosen;
+  `undefined` = not the focus. Persisted as `goals.sprint_focus_at bigint`
+  (nullable, migration `add_goals_sprint_focus_at`, applied to prod). Round-trips
+  through `goalToRow`/`goalFromRow`.
+- **Single-select**: `applySprintFocus(goals, id, now?)` in `src/App.tsx` returns
+  the goals with `id` stamped and every other goal cleared; re-selecting the
+  current focus toggles it off. Enforced client-side (not the DB) so the upsert
+  sync carries the whole cleared set back. Wired via `setSprintFocus` in the
+  Align tab's `GoalManager`. Tests: `src/App.sprintFocus.test.ts`.
+- **UI**: a target (◎) button in each top-level `GoalNode`'s controls
+  (`node-focus`); the chosen goal gets an accent frame (`.sprint-focus`) + inline
+  "Sprint focus" pill. The Today tab shows a `sprint-focus-banner` above the coach
+  card with the goal title, its domain, and its health chip. Styles in
+  `src/styles.css` under the `.node-sun.on` block.
+
 ## Value Alignment Model (decoupled from goal health, 2026-07)
 
 `valueAlignmentScore` (`src/App.tsx`) was rewritten to be **separate** from goal

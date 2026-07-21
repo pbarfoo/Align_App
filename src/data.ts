@@ -29,6 +29,10 @@ export interface Goal {
    * completedAt (achieved): an inactive goal is parked — excluded from health,
    * the dashboard, and the Today lists — and can be reactivated at any time. */
   archivedAt?: number;
+  /** unix ms when this goal was chosen as THE sprint focus — the one goal the
+   * user is centring this stretch of work on. At most one goal carries this at
+   * a time (selecting a new one clears the previous). undefined = not the focus. */
+  sprintFocusAt?: number;
 }
 
 export type ActionKind = 'habit' | 'task';
