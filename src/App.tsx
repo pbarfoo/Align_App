@@ -2754,13 +2754,6 @@ function Today({
           </span>
           <button className="reflect-mini-btn" onClick={onReflect} title="Weekly reflection">✦ Reflect</button>
         </div>
-        {sprintFocusGoal && (
-          <div className="coach-card-sprint" title="Today's coaching is anchored on your sprint priority">
-            <TargetIcon />
-            <span className="coach-card-sprint-label">Sprint priority</span>
-            <span className="coach-card-sprint-goal">{sprintFocusGoal.title}</span>
-          </div>
-        )}
         <div className="coach-progress coach-progress--ring">
           <DayRing segments={ringSegments} pct={pct} />
           <div className="ring-side">
