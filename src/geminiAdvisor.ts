@@ -326,7 +326,7 @@ function coachCacheKey(date: string, domains: Domain[], focusId?: string) {
   // The sprint-focus goal steers the card, so it's part of the cache identity:
   // switch focus and you get a fresh card oriented to the new goal that day.
   const focusPart = focusId ? `-sf:${focusId}` : '';
-  return `gemini-coach-v32-${date}-${valueFingerprint(domains)}${focusPart}`;
+  return `gemini-coach-v33-${date}-${valueFingerprint(domains)}${focusPart}`;
 }
 
 function yesterdayCardTitle(domains: Domain[]): string | null {
@@ -506,16 +506,25 @@ export async function getGeminiCoachCard(
     }
     return ids;
   })();
+  // Open items serving the sprint, ordered exactly like the Today sprint banner:
+  // tasks first (soonest due first, undated last), then habits. The FIRST item
+  // is the deterministic nudge target — the app, not the model, decides what
+  // today's concrete step is, and Gemini only writes prose around it.
   const sprintFocusItems = sprintFocusGoal
-    ? habits.filter((h) => sprintFocusGoalIds.has(h.goalId) && (h.kind === 'task' ? !h.completed : true))
+    ? habits
+        .filter((h) => sprintFocusGoalIds.has(h.goalId) && (h.kind === 'task' ? !h.completed : true))
+        .sort((a, b) => {
+          if (a.kind !== b.kind) return a.kind === 'task' ? -1 : 1;
+          if (a.kind === 'task') return (a.dueDate ?? '9999').localeCompare(b.dueDate ?? '9999');
+          return 0;
+        })
     : [];
-  const sprintServingList = sprintFocusItems
-    .map((h) =>
-      h.kind === 'task'
-        ? `"${h.title}" (task${h.dueDate ? `, due ${h.dueDate}` : ', no date'})`
-        : `"${h.title}" (${h.recurrence ?? 'daily'} habit, streak ${streakPhrase(h)})`,
-    )
-    .join('; ');
+  const sprintNudgeItem = sprintFocusItems[0];
+  const describeItem = (h: Habit) =>
+    h.kind === 'task'
+      ? `"${h.title}" (task${h.dueDate ? `, due ${h.dueDate}` : ', no date'})`
+      : `"${h.title}" (${h.recurrence ?? 'daily'} habit, streak ${streakPhrase(h)})`;
+  const sprintServingList = sprintFocusItems.map(describeItem).join('; ');
 
   // The sprint focus is the user's single declared priority right now, so the
   // card should lean into it day over day (varying the angle) rather than
@@ -525,11 +534,11 @@ export async function getGeminiCoachCard(
   // them, so the card can't anchor on the sprint goal and then pivot the actual
   // suggestion to an unrelated task from another goal.
   const sprintFocusRule = sprintFocusGoal
-    ? `- SPRINT FOCUS: the user has made "${sprintFocusGoal.title}" their single priority this stretch. ${
-        sprintFocusItems.length
-          ? `The ONLY open items that serve this goal are: ${sprintServingList}. Anchor the entire card on this goal, and the concrete nudge (goal #3) MUST name one of these exact items — NEVER a task or habit belonging to a different goal, and never claim an unrelated item "serves" the sprint.`
-          : `It has NO open tasks or habits yet, so the concrete nudge MUST be to add a first small task or habit under "${sprintFocusGoal.title}" (or take one direct step on the goal itself) — do NOT substitute an unrelated item from another goal.`
-      } Returning to this goal on consecutive days is expected — vary the angle, not the goal. Only pivot away if a genuinely more urgent OVERDUE item demands it, and if you do, say plainly that it's a detour from the sprint rather than pretending it serves it.`
+    ? `- SPRINT FOCUS: the user has made "${sprintFocusGoal.title}" their single priority this stretch. Anchor the ENTIRE card on this goal. ${
+        sprintNudgeItem
+          ? `Today's concrete nudge (goal #3) is FIXED: it MUST be about this exact item and no other — ${describeItem(sprintNudgeItem)}. Do not choose a different task or habit for the nudge, and do not mention items from other goals as the thing to do today. (For context, the goal's other open items are: ${sprintServingList || 'none'}.)`
+          : `It has NO open tasks or habits yet, so the concrete nudge (goal #3) MUST be to add a first small task or habit under "${sprintFocusGoal.title}" (or take one direct step on the goal itself) — do NOT substitute an unrelated item from another goal.`
+      } Returning to this goal on consecutive days is expected — vary the angle and wording, not the goal.`
     : '';
 
   const prevTitle = yesterdayCardTitle(domains);
