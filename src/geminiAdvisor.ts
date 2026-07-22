@@ -322,8 +322,11 @@ function valueFingerprint(domains: Domain[]): string {
 }
 
 
-function coachCacheKey(date: string, domains: Domain[]) {
-  return `gemini-coach-v30-${date}-${valueFingerprint(domains)}`;
+function coachCacheKey(date: string, domains: Domain[], focusId?: string) {
+  // The sprint-focus goal steers the card, so it's part of the cache identity:
+  // switch focus and you get a fresh card oriented to the new goal that day.
+  const focusPart = focusId ? `-sf:${focusId}` : '';
+  return `gemini-coach-v31-${date}-${valueFingerprint(domains)}${focusPart}`;
 }
 
 function yesterdayCardTitle(domains: Domain[]): string | null {
@@ -331,7 +334,7 @@ function yesterdayCardTitle(domains: Domain[]): string | null {
   yesterday.setDate(yesterday.getDate() - 1);
   const yStr = toDateStr(yesterday);
   // Check recent key versions so we catch whatever ran yesterday
-  for (const v of ['v30', 'v29', 'v28', 'v27', 'v26', 'v25', 'v24', 'v23', 'v22', 'v21', 'v20']) {
+  for (const v of ['v31', 'v30', 'v29', 'v28', 'v27', 'v26', 'v25', 'v24', 'v23', 'v22', 'v21', 'v20']) {
     const raw = localStorage.getItem(`gemini-coach-${v}-${yStr}-${valueFingerprint(domains)}`);
     if (raw) {
       try { return (JSON.parse(raw) as CoachCard).title; } catch { /* skip */ }
@@ -352,7 +355,10 @@ export async function getGeminiCoachCard(
 ): Promise<CoachCard> {
 
   const today = toDateStr(new Date());
-  const cached = localStorage.getItem(coachCacheKey(today, domains));
+  // The single sprint focus (chosen in Align) — the goal the user is centring
+  // this stretch of work on. It steers the card and is part of the cache key.
+  const sprintFocusGoal = goals.find((g) => g.sprintFocusAt && !g.completedAt);
+  const cached = localStorage.getItem(coachCacheKey(today, domains, sprintFocusGoal?.id));
   if (cached) {
     try { return JSON.parse(cached) as CoachCard; } catch { /* fall through */ }
   }
@@ -434,7 +440,8 @@ export async function getGeminiCoachCard(
     const dom = domains.find((d) => d.id === g.domainId);
     const vals = resolveGoalValues(g);
     const priority = topGoalIds.has(g.id) ? ' [FOCUS]' : '';
-    return `- "${g.title}" | ${g.timeframe}${g.horizon === 'long' ? 'yr' : 'mo'} | ${dom?.name ?? '?'}${vals ? ` | values:[${vals}]` : ''}${priority}`;
+    const sprint = sprintFocusGoal && g.id === sprintFocusGoal.id ? ' [SPRINT FOCUS]' : '';
+    return `- "${g.title}" | ${g.timeframe}${g.horizon === 'long' ? 'yr' : 'mo'} | ${dom?.name ?? '?'}${vals ? ` | values:[${vals}]` : ''}${priority}${sprint}`;
   };
 
   const contextLines: string[] = [
@@ -479,14 +486,24 @@ export async function getGeminiCoachCard(
     ? `\n## Style & tone feedback (adjust HOW you write, not WHAT you cover)\n- Liked tone/style: ${liked || 'none'}\n- Disliked tone/style: ${disliked || 'none'}\nThis feedback is about writing style only — do not let it cause you to repeat the same values or goals.\n`
     : '';
 
+  // The sprint focus is the user's single declared priority right now, so the
+  // card should lean into it day over day (varying the angle) rather than
+  // rotating away from it. When a sprint focus is set we therefore suppress the
+  // "must cover a different goal" rule — otherwise the two instructions fight.
+  const sprintFocusRule = sprintFocusGoal
+    ? `- The user has set "${sprintFocusGoal.title}" as their SPRINT FOCUS — the single goal they're centring this stretch of work on. Anchor today's card on this goal or a habit/task that serves it, UNLESS a genuinely more urgent overdue item demands attention. It's fine (expected, even) to return to this goal on consecutive days — vary the angle and the specific item you name, but keep the sprint front of mind.`
+    : '';
+
   const prevTitle = yesterdayCardTitle(domains);
-  const rotateRule = prevTitle
+  const rotateRule = prevTitle && !sprintFocusGoal
     ? `- Yesterday's card was titled "${prevTitle}". Today MUST cover a DIFFERENT goal, habit, or domain.`
     : '';
 
-  // Rotate primary domain focus by day-of-week so the card always feels fresh
+  // Rotate primary domain focus by day-of-week so the card always feels fresh —
+  // but only when there's no sprint focus; a sprint anchor overrides the rota so
+  // the card doesn't get pulled toward a different domain than the sprint goal.
   const domainRota = domains[now.getDay() % domains.length];
-  const focusDomainRule = domainRota
+  const focusDomainRule = domainRota && !sprintFocusGoal
     ? `- Today's card should primarily draw from the "${domainRota.name}" domain (but can mention others).`
     : '';
 
@@ -516,6 +533,7 @@ HARD RULES — violations mean the card is wrong:
 - Every sentence must be complete and grammatical. Do NOT tack on a trailing fragment or repeat a phrase (e.g. "…continued progress. progress towards your goals.").
 - When you mention a streak, always write the plain-language phrase from the data (e.g. "4 days in a row", "3 weeks running"). NEVER write a bare number like "streak is 4" or "your streak is 4" — the user has no idea what that number counts.
 - NEVER propose a task marked "DONE (already completed)" as today's nudge, or invent a follow-on step for one (no "gather the supplies", "finish packing" for a prep task that's already done). A DONE task may ONLY be acknowledged as a past accomplishment — the concrete nudge (goal #3) MUST be an open task (status "due:...") or a habit due today.
+${sprintFocusRule}
 ${rotateRule ? `- ${rotateRule}` : ''}
 ${focusDomainRule}
 
@@ -554,6 +572,6 @@ Return JSON only: {"title": "...", "blurb": "..."}`;
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
   const card = JSON.parse(text) as CoachCard;
 
-  localStorage.setItem(coachCacheKey(today, domains), JSON.stringify(card));
+  localStorage.setItem(coachCacheKey(today, domains, sprintFocusGoal?.id), JSON.stringify(card));
   return card;
 }

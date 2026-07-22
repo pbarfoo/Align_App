@@ -25,6 +25,14 @@ which is a separate concept).
   goal's **subtree** (walk `sprintFocusGoalIds` = itself + descendant sub-goals,
   so a top-level focus pulls in its sub-goals' items). Rows reuse Today's
   `renderRow`. Styles in `src/styles.css` under the `.node-sun.on` block.
+- **Coach card steering**: `getGeminiCoachCard` (`src/geminiAdvisor.ts`) reads the
+  sprint focus and, when set, marks it `[SPRINT FOCUS]` in the goal lines and adds
+  a rule to anchor the daily card on that goal (or an item serving it). While a
+  sprint is set the "cover a different goal than yesterday" rotation and the
+  day-of-week domain rota are suppressed, so the card can stay on the sprint goal
+  and just vary the angle. The sprint focus id is part of the coach cache key
+  (`gemini-coach-v31-…-sf:<id>`) and a dep of Today's coach `useEffect`, so
+  switching focus regenerates a card oriented to the new goal.
 
 ## Value Alignment Model (decoupled from goal health, 2026-07)
 

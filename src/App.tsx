@@ -2632,7 +2632,10 @@ function Today({
 
   useEffect(() => {
     fetchCoachCard();
-  }, [!goals.length && !habits.length]); // re-runs once data arrives; stable after that
+    // Re-runs once data arrives, and whenever the sprint focus changes — the
+    // card is steered by (and cached per) the sprint focus, so switching it
+    // regenerates a card oriented to the new goal.
+  }, [!goals.length && !habits.length, sprintFocusGoal?.id]);
 
   const renderRow = (h: Habit) => {
     const isDone = h.kind === 'task' ? !!h.completed : isHabitDoneThisPeriod(h);
