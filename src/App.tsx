@@ -2745,46 +2745,7 @@ function Today({
         forward.
       </p>
 
-      {sprintFocusGoal && (
-        <div className="today-section sprint-focus-banner">
-          <span className="sprint-focus-banner-eyebrow">
-            <TargetIcon /> Sprint focus
-          </span>
-          <div className="sprint-focus-banner-title">{sprintFocusGoal.title}</div>
-          <div className="sprint-focus-banner-meta">
-            {sprintFocusDomain && (
-              <span className="sprint-focus-banner-domain">{sprintFocusDomain.name}</span>
-            )}
-            {(() => {
-              const gh = goalHealthMap[sprintFocusGoal.id];
-              if (!gh) return null;
-              return (
-                <span
-                  className={`goal-health ${
-                    gh.health <= 33 ? 'goal-health--red'
-                    : gh.health <= 66 ? 'goal-health--yellow'
-                    : 'goal-health--green'
-                  }`}
-                  title="Goal health (0–100)"
-                >
-                  ♥ {gh.health}
-                </span>
-              );
-            })()}
-          </div>
-          <div className="sprint-focus-items">
-            {sprintFocusItems.length > 0 ? (
-              sprintFocusItems.map((h) => renderRow(h))
-            ) : (
-              <p className="sprint-focus-empty">
-                No tasks or habits under this goal yet — add some in Align.
-              </p>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Coach card — progress counter + daily coaching blurb */}
+      {/* Coach card — sits at the top: progress counter + daily coaching blurb */}
       <div className="today-section coach-card">
         <div className="coach-card-header">
           <span className="coach-card-label">
@@ -2793,6 +2754,13 @@ function Today({
           </span>
           <button className="reflect-mini-btn" onClick={onReflect} title="Weekly reflection">✦ Reflect</button>
         </div>
+        {sprintFocusGoal && (
+          <div className="coach-card-sprint" title="Today's coaching is anchored on your sprint priority">
+            <TargetIcon />
+            <span className="coach-card-sprint-label">Sprint priority</span>
+            <span className="coach-card-sprint-goal">{sprintFocusGoal.title}</span>
+          </div>
+        )}
         <div className="coach-progress coach-progress--ring">
           <DayRing segments={ringSegments} pct={pct} />
           <div className="ring-side">
@@ -2833,6 +2801,45 @@ function Today({
           </div>
         </div>
       </div>
+
+      {sprintFocusGoal && (
+        <div className="today-section sprint-focus-banner">
+          <span className="sprint-focus-banner-eyebrow">
+            <TargetIcon /> Sprint focus
+          </span>
+          <div className="sprint-focus-banner-title">{sprintFocusGoal.title}</div>
+          <div className="sprint-focus-banner-meta">
+            {sprintFocusDomain && (
+              <span className="sprint-focus-banner-domain">{sprintFocusDomain.name}</span>
+            )}
+            {(() => {
+              const gh = goalHealthMap[sprintFocusGoal.id];
+              if (!gh) return null;
+              return (
+                <span
+                  className={`goal-health ${
+                    gh.health <= 33 ? 'goal-health--red'
+                    : gh.health <= 66 ? 'goal-health--yellow'
+                    : 'goal-health--green'
+                  }`}
+                  title="Goal health (0–100)"
+                >
+                  ♥ {gh.health}
+                </span>
+              );
+            })()}
+          </div>
+          <div className="sprint-focus-items">
+            {sprintFocusItems.length > 0 ? (
+              sprintFocusItems.map((h) => renderRow(h))
+            ) : (
+              <p className="sprint-focus-empty">
+                No tasks or habits under this goal yet — add some in Align.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ☀ Today's focus — the tasks you flagged in the Align tab. */}
       {focusTasks.length > 0 && (
