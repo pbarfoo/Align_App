@@ -326,7 +326,7 @@ function coachCacheKey(date: string, domains: Domain[], focusId?: string) {
   // The sprint-focus goal steers the card, so it's part of the cache identity:
   // switch focus and you get a fresh card oriented to the new goal that day.
   const focusPart = focusId ? `-sf:${focusId}` : '';
-  return `gemini-coach-v31-${date}-${valueFingerprint(domains)}${focusPart}`;
+  return `gemini-coach-v32-${date}-${valueFingerprint(domains)}${focusPart}`;
 }
 
 function yesterdayCardTitle(domains: Domain[]): string | null {
@@ -486,12 +486,50 @@ export async function getGeminiCoachCard(
     ? `\n## Style & tone feedback (adjust HOW you write, not WHAT you cover)\n- Liked tone/style: ${liked || 'none'}\n- Disliked tone/style: ${disliked || 'none'}\nThis feedback is about writing style only — do not let it cause you to repeat the same values or goals.\n`
     : '';
 
+  // Which goals fall under the sprint focus — the goal itself plus all its
+  // descendant sub-goals — so we can hand the model the EXACT set of items that
+  // serve it. Without this the model only saw a "[SPRINT FOCUS]" tag on the
+  // goal line and would anchor sentence 1 on the sprint goal but then nudge an
+  // unrelated "due today" task from a different goal (incoherent card).
+  const sprintFocusGoalIds = (() => {
+    if (!sprintFocusGoal) return new Set<string>();
+    const ids = new Set<string>([sprintFocusGoal.id]);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const g of goals) {
+        if (!ids.has(g.id) && g.parentGoalId && ids.has(g.parentGoalId)) {
+          ids.add(g.id);
+          grew = true;
+        }
+      }
+    }
+    return ids;
+  })();
+  const sprintFocusItems = sprintFocusGoal
+    ? habits.filter((h) => sprintFocusGoalIds.has(h.goalId) && (h.kind === 'task' ? !h.completed : true))
+    : [];
+  const sprintServingList = sprintFocusItems
+    .map((h) =>
+      h.kind === 'task'
+        ? `"${h.title}" (task${h.dueDate ? `, due ${h.dueDate}` : ', no date'})`
+        : `"${h.title}" (${h.recurrence ?? 'daily'} habit, streak ${streakPhrase(h)})`,
+    )
+    .join('; ');
+
   // The sprint focus is the user's single declared priority right now, so the
   // card should lean into it day over day (varying the angle) rather than
   // rotating away from it. When a sprint focus is set we therefore suppress the
   // "must cover a different goal" rule — otherwise the two instructions fight.
+  // We also list the goal's OWN serving items and force the nudge to name one of
+  // them, so the card can't anchor on the sprint goal and then pivot the actual
+  // suggestion to an unrelated task from another goal.
   const sprintFocusRule = sprintFocusGoal
-    ? `- The user has set "${sprintFocusGoal.title}" as their SPRINT FOCUS — the single goal they're centring this stretch of work on. Anchor today's card on this goal or a habit/task that serves it, UNLESS a genuinely more urgent overdue item demands attention. It's fine (expected, even) to return to this goal on consecutive days — vary the angle and the specific item you name, but keep the sprint front of mind.`
+    ? `- SPRINT FOCUS: the user has made "${sprintFocusGoal.title}" their single priority this stretch. ${
+        sprintFocusItems.length
+          ? `The ONLY open items that serve this goal are: ${sprintServingList}. Anchor the entire card on this goal, and the concrete nudge (goal #3) MUST name one of these exact items — NEVER a task or habit belonging to a different goal, and never claim an unrelated item "serves" the sprint.`
+          : `It has NO open tasks or habits yet, so the concrete nudge MUST be to add a first small task or habit under "${sprintFocusGoal.title}" (or take one direct step on the goal itself) — do NOT substitute an unrelated item from another goal.`
+      } Returning to this goal on consecutive days is expected — vary the angle, not the goal. Only pivot away if a genuinely more urgent OVERDUE item demands it, and if you do, say plainly that it's a detour from the sprint rather than pretending it serves it.`
     : '';
 
   const prevTitle = yesterdayCardTitle(domains);
@@ -533,6 +571,7 @@ HARD RULES — violations mean the card is wrong:
 - Every sentence must be complete and grammatical. Do NOT tack on a trailing fragment or repeat a phrase (e.g. "…continued progress. progress towards your goals.").
 - When you mention a streak, always write the plain-language phrase from the data (e.g. "4 days in a row", "3 weeks running"). NEVER write a bare number like "streak is 4" or "your streak is 4" — the user has no idea what that number counts.
 - NEVER propose a task marked "DONE (already completed)" as today's nudge, or invent a follow-on step for one (no "gather the supplies", "finish packing" for a prep task that's already done). A DONE task may ONLY be acknowledged as a past accomplishment — the concrete nudge (goal #3) MUST be an open task (status "due:...") or a habit due today.
+- Do NOT praise "momentum", "progress", or say "keep it up" about an item the user has NOT actually worked on. Only reference momentum when the data shows real recent completions or a live streak for the specific item you name; an item merely being due today is not momentum.
 ${sprintFocusRule}
 ${rotateRule ? `- ${rotateRule}` : ''}
 ${focusDomainRule}
