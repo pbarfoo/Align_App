@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { getGeminiCoachCard, saveCoachFeedback, getTodayCoachRating, type CoachCard } from './geminiAdvisor';
 import {
   DndContext, DragOverlay, type DragEndEvent, type DragStartEvent,
   MouseSensor, TouchSensor,
@@ -465,7 +464,6 @@ export default function App() {
             onDeleteGoalFromDb={deleteGoalFromDb}
             onReflect={() => setReflectOpen(true)}
             flash={flash}
-            userId={session?.user.id}
           />
         )}
       </main>
@@ -2249,7 +2247,6 @@ function Today({
   onDeleteGoalFromDb,
   onReflect,
   flash,
-  userId,
 }: {
   habits: Habit[];
   setHabits: React.Dispatch<React.SetStateAction<Habit[]>>;
@@ -2262,7 +2259,6 @@ function Today({
   onDeleteGoalFromDb: (ids: string[]) => void;
   onReflect: () => void;
   flash: Flash;
-  userId?: string;
 }) {
   // Inactive (paused) goals and their sub-goals are hidden from Today — their
   // tasks/habits don't appear in focus, needs-action, or the day's list, and
@@ -2322,40 +2318,7 @@ function Today({
         })
     : [];
 
-  const [coachCard, setCoachCard] = useState<CoachCard | null>(null);
-  const [coachLoading, setCoachLoading] = useState(false);
-  const [coachFailed, setCoachFailed] = useState(false);
-  const [coachRating, setCoachRating] = useState<'up' | 'down' | null>(null);
   const today = toDateStr(new Date());
-
-  const fetchCoachCard = () => {
-    if (!goals.length && !habits.length) return;
-    setCoachLoading(true);
-    setCoachFailed(false);
-    // Feed the coach the SAME health numbers the user sees on their goal
-    // cards (title-keyed; overrides the server view's figures).
-    const appGoalHealth = Object.fromEntries(
-      goals.filter((g) => !g.completedAt).map((g) => {
-        const gh = goalHealthMap[g.id];
-        // Empty goals report their EARNED health (0) to the AI even during
-        // the new-goal grace, so it nudges a first action from day one while
-        // the badge stays green.
-        return [g.title, gh ? (gh.nItems === 0 ? 0 : gh.health) : 0];
-      }),
-    );
-    getGeminiCoachCard(domains, goals, habits, reflections, userId, appGoalHealth)
-      .then(async (card) => {
-        setCoachCard(card);
-        const rating = await getTodayCoachRating(today, card.title, userId);
-        setCoachRating(rating);
-      })
-      .catch((err) => {
-        console.warn('Gemini coach unavailable:', err);
-        setCoachCard(null);
-        setCoachFailed(true);
-      })
-      .finally(() => setCoachLoading(false));
-  };
 
   // --- Classify what's relevant *today* ---
   const scheduledHabits = habits.filter(
@@ -2399,12 +2362,6 @@ function Today({
     }
   }, [today]);
 
-
-  // Progress: today's habits + urgent tasks + tasks finished today
-  const totalCount =
-    scheduledHabits.length + overdueTasks.length + dueTodayTasks.length + completedToday.length;
-  const done = doneHabits.length + completedToday.length;
-  const pct = totalCount ? Math.round((done / totalCount) * 100) : 0;
 
   // Group today's open items (habits + upcoming tasks) by domain for the
   // main list, so balance across life areas is visible.
@@ -2617,26 +2574,6 @@ function Today({
     .filter((x) => x.items.length > 0);
   const moreCount = moreByDomain.reduce((s, x) => s + x.items.length, 0);
 
-  // Day ring: today's workload split by domain — completion AND balance in
-  // one glance. Same item set as the progress counter, so they always agree.
-  const ringSegments = domains.map((d) => {
-    const inDomain = (h: Habit) => domainOf(h.goalId) === d.id;
-    const total =
-      scheduledHabits.filter(inDomain).length +
-      overdueTasks.filter(inDomain).length +
-      dueTodayTasks.filter(inDomain).length +
-      completedToday.filter(inDomain).length;
-    const doneN = doneHabits.filter(inDomain).length + completedToday.filter(inDomain).length;
-    return { color: DOMAIN_COLORS[d.id] ?? 'var(--accent)', label: d.name.split(' ')[0] ?? d.name, done: doneN, total };
-  });
-
-  useEffect(() => {
-    fetchCoachCard();
-    // Re-runs once data arrives, and whenever the sprint focus changes — the
-    // card is steered by (and cached per) the sprint focus, so switching it
-    // regenerates a card oriented to the new goal.
-  }, [!goals.length && !habits.length, sprintFocusGoal?.id]);
-
   const renderRow = (h: Habit) => {
     const isDone = h.kind === 'task' ? !!h.completed : isHabitDoneThisPeriod(h);
     const dColor = DOMAIN_COLORS[domainOf(h.goalId) ?? ''] ?? 'var(--line)';
@@ -2745,54 +2682,8 @@ function Today({
         forward.
       </p>
 
-      {/* Coach card — sits at the top: progress counter + daily coaching blurb */}
-      <div className="today-section coach-card">
-        <div className="coach-card-header">
-          <span className="coach-card-label">
-            ✦ Coach
-            {coachLoading && <span className="focus-loading">thinking…</span>}
-          </span>
-          <button className="reflect-mini-btn" onClick={onReflect} title="Weekly reflection">✦ Reflect</button>
-        </div>
-        <div className="coach-progress coach-progress--ring">
-          <DayRing segments={ringSegments} pct={pct} />
-          <div className="ring-side">
-            <div className="coach-progress-num">
-              <span className="coach-progress-done">{done}</span>
-              <span className="coach-progress-total"> / {totalCount} today</span>
-            </div>
-            {coachFailed && !coachLoading && (
-              <button className="coach-retry-btn" onClick={fetchCoachCard}>
-                Retry coach ↺
-              </button>
-            )}
-            {coachCard && (
-              <>
-                <div className="coach-blurb">{coachCard.blurb}</div>
-                <div className="coach-feedback">
-                  <button
-                    className={`coach-feedback-btn up${coachRating === 'up' ? ' active' : ''}`}
-                    onClick={() => {
-                      if (coachRating === 'up') return;
-                      setCoachRating('up');
-                      saveCoachFeedback(today, coachCard.title, 'up', userId);
-                    }}
-                    aria-label="Helpful"
-                  >👍</button>
-                  <button
-                    className={`coach-feedback-btn down${coachRating === 'down' ? ' active' : ''}`}
-                    onClick={() => {
-                      if (coachRating === 'down') return;
-                      setCoachRating('down');
-                      saveCoachFeedback(today, coachCard.title, 'down', userId);
-                    }}
-                    aria-label="Not helpful"
-                  >👎</button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
+      <div className="today-reflect-row">
+        <button className="reflect-mini-btn" onClick={onReflect} title="Weekly reflection">✦ Reflect</button>
       </div>
 
       {sprintFocusGoal && (
@@ -3497,63 +3388,6 @@ const THREAD_PALETTE = [
   '#e8883c', '#4eb8e8', '#72ce6a', '#c8a96a',
   '#a78be8', '#e87a8b', '#4ed8c8', '#e8d44e',
 ];
-
-/**
- * Segmented progress ring for the Today header: each life area gets an arc
- * proportional to its share of today's workload (balance), filled by how much
- * of it is done (completion). Uses the same item set as the progress counter.
- */
-function DayRing({
-  segments,
-  pct,
-}: {
-  segments: Array<{ color: string; label: string; done: number; total: number }>;
-  pct: number;
-}) {
-  const SIZE = 96, R = 40, CX = 48, CY = 48;
-  const C = 2 * Math.PI * R;
-  const live = segments.filter((s) => s.total > 0);
-  const totalItems = live.reduce((s, x) => s + x.total, 0);
-  const GAP = live.length > 1 ? 5 : 0;
-  const avail = C - GAP * live.length;
-  let acc = 0;
-  return (
-    <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`} className="day-ring" aria-label="Today's progress by life area">
-      <g transform={`rotate(-90 ${CX} ${CY})`}>
-        {totalItems === 0 && (
-          <circle cx={CX} cy={CY} r={R} fill="none" stroke="var(--line)" strokeWidth="7" />
-        )}
-        {live.map((s, i) => {
-          const len = avail * (s.total / totalItems);
-          const fill = len * (s.done / s.total);
-          const el = (
-            <g key={i}>
-              <circle
-                cx={CX} cy={CY} r={R} fill="none"
-                stroke={s.color} strokeOpacity="0.22" strokeWidth="7"
-                strokeDasharray={`${len} ${C - len}`} strokeDashoffset={-acc}
-              />
-              {fill > 0 && (
-                <circle
-                  cx={CX} cy={CY} r={R} fill="none"
-                  stroke={s.color} strokeWidth="7"
-                  strokeLinecap={fill < len ? 'round' : 'butt'}
-                  strokeDasharray={`${fill} ${C - fill}`} strokeDashoffset={-acc}
-                />
-              )}
-            </g>
-          );
-          acc += len + GAP;
-          return el;
-        })}
-      </g>
-      <text x={CX} y={CY + 1} textAnchor="middle" dominantBaseline="middle" className="day-ring-pct">
-        {pct}%
-      </text>
-    </svg>
-  );
-}
-
 
 function stGoalMetrics(sg: Goal, goals: Goal[], habits: Habit[], focusStrength = 0, graced = true): { time: number; completion: number; health: number } {
   const now     = Date.now();

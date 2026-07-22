@@ -19,20 +19,27 @@ which is a separate concept).
 - **UI**: a target (◎) button in every goal card's controls (`node-focus`) —
   both top-level goals and sub-goals (sub-goals thread the props through
   `ShortWithActions`). The chosen goal gets an accent frame (`.sprint-focus`) +
-  inline "Sprint focus" pill. The Today tab shows a `sprint-focus-banner` above
-  the coach card with the goal title, its domain, and its health chip, and below
+  inline "Sprint focus" pill. The Today tab shows a `sprint-focus-banner` near
+  the top with the goal title, its domain, and its health chip, and below
   that lists the goal's whole to-do: every habit plus still-open task in the focus
   goal's **subtree** (walk `sprintFocusGoalIds` = itself + descendant sub-goals,
   so a top-level focus pulls in its sub-goals' items). Rows reuse Today's
   `renderRow`. Styles in `src/styles.css` under the `.node-sun.on` block.
-- **Coach card steering**: `getGeminiCoachCard` (`src/geminiAdvisor.ts`) reads the
-  sprint focus and, when set, marks it `[SPRINT FOCUS]` in the goal lines and adds
-  a rule to anchor the daily card on that goal (or an item serving it). While a
-  sprint is set the "cover a different goal than yesterday" rotation and the
-  day-of-week domain rota are suppressed, so the card can stay on the sprint goal
-  and just vary the angle. The sprint focus id is part of the coach cache key
-  (`gemini-coach-v31-…-sf:<id>`) and a dep of Today's coach `useEffect`, so
-  switching focus regenerates a card oriented to the new goal.
+
+## Coach card removed (2026-07)
+
+The daily Gemini "coach card" on the Today tab was removed — it repeatedly
+produced incoherent cards (anchoring on the sprint goal but nudging an
+unrelated task, praising momentum the user hadn't built) and wasn't earning
+its keep. Deleted: `src/geminiAdvisor.ts` (the whole module — `getGeminiCoachCard`,
+`saveCoachFeedback`, `getTodayCoachRating`, coach context RPC), the coach card
+JSX + the `DayRing` progress ring, the coach state/`useEffect`/`fetchCoachCard`
+in `Today`, and their CSS. The always-available **✦ Reflect** button that lived
+in the coach header was preserved as a standalone `.today-reflect-row` button so
+weekly reflection is still reachable outside the Sun–Wed prompt window. The
+`coach_feedback` Supabase table is now unused (left in place, harmless). Note:
+`focusStrength` (per-domain priority taper) is a **separate** concept and is
+untouched — it still drives goal health / alignment math.
 
 ## Value Alignment Model (decoupled from goal health, 2026-07)
 
@@ -101,10 +108,10 @@ created and — left alone — fades from there through the SAME decay as everyt
 else (no special glide). Build-out/completions add on top. The wrappers pass
 `goalCreatedAt` only when `graced` (default true); value-alignment passes
 `graced=false` so a brand-new empty goal scores its true 0 there.
-NOTE: a server-side `goal_health` Supabase view still uses the OLD formula, but
-`geminiAdvisor.ts` overrides those numbers with the client-computed ones before
-the coach sees them, so the view is stale-but-unused. Consider updating/dropping
-it as cleanup.
+NOTE: a server-side `goal_health` Supabase view still uses the OLD formula. It
+was only ever read by the (now-removed) Gemini coach, which overrode it with the
+client-computed numbers anyway, so the view is now fully unused. Consider
+dropping it as cleanup.
 
 ### DB change (applied to prod)
 
