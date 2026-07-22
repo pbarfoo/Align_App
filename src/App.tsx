@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { getGeminiCoachCard, saveCoachFeedback, getTodayCoachRating, getSprintFocusIdeas, type CoachCard, type SprintAdvice } from './geminiAdvisor';
+import { getGeminiCoachCard, saveCoachFeedback, getTodayCoachRating, type CoachCard } from './geminiAdvisor';
 import {
   DndContext, DragOverlay, type DragEndEvent, type DragStartEvent,
   MouseSensor, TouchSensor,
@@ -2326,34 +2326,7 @@ function Today({
   const [coachLoading, setCoachLoading] = useState(false);
   const [coachFailed, setCoachFailed] = useState(false);
   const [coachRating, setCoachRating] = useState<'up' | 'down' | null>(null);
-  // Sprint-focus AI ideas — tagged with the goal id they were generated for, so
-  // switching the focus goal drops stale advice instead of mislabelling it.
-  const [sprintAdvice, setSprintAdvice] = useState<{ goalId: string; advice: SprintAdvice } | null>(null);
-  const [sprintLoading, setSprintLoading] = useState(false);
-  const [sprintFailed, setSprintFailed] = useState(false);
   const today = toDateStr(new Date());
-
-  const fetchSprintIdeas = (bust = false) => {
-    if (!sprintFocusGoal) return;
-    setSprintLoading(true);
-    setSprintFailed(false);
-    const subGoals = goals.filter((g) => sprintFocusGoalIds.has(g.id) && g.id !== sprintFocusGoal.id);
-    const gh = goalHealthMap[sprintFocusGoal.id];
-    getSprintFocusIdeas(
-      sprintFocusGoal,
-      subGoals,
-      sprintFocusItems,
-      sprintFocusDomain,
-      gh ? (gh.nItems === 0 ? 0 : gh.health) : undefined,
-      bust,
-    )
-      .then((advice) => setSprintAdvice({ goalId: sprintFocusGoal.id, advice }))
-      .catch((err) => {
-        console.warn('Sprint ideas unavailable:', err);
-        setSprintFailed(true);
-      })
-      .finally(() => setSprintLoading(false));
-  };
 
   const fetchCoachCard = () => {
     if (!goals.length && !habits.length) return;
@@ -2661,13 +2634,6 @@ function Today({
     fetchCoachCard();
   }, [!goals.length && !habits.length]); // re-runs once data arrives; stable after that
 
-  // Clear transient ideas load/error state when the focus goal changes, so a
-  // stale spinner or error from the previous goal doesn't bleed onto the new one.
-  useEffect(() => {
-    setSprintLoading(false);
-    setSprintFailed(false);
-  }, [sprintFocusGoal?.id]);
-
   const renderRow = (h: Habit) => {
     const isDone = h.kind === 'task' ? !!h.completed : isHabitDoneThisPeriod(h);
     const dColor = DOMAIN_COLORS[domainOf(h.goalId) ?? ''] ?? 'var(--line)';
@@ -2812,48 +2778,6 @@ function Today({
               </p>
             )}
           </div>
-          {(() => {
-            const advice = sprintAdvice?.goalId === sprintFocusGoal.id ? sprintAdvice.advice : null;
-            return (
-              <div className="sprint-focus-ideas">
-                <div className="sprint-focus-ideas-head">
-                  <span className="sprint-focus-ideas-label">✦ Ideas &amp; perspective</span>
-                  {(advice || sprintFailed) && !sprintLoading && (
-                    <button
-                      className="sprint-ideas-refresh"
-                      onClick={() => fetchSprintIdeas(true)}
-                      title="Fresh ideas"
-                    >
-                      ↺ Refresh
-                    </button>
-                  )}
-                </div>
-                {sprintLoading ? (
-                  <p className="sprint-focus-empty">Thinking…</p>
-                ) : advice ? (
-                  <>
-                    <p className="sprint-ideas-perspective">{advice.perspective}</p>
-                    <ul className="sprint-ideas-list">
-                      {advice.ideas.map((idea, i) => (
-                        <li key={i} className="sprint-idea">
-                          <span className="sprint-idea-title">{idea.title}</span>
-                          <span className="sprint-idea-detail">{idea.detail}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </>
-                ) : sprintFailed ? (
-                  <p className="sprint-focus-empty">
-                    Couldn’t reach the coach. <button className="sprint-ideas-inline-btn" onClick={() => fetchSprintIdeas(true)}>Try again</button>
-                  </p>
-                ) : (
-                  <button className="sprint-ideas-btn" onClick={() => fetchSprintIdeas(false)}>
-                    ✦ Get ideas for this sprint
-                  </button>
-                )}
-              </div>
-            );
-          })()}
         </div>
       )}
 
