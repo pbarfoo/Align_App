@@ -2841,11 +2841,11 @@ function Today({
         </div>
       )}
 
-      {/* ☀ Today's focus — the tasks you flagged in the Align tab. */}
+      {/* ☀ Today's tasks — the tasks you flagged in the Align tab. */}
       {focusTasks.length > 0 && (
         <div className="today-section focus focus-card">
           <div className="today-section-head focus-head-row">
-            <span>☀ Today's focus</span>
+            <span>☀ Today's tasks</span>
           </div>
           {focusTasks.map((t) => renderRow(t))}
         </div>
