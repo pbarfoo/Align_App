@@ -203,6 +203,46 @@ describe('goal health — "how active am I with this goal" (event/decay model)',
     expect(__test_computeHealth([], [], now, 0, 30)).toBe(0);
   });
 
+  it('holding a goal as the sprint focus for a full day gives a small health boost', () => {
+    vi.setSystemTime(now);
+
+    const items = [task({ id: 't' })];
+    const base     = __test_computeHealth([], items, now, 0, HL);
+    const heldADay = __test_computeHealth([], items, now, 0, HL, undefined, now - day);
+    expect(heldADay).toBeGreaterThan(base);       // committing to the sprint lifts it
+    expect(heldADay - base).toBeLessThan(0.05);   // but only a little (one day ≈ +0.02)
+  });
+
+  it('the sprint credit needs a FULL day — the first day earns nothing', () => {
+    vi.setSystemTime(now);
+
+    const items = [task({ id: 't' })];
+    const base        = __test_computeHealth([], items, now, 0, HL);
+    const heldHalfDay = __test_computeHealth([], items, now, 0, HL, undefined, now - day / 2);
+    expect(heldHalfDay).toBe(base);
+  });
+
+  it('the sprint credit is capped — a long sprint stays a nudge, not a driver', () => {
+    vi.setSystemTime(now);
+
+    const subs = [subGoal({ id: 's' })];
+    const fiveDays    = __test_computeHealth(subs, [], now, 0, HL, undefined, now - 5 * day);
+    const hundredDays = __test_computeHealth(subs, [], now, 0, HL, undefined, now - 100 * day);
+    expect(hundredDays).toBeCloseTo(fiveDays, 5); // both pinned at the cap
+    expect(fiveDays).toBeGreaterThan(__test_computeHealth(subs, [], now, 0, HL));
+  });
+
+  it('the sprint credit is off the value-alignment path (only applied when passed)', () => {
+    vi.setSystemTime(now);
+
+    // No sprintFocusAt argument → no credit, exactly as the decoupled alignment
+    // math calls it. Same goal WITH the credit scores higher.
+    const items = [task({ id: 't' })];
+    const withoutCredit = __test_computeHealth([], items, now, 0, HL);
+    const withCredit    = __test_computeHealth([], items, now, 0, HL, undefined, now - 3 * day);
+    expect(withCredit).toBeGreaterThan(withoutCredit);
+  });
+
   it('the priority-position nudge only tilts a goal slightly', () => {
     vi.setSystemTime(now);
 

@@ -2,10 +2,11 @@
 
 ## Sprint Focus (single chosen goal, 2026-07)
 
-The user can nominate **one** goal as the current "sprint focus". It is a pure
-selection + surfacing feature — it deliberately does NOT touch the health or
-coach math (that stays driven by the per-domain priority taper `focusStrength`,
-which is a separate concept).
+The user can nominate **one** goal as the current "sprint focus". It is mostly a
+selection + surfacing feature and is independent of the per-domain priority taper
+`focusStrength` (a separate concept that drives the priority-position nudge).
+One deliberate exception (2026-07): holding a goal as the sprint focus now earns
+a **small goal-health credit** — see "Sprint-focus health credit" below.
 
 - **Data**: `Goal.sprintFocusAt?: number` (`src/data.ts`) — unix ms when chosen;
   `undefined` = not the focus. Persisted as `goals.sprint_focus_at bigint`
@@ -25,6 +26,18 @@ which is a separate concept).
   goal's **subtree** (walk `sprintFocusGoalIds` = itself + descendant sub-goals,
   so a top-level focus pulls in its sub-goals' items). Rows reuse Today's
   `renderRow`. Styles in `src/styles.css` under the `.node-sun.on` block.
+- **Sprint-focus health credit** (`computeHealth`, `src/App.tsx`): while a goal
+  is held as the sprint focus, each **full day** it's held adds a small credit to
+  the goal's health — `SPRINT_DAY` (2 pts/day) capped at `SPRINT_CAP` (10 pts,
+  ~5 days), so at most ≈ +0.10 on the 0–1 health. Nothing accrues on the first
+  day (`daysHeld = floor((now - sprintFocusAt)/DAY)` must be ≥ 1 — the goal has to
+  be the sprint for "an entire day"). It's a **present** credit tied to
+  `sprintFocusAt`, so switching the sprint elsewhere (which clears the field via
+  `applySprintFocus`) removes it. Threaded through `vitalityFor` /
+  `stGoalMetrics` / `ongoingGoalMetrics` as a new `sprintFocusAt` param, passed
+  **only when `graced`** (same gate as the birth credit) so it lifts displayed
+  health but stays out of the decoupled value-alignment math. Tests in
+  `src/App.health.test.ts`.
 
 ## Coach card removed (2026-07)
 

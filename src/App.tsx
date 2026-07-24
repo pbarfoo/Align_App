@@ -3259,6 +3259,12 @@ function computeHealth(
    * fades from there via the normal decay (no special glide). Omit to disable
    * (e.g. value-alignment, where a brand-new empty goal must score its true 0). */
   goalCreatedAt?: number,
+  /** unix ms when this goal was made the sprint focus (undefined = not the
+   * focus). While it's held as the sprint, each FULL day earns a small health
+   * credit — a gentle reward for committing to one goal. Passed only when
+   * graced, so it lifts the health the user sees without leaking into the
+   * decoupled value-alignment math. */
+  sprintFocusAt?: number,
 ): number {
   const DAY = 86_400_000;
   const decay = (ms: number) => Math.pow(0.5, Math.max(0, (now - ms) / DAY) / halfLifeDays);
@@ -3273,6 +3279,8 @@ function computeHealth(
                          // ~1-point nudge; missing also forfeits the +4 the day
                          // would have earned, so the real cost is already ~5.
   const OVERDUE    = 10; // per open overdue task, scaled by how late
+  const SPRINT_DAY = 2;  // per FULL day a goal is held as the sprint focus
+  const SPRINT_CAP = 10; // cap on the sprint credit (~5 days) — stays a nudge
 
   const tasks  = treeHabits.filter((h) => h.kind === 'task');
   const habits = treeHabits.filter((h) => h.kind === 'habit');
@@ -3283,6 +3291,16 @@ function computeHealth(
   // at the same half-life as everything else. Build-out/completions add on top;
   // left alone, the goal decays down from 50 on its own.
   if (goalCreatedAt != null) pos += 50 * decay(goalCreatedAt);
+
+  // Sprint-focus credit — a small reward for committing a goal to the single
+  // sprint slot and keeping it there. Accrues per FULL day held (nothing on the
+  // first day — it must be the sprint for "an entire day" to earn), capped so it
+  // stays a gentle nudge rather than a driver. It only exists while the goal is
+  // the active focus: switching the sprint elsewhere clears sprintFocusAt.
+  if (sprintFocusAt != null) {
+    const daysHeld = Math.floor((now - sprintFocusAt) / DAY);
+    if (daysHeld > 0) pos += Math.min(daysHeld * SPRINT_DAY, SPRINT_CAP);
+  }
 
   // Build-out — structural credit, fading from when each item was added.
   for (const g of subGoals) pos += BUILD.sub   * decay(g.createdAt || now);
@@ -3374,7 +3392,7 @@ function vitalityFor(
 
   const completion = computeDone(subGoals, subtreeHabits, habits, now);
   // Long-horizon goals decay slowest (60-day half-life).
-  const health     = computeHealth(subGoals, subtreeHabits, now, focusStrength, 60, graced ? lg.createdAt : undefined);
+  const health     = computeHealth(subGoals, subtreeHabits, now, focusStrength, 60, graced ? lg.createdAt : undefined, graced ? lg.sprintFocusAt : undefined);
   return { time: elapsed, completion, health };
 }
 
@@ -3400,7 +3418,7 @@ function stGoalMetrics(sg: Goal, goals: Goal[], habits: Habit[], focusStrength =
 
   const completion = computeDone(subGoals, sgHabits, habits, now);
   // Short-horizon goals decay fastest (14-day half-life).
-  const health     = computeHealth(subGoals, sgHabits, now, focusStrength, 14, graced ? sg.createdAt : undefined);
+  const health     = computeHealth(subGoals, sgHabits, now, focusStrength, 14, graced ? sg.createdAt : undefined, graced ? sg.sprintFocusAt : undefined);
   return { time: elapsed, completion, health };
 }
 
@@ -3418,7 +3436,7 @@ function ongoingGoalMetrics(og: Goal, goals: Goal[], habits: Habit[], focusStren
   const ogHabits = habits.filter((h) => subtree.has(h.goalId));
 
   const completion = computeDone(subGoals, ogHabits, habits, now);
-  const health     = computeHealth(subGoals, ogHabits, now, focusStrength, 30, graced ? og.createdAt : undefined);
+  const health     = computeHealth(subGoals, ogHabits, now, focusStrength, 30, graced ? og.createdAt : undefined, graced ? og.sprintFocusAt : undefined);
   return { time: 0, completion, health };
 }
 
