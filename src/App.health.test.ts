@@ -206,6 +206,7 @@ describe('goal health — "how active am I with this goal" (event/decay model)',
   it('holding a goal as the sprint focus for a full day gives a small health boost', () => {
     vi.setSystemTime(now);
 
+    // 7th arg = live sprintFocusAt (set a day ago → one full day earned).
     const items = [task({ id: 't' })];
     const base     = __test_computeHealth([], items, now, 0, HL);
     const heldADay = __test_computeHealth([], items, now, 0, HL, undefined, now - day);
@@ -213,7 +214,7 @@ describe('goal health — "how active am I with this goal" (event/decay model)',
     expect(heldADay - base).toBeLessThan(0.05);   // but only a little (one day ≈ +0.02)
   });
 
-  it('the sprint credit needs a FULL day — the first day earns nothing', () => {
+  it('the sprint bonus needs a FULL day — the first day earns nothing', () => {
     vi.setSystemTime(now);
 
     const items = [task({ id: 't' })];
@@ -222,25 +223,47 @@ describe('goal health — "how active am I with this goal" (event/decay model)',
     expect(heldHalfDay).toBe(base);
   });
 
-  it('the sprint credit is capped — a long sprint stays a nudge, not a driver', () => {
+  it('a banked focus-day keeps lifting health after the sprint has moved on', () => {
+    vi.setSystemTime(now);
+
+    // 8th arg = banked sprintFocusDays, with NO active sprintFocusAt (7th
+    // undefined): the goal is no longer the focus, yet the earned day still
+    // counts. This is the "holds after the sprint is done" behaviour.
+    const items = [task({ id: 't' })];
+    const base   = __test_computeHealth([], items, now, 0, HL);
+    const banked = __test_computeHealth([], items, now, 0, HL, undefined, undefined, [ymd(now)]);
+    expect(banked).toBeGreaterThan(base);
+  });
+
+  it('the sprint bonus decays — an old focus-day is worth less than a recent one', () => {
+    vi.setSystemTime(now);
+
+    const recent = __test_computeHealth([], [], now, 0, HL, undefined, undefined, [ymd(now)]);
+    const old    = __test_computeHealth([], [], now, 0, HL, undefined, undefined, [ymd(now - 60 * day)]);
+    expect(old).toBeGreaterThan(0);      // it still counts...
+    expect(old).toBeLessThan(recent);    // ...but has faded, like every other event
+  });
+
+  it('the sprint bonus is capped — a long run of focus-days stays a nudge, not a driver', () => {
     vi.setSystemTime(now);
 
     const subs = [subGoal({ id: 's' })];
-    const fiveDays    = __test_computeHealth(subs, [], now, 0, HL, undefined, now - 5 * day);
-    const hundredDays = __test_computeHealth(subs, [], now, 0, HL, undefined, now - 100 * day);
-    expect(hundredDays).toBeCloseTo(fiveDays, 5); // both pinned at the cap
-    expect(fiveDays).toBeGreaterThan(__test_computeHealth(subs, [], now, 0, HL));
+    const many = Array.from({ length: 60 }, (_, i) => ymd(now - i * day));
+    const base   = __test_computeHealth(subs, [], now, 0, HL);
+    const capped = __test_computeHealth(subs, [], now, 0, HL, undefined, undefined, many);
+    expect(capped).toBeGreaterThan(base);
+    expect(capped - base).toBeLessThanOrEqual(0.1 + 1e-9); // never more than the cap (~+0.10)
   });
 
-  it('the sprint credit is off the value-alignment path (only applied when passed)', () => {
+  it('the sprint bonus is off the value-alignment path (only applied when passed)', () => {
     vi.setSystemTime(now);
 
-    // No sprintFocusAt argument → no credit, exactly as the decoupled alignment
-    // math calls it. Same goal WITH the credit scores higher.
+    // No sprint args → no bonus, exactly as the decoupled alignment math calls
+    // it. The same goal WITH banked focus-days scores higher.
     const items = [task({ id: 't' })];
-    const withoutCredit = __test_computeHealth([], items, now, 0, HL);
-    const withCredit    = __test_computeHealth([], items, now, 0, HL, undefined, now - 3 * day);
-    expect(withCredit).toBeGreaterThan(withoutCredit);
+    const withoutBonus = __test_computeHealth([], items, now, 0, HL);
+    const withBonus    = __test_computeHealth([], items, now, 0, HL, undefined, undefined, [ymd(now), ymd(now - day)]);
+    expect(withBonus).toBeGreaterThan(withoutBonus);
   });
 
   it('the priority-position nudge only tilts a goal slightly', () => {

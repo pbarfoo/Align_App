@@ -42,4 +42,19 @@ describe('applySprintFocus (single-select)', () => {
     // 'b' had no focus before or after → same reference, no needless churn.
     expect(next.find((x) => x.id === 'b')).toBe(goals[1]);
   });
+
+  it('banks the full days a goal held as the sprint focus when the focus moves off it', () => {
+    const day = 86_400_000;
+    const now = Date.UTC(2026, 6, 10, 12, 0, 0); // 2026-07-10T12:00Z
+    // 'a' has been the focus since 3 days ago; moving the sprint to 'b' must
+    // record the full days it held so the health bonus survives the switch.
+    const goals = [g('a', { sprintFocusAt: now - 3 * day }), g('b')];
+    const next = applySprintFocus(goals, 'b', now);
+    const a = next.find((x) => x.id === 'a')!;
+    expect(a.sprintFocusAt).toBeUndefined(); // focus moved off
+    // The set-date itself is excluded (needs "an entire day"); the three full
+    // days since are banked.
+    expect(a.sprintFocusDays).toEqual(['2026-07-08', '2026-07-09', '2026-07-10']);
+    expect(next.find((x) => x.id === 'b')!.sprintFocusAt).toBe(now);
+  });
 });

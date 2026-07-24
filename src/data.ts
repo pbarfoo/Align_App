@@ -33,6 +33,12 @@ export interface Goal {
    * user is centring this stretch of work on. At most one goal carries this at
    * a time (selecting a new one clears the previous). undefined = not the focus. */
   sprintFocusAt?: number;
+  /** YYYY-MM-DD dates on which this goal earned a "sprint focus" bonus — one per
+   * full day it was held as the sprint. Banked when the focus moves elsewhere so
+   * the bonus PERSISTS after the sprint ends, then decays like any other health
+   * event. While the goal is still the active focus, in-progress days are derived
+   * live from sprintFocusAt (not yet written here). */
+  sprintFocusDays?: string[];
 }
 
 export type ActionKind = 'habit' | 'task';

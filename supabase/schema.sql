@@ -30,7 +30,11 @@ create table if not exists public.goals (
   -- unix ms when this goal was chosen as THE single sprint focus. At most one
   -- goal per user carries a non-null value (enforced client-side: setting one
   -- clears the rest). null = not the sprint focus.
-  sprint_focus_at bigint
+  sprint_focus_at bigint,
+  -- YYYY-MM-DD dates the goal earned a sprint-focus health bonus (one per full
+  -- day held as the sprint). Banked when the focus moves elsewhere so the bonus
+  -- persists and then decays. null/empty = none earned yet.
+  sprint_focus_days text[]
 );
 
 -- HABITS

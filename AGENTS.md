@@ -26,18 +26,28 @@ a **small goal-health credit** — see "Sprint-focus health credit" below.
   goal's **subtree** (walk `sprintFocusGoalIds` = itself + descendant sub-goals,
   so a top-level focus pulls in its sub-goals' items). Rows reuse Today's
   `renderRow`. Styles in `src/styles.css` under the `.node-sun.on` block.
-- **Sprint-focus health credit** (`computeHealth`, `src/App.tsx`): while a goal
-  is held as the sprint focus, each **full day** it's held adds a small credit to
-  the goal's health — `SPRINT_DAY` (2 pts/day) capped at `SPRINT_CAP` (10 pts,
-  ~5 days), so at most ≈ +0.10 on the 0–1 health. Nothing accrues on the first
-  day (`daysHeld = floor((now - sprintFocusAt)/DAY)` must be ≥ 1 — the goal has to
-  be the sprint for "an entire day"). It's a **present** credit tied to
-  `sprintFocusAt`, so switching the sprint elsewhere (which clears the field via
-  `applySprintFocus`) removes it. Threaded through `vitalityFor` /
-  `stGoalMetrics` / `ongoingGoalMetrics` as a new `sprintFocusAt` param, passed
-  **only when `graced`** (same gate as the birth credit) so it lifts displayed
-  health but stays out of the decoupled value-alignment math. Tests in
-  `src/App.health.test.ts`.
+- **Sprint-focus health bonus** (`computeHealth`, `src/App.tsx`): each **full
+  day** a goal is held as the sprint focus earns a small, **decaying** health
+  bonus — a reward for focusing on it that **persists after the sprint moves on**
+  and then fades like any other event (it is NOT a live-only credit). Mechanics:
+  - Each earned day is a dated event worth `SPRINT_DAY` (2 pts) that decays from
+    its own date at the goal's half-life. The summed bonus is capped at
+    `SPRINT_CAP` (10 pts ≈ +0.10 on the 0–1 scale) so it stays a nudge.
+  - **Earned days** = every calendar date strictly after the set-date, up through
+    today (`focusDatesEarned(sprintFocusAt, now)`) — nothing on the set-date
+    itself (must be the sprint for "an entire day").
+  - **Banking**: `applySprintFocus` unions the earned days into the goal's
+    `Goal.sprintFocusDays` (new field; DB col `goals.sprint_focus_days text[]`,
+    migration `add_goals_sprint_focus_days`, applied to prod) **before** clearing
+    `sprintFocusAt`, so the bonus survives the switch. While a goal is still the
+    active focus, in-progress days are derived **live** from `sprintFocusAt` in
+    `computeHealth` (unioned with the banked set) so the display updates without a
+    write; they're persisted only when the focus moves.
+  - Threaded through `vitalityFor` / `stGoalMetrics` / `ongoingGoalMetrics` as
+    `sprintFocusAt` + `sprintFocusDays` params, passed **only when `graced`**
+    (same gate as the birth credit) so it lifts displayed health but stays out of
+    the decoupled value-alignment math. Tests in `src/App.health.test.ts` and
+    `src/App.sprintFocus.test.ts`.
 
 ## Coach card removed (2026-07)
 

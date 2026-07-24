@@ -82,6 +82,7 @@ function goalToRow(g: Goal, userId: string): Row {
     sort_order: g.sortOrder ?? null,
     archived_at: g.archivedAt ?? null,
     sprint_focus_at: g.sprintFocusAt ?? null,
+    sprint_focus_days: g.sprintFocusDays ?? null,
   };
 }
 function goalFromRow(row: Row): Goal {
@@ -97,6 +98,7 @@ function goalFromRow(row: Row): Goal {
     sortOrder: row.sort_order ?? undefined,
     archivedAt: row.archived_at ?? undefined,
     sprintFocusAt: row.sprint_focus_at ?? undefined,
+    sprintFocusDays: Array.isArray(row.sprint_focus_days) ? row.sprint_focus_days : undefined,
   };
 }
 
@@ -3259,12 +3261,17 @@ function computeHealth(
    * fades from there via the normal decay (no special glide). Omit to disable
    * (e.g. value-alignment, where a brand-new empty goal must score its true 0). */
   goalCreatedAt?: number,
-  /** unix ms when this goal was made the sprint focus (undefined = not the
-   * focus). While it's held as the sprint, each FULL day earns a small health
-   * credit — a gentle reward for committing to one goal. Passed only when
-   * graced, so it lifts the health the user sees without leaking into the
-   * decoupled value-alignment math. */
+  /** unix ms when this goal is CURRENTLY the sprint focus (undefined = not the
+   * focus right now). Used to derive the in-progress focus-days live, on top of
+   * any already banked in `sprintFocusDays`. */
   sprintFocusAt?: number,
+  /** YYYY-MM-DD dates this goal has banked a sprint-focus bonus for (full days
+   * held, persisted so the bonus survives after the sprint moves on). Each date
+   * contributes a small, decaying credit — a reward for having focused on the
+   * goal. Together with the live days from `sprintFocusAt` these are summed and
+   * capped. Both are passed only when graced, so the bonus lifts the health the
+   * user sees without leaking into the decoupled value-alignment math. */
+  sprintFocusDays?: string[],
 ): number {
   const DAY = 86_400_000;
   const decay = (ms: number) => Math.pow(0.5, Math.max(0, (now - ms) / DAY) / halfLifeDays);
@@ -3292,14 +3299,18 @@ function computeHealth(
   // left alone, the goal decays down from 50 on its own.
   if (goalCreatedAt != null) pos += 50 * decay(goalCreatedAt);
 
-  // Sprint-focus credit — a small reward for committing a goal to the single
-  // sprint slot and keeping it there. Accrues per FULL day held (nothing on the
-  // first day — it must be the sprint for "an entire day" to earn), capped so it
-  // stays a gentle nudge rather than a driver. It only exists while the goal is
-  // the active focus: switching the sprint elsewhere clears sprintFocusAt.
-  if (sprintFocusAt != null) {
-    const daysHeld = Math.floor((now - sprintFocusAt) / DAY);
-    if (daysHeld > 0) pos += Math.min(daysHeld * SPRINT_DAY, SPRINT_CAP);
+  // Sprint-focus bonus — a small reward for each FULL day the goal was held as
+  // the single sprint focus. Every earned day is a dated event that DECAYS from
+  // its own date like everything else, so the bonus persists after the sprint
+  // moves on and then fades. Banked days (`sprintFocusDays`) plus the days still
+  // accruing live from the active `sprintFocusAt` are unioned, summed, and capped
+  // so the bonus stays a gentle nudge (≈ +0.10 max) rather than a driver.
+  {
+    const focusDays = new Set(sprintFocusDays ?? []);
+    if (sprintFocusAt != null) for (const d of focusDatesEarned(sprintFocusAt, now)) focusDays.add(d);
+    let sprintBonus = 0;
+    for (const d of focusDays) sprintBonus += SPRINT_DAY * decay(dayMs(d));
+    pos += Math.min(sprintBonus, SPRINT_CAP);
   }
 
   // Build-out — structural credit, fading from when each item was added.
@@ -3392,7 +3403,7 @@ function vitalityFor(
 
   const completion = computeDone(subGoals, subtreeHabits, habits, now);
   // Long-horizon goals decay slowest (60-day half-life).
-  const health     = computeHealth(subGoals, subtreeHabits, now, focusStrength, 60, graced ? lg.createdAt : undefined, graced ? lg.sprintFocusAt : undefined);
+  const health     = computeHealth(subGoals, subtreeHabits, now, focusStrength, 60, graced ? lg.createdAt : undefined, graced ? lg.sprintFocusAt : undefined, graced ? lg.sprintFocusDays : undefined);
   return { time: elapsed, completion, health };
 }
 
@@ -3418,7 +3429,7 @@ function stGoalMetrics(sg: Goal, goals: Goal[], habits: Habit[], focusStrength =
 
   const completion = computeDone(subGoals, sgHabits, habits, now);
   // Short-horizon goals decay fastest (14-day half-life).
-  const health     = computeHealth(subGoals, sgHabits, now, focusStrength, 14, graced ? sg.createdAt : undefined, graced ? sg.sprintFocusAt : undefined);
+  const health     = computeHealth(subGoals, sgHabits, now, focusStrength, 14, graced ? sg.createdAt : undefined, graced ? sg.sprintFocusAt : undefined, graced ? sg.sprintFocusDays : undefined);
   return { time: elapsed, completion, health };
 }
 
@@ -3436,7 +3447,7 @@ function ongoingGoalMetrics(og: Goal, goals: Goal[], habits: Habit[], focusStren
   const ogHabits = habits.filter((h) => subtree.has(h.goalId));
 
   const completion = computeDone(subGoals, ogHabits, habits, now);
-  const health     = computeHealth(subGoals, ogHabits, now, focusStrength, 30, graced ? og.createdAt : undefined, graced ? og.sprintFocusAt : undefined);
+  const health     = computeHealth(subGoals, ogHabits, now, focusStrength, 30, graced ? og.createdAt : undefined, graced ? og.sprintFocusAt : undefined, graced ? og.sprintFocusDays : undefined);
   return { time: 0, completion, health };
 }
 
@@ -4167,11 +4178,49 @@ function isFocusFlagActive(focusDate: string | undefined, todayStr: string): boo
  * already the focus clears it (no focus at all). Object identity is preserved for
  * any row that doesn't change, so React/state churn stays minimal.
  */
+/**
+ * The YYYY-MM-DD dates a goal has EARNED a sprint-focus bonus for: one per full
+ * day held since it was set as the focus — i.e. every calendar date strictly
+ * after the set-date, up through today. Nothing on the set-date itself (the goal
+ * must be the sprint for "an entire day" before it earns). Deterministic from
+ * sprintFocusAt + now, so re-deriving it is idempotent.
+ */
+function focusDatesEarned(sprintFocusAt: number, now: number): string[] {
+  const todayStr = toDateStr(new Date(now));
+  const out: string[] = [];
+  const d = new Date(sprintFocusAt);
+  d.setHours(12, 0, 0, 0); // noon-anchored to dodge DST edge cases
+  for (;;) {
+    d.setDate(d.getDate() + 1);
+    const ds = toDateStr(d);
+    if (ds > todayStr) break;
+    out.push(ds);
+  }
+  return out;
+}
+
+/** Union a goal's earned focus-days into its banked `sprintFocusDays`, so the
+ * bonus survives after the sprint moves elsewhere. Returns the same goal ref
+ * when nothing new is earned (nothing to bank). */
+function bankFocusDays(g: Goal, now: number): Goal {
+  if (!g.sprintFocusAt) return g;
+  const earned = focusDatesEarned(g.sprintFocusAt, now);
+  if (!earned.length) return g;
+  const merged = new Set(g.sprintFocusDays ?? []);
+  const before = merged.size;
+  for (const d of earned) merged.add(d);
+  if (merged.size === before) return g;
+  return { ...g, sprintFocusDays: [...merged].sort() };
+}
+
 function applySprintFocus(goals: Goal[], id: string, now: number = Date.now()): Goal[] {
   const turningOff = goals.some((g) => g.id === id && g.sprintFocusAt);
   return goals.map((g) => {
+    // Bank any full days the goal has already earned BEFORE (possibly) clearing
+    // its focus, so switching the sprint away doesn't forget the days it held.
+    const banked = bankFocusDays(g, now);
     const next = turningOff || g.id !== id ? undefined : now;
-    return g.sprintFocusAt === next ? g : { ...g, sprintFocusAt: next };
+    return banked.sprintFocusAt === next ? banked : { ...banked, sprintFocusAt: next };
   });
 }
 
