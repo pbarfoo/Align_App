@@ -2696,6 +2696,37 @@ h1 {
 .row-goal-health.y { color: #e8d44e; }
 .row-goal-health.g { color: #72ce6a; }
 
+/* Manage a row without leaving Today: tap the title to edit, ⌫ to delete. */
+.row-title-edit { cursor: text; }
+@media (hover: hover) {
+  .row-title-edit:hover { text-decoration: underline dotted; text-underline-offset: 3px; }
+}
+
+.row-del {
+  flex-shrink: 0;
+  align-self: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  opacity: 0.55;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: color 0.18s, opacity 0.18s;
+}
+@media (hover: hover) {
+  .row-del:hover { color: #e5544b; opacity: 1; }
+}
+
+/* The Align edit form reused inline under a Today row — drop Align's tree
+   indent so it sits flush with the row it belongs to. */
+.today-row-edit .inline-add.habit {
+  margin: 4px 0 12px;
+}
+
 .more-domain-group { margin-top: 10px; }
 
 /* Small phones: keep chips compact */
