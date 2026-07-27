@@ -49,6 +49,27 @@ a **small goal-health credit** — see "Sprint-focus health credit" below.
     the decoupled value-alignment math. Tests in `src/App.health.test.ts` and
     `src/App.sprintFocus.test.ts`.
 
+## Period-cadence skip fix (2026-07)
+
+`skipDayPatch` (`src/App.tsx`) used to advance a period-cadence habit's
+`startDate` by a single day (`dayAfter`) when the ↺ pill dismissed a missed
+occurrence. Because `getGraceDays` re-flags `today − interval` **every day**, a
+one-day bump never got ahead of that sliding date, so `prevStr < startDate`
+stayed false and the missed chip reappeared daily — a weekly ("custom, every
+1 week") habit turned into a daily nag. The live "Bike to work" row had accrued
+a run of consecutive daily skips and a `startDate` that had crept forward one
+day at a time.
+
+Fix: period cadences (monthly / yearly / custom) now advance `startDate` by one
+**natural interval** (`addDays(frozenDate, naturalIntervalDays(h))`), so the
+habit stays quiet until the next period actually elapses. Calendar cadences
+(daily / weekdays / specific-days / weekly) are unchanged (they never move
+`startDate`). Tests: `src/App.schedule.test.ts` (`skipDayPatch` interval
+advance + `getGraceDays` no-daily-renag regression). The corrupted "Bike to
+work" row (`h-mpv4a9mv-0`) was cleaned up in prod: skips collapsed to the two
+weekly periods genuinely missed since the last ride (`2026-07-13`,
+`2026-07-20`), `start_date` reset to `2026-07-27`.
+
 ## Coach card removed (2026-07)
 
 The daily Gemini "coach card" on the Today tab was removed — it repeatedly
