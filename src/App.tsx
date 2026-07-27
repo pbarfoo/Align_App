@@ -3360,6 +3360,8 @@ export const __test_focusFlagDate = focusFlagDate;
 export const __test_isFocusFlagActive = isFocusFlagActive;
 export const __test_applySprintFocus = applySprintFocus;
 export const __test_computeStreakFromCompletions = computeStreakFromCompletions;
+export const __test_skipDayPatch = skipDayPatch;
+export const __test_getGraceDays = getGraceDays;
 
 /**
  * Done = weighted count ratio across sub-goals, habits, and tasks.
@@ -4152,6 +4154,13 @@ function dayAfter(dateStr: string): string {
   return toDateStr(d);
 }
 
+/** `dateStr` shifted by `n` whole days (noon-anchored to dodge DST edges). */
+function addDays(dateStr: string, n: number): string {
+  const d = new Date(dateStr + 'T12:00');
+  d.setDate(d.getDate() + Math.round(n));
+  return toDateStr(d);
+}
+
 // ☀ Evening rollover for the today-focus flag. A sun click at/after this hour
 // stamps TOMORROW's date, so a task flagged the night before carries through
 // the whole next day instead of lapsing at the coming midnight.
@@ -4232,15 +4241,21 @@ function applySprintFocus(goals: Goal[], id: string, now: number = Date.now()): 
  * for weekly it is the schedule's weekday anchor, so advancing it by one day
  * per skip rotated the habit onto weekdays it was never scheduled for (label
  * and pills drifting Wed → Thu → Fri with each click). Period cadences
- * (monthly / yearly / custom) still advance startDate past the dismissed day,
- * which their rolling-window detection relies on.
+ * (monthly / yearly / custom) advance startDate past the WHOLE dismissed
+ * period — one natural interval, not one day — which their rolling-window
+ * detection relies on. Advancing by a single day (dayAfter) re-nagged every
+ * day: `getGraceDays` re-flags `today − interval` daily, and a one-day bump
+ * never got ahead of that sliding date, so `prevStr < startDate` stayed false
+ * and the missed chip reappeared the very next day (see the daily skip run a
+ * weekly custom habit accrued). One interval keeps it quiet until the next
+ * period actually elapses.
  */
 function skipDayPatch(h: Habit, frozenDate: string): Partial<Habit> {
   const rec = h.recurrence ?? 'daily';
   const calendarCadence =
     rec === 'daily' || rec === 'weekdays' || rec === 'specific-days' || rec === 'weekly';
   return {
-    ...(calendarCadence ? {} : { startDate: dayAfter(frozenDate) }),
+    ...(calendarCadence ? {} : { startDate: addDays(frozenDate, naturalIntervalDays(h)) }),
     skippedDates: [...(h.skippedDates ?? []), frozenDate],
   };
 }
