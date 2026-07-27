@@ -2272,6 +2272,8 @@ function Today({
   const [showDone, setShowDone] = useState(false);
   // Goal pending a delete-confirmation from the triage row (null = closed).
   const [pendingDeleteGoalId, setPendingDeleteGoalId] = useState<string | null>(null);
+  // Row whose inline edit form is open (null = none). Same form Align uses.
+  const [editingHabitId, setEditingHabitId] = useState<string | null>(null);
   // "More" (everything beyond Up next) — collapse state persists across visits.
   const [moreOpen, setMoreOpen] = useState<boolean>(() => {
     try { return JSON.parse(localStorage.getItem('today-more-open-v1') ?? 'false'); } catch { return false; }
@@ -2441,7 +2443,12 @@ function Today({
     setHabits((prev) => prev.map((h) => (h.id === id ? { ...h, dueDate: newDate || undefined } : h)));
   };
 
-  const deleteTask = (id: string) => {
+  // Edit a task/habit in place (mirrors Align's updateHabit) so the inline form
+  // can retitle, re-date, or re-cadence a row without leaving Today.
+  const editHabit = (id: string, updates: Partial<Habit>) =>
+    setHabits((prev) => prev.map((h) => (h.id === id ? { ...h, ...updates } : h)));
+
+  const deleteItem = (id: string) => {
     // Snapshot the removed row with its index so Undo can splice it back into
     // place. Restoring to state re-triggers the upsert sync, which re-creates
     // the DB row.
@@ -2581,9 +2588,9 @@ function Today({
     const dColor = DOMAIN_COLORS[domainOf(h.goalId) ?? ''] ?? 'var(--line)';
     const gh = goalHealthMap[h.goalId];
     return (
+      <React.Fragment key={h.id}>
       <div
         className="habit-row domain-edged"
-        key={h.id}
         style={{ '--row-domain': dColor } as React.CSSProperties}
       >
         <button
@@ -2601,7 +2608,13 @@ function Today({
             >
               {h.kind === 'task' ? <TaskArrow /> : <RepeatIcon />}
             </span>
-            {h.title}
+            <span
+              className="row-title-edit"
+              title="Click to edit"
+              onClick={(e) => { e.stopPropagation(); setEditingHabitId(editingHabitId === h.id ? null : h.id); }}
+            >
+              {h.title}
+            </span>
           </div>
           <div className="habit-meta">
             <b>{lineage(h.goalId)}</b>
@@ -2657,7 +2670,26 @@ function Today({
             <SunIcon />
           </button>
         )}
+        <button
+          className="row-del"
+          title="Delete"
+          aria-label="Delete"
+          onClick={(e) => { e.stopPropagation(); deleteItem(h.id); }}
+        >
+          <TrashIcon />
+        </button>
       </div>
+      {editingHabitId === h.id && (
+        <div className="today-row-edit">
+          <AddActionForm
+            goalId={h.goalId}
+            initial={h}
+            onSave={(updates) => { editHabit(h.id, updates); setEditingHabitId(null); }}
+            onClose={() => setEditingHabitId(null)}
+          />
+        </div>
+      )}
+      </React.Fragment>
     );
   };
 
@@ -2794,7 +2826,13 @@ function Today({
                   <div style={{ flex: 1 }}>
                     <div className="habit-title">
                       <span className="kind-icon task" title="One-off task"><TaskArrow /></span>
-                      {task.title}
+                      <span
+                        className="row-title-edit"
+                        title="Click to edit"
+                        onClick={(e) => { e.stopPropagation(); setEditingHabitId(editingHabitId === task.id ? null : task.id); }}
+                      >
+                        {task.title}
+                      </span>
                     </div>
                     <div className="habit-meta">
                       <b>{lineage(task.goalId)}</b>
@@ -2811,12 +2849,22 @@ function Today({
                         onChange={(v) => rescheduleTask(task.id, v)}
                         placeholder="Reschedule"
                       />
-                      <button className="mini-ghost triage-delete" onClick={() => deleteTask(task.id)}>
+                      <button className="mini-ghost triage-delete" onClick={() => deleteItem(task.id)}>
                         Delete
                       </button>
                     </div>
                   </div>
                 </div>
+                {editingHabitId === task.id && (
+                  <div className="today-row-edit">
+                    <AddActionForm
+                      goalId={task.goalId}
+                      initial={task}
+                      onSave={(updates) => { editHabit(task.id, updates); setEditingHabitId(null); }}
+                      onClose={() => setEditingHabitId(null)}
+                    />
+                  </div>
+                )}
               </React.Fragment>
             );
           })}
