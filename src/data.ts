@@ -1,4 +1,4 @@
-export type DomainId = 'career' | 'self' | 'community';
+export type DomainId = 'career' | 'self' | 'family' | 'community';
 
 export interface Domain {
   id: DomainId;
@@ -107,12 +107,20 @@ export const domains: Domain[] = [
       'To become physically healthy, emotionally steady, and genuinely at ease — growing continuously without burning out.',
   },
   {
-    id: 'community',
-    name: 'Family/Others',
-    blurb: 'The people you belong to.',
-    values: ['Leadership', 'Financial Security', 'Presence', 'Integrity', 'Love', 'Community'],
+    id: 'family',
+    name: 'Family / Home',
+    blurb: 'The people and home you protect first.',
+    values: ['Leadership', 'Financial Security', 'Presence', 'Integrity', 'Love/Positivity'],
     vision:
-      'To be a present, loving husband and father who leads his family with integrity, warmth, and a long view — creating a stable, generous home deeply connected to community.',
+      'To be a present, loving husband and father who leads his family with integrity, warmth, and a long view — creating a stable, generous home.',
+  },
+  {
+    id: 'community',
+    name: 'Community / Service',
+    blurb: 'The people and communities you serve beyond home.',
+    values: ['Leadership', 'Presence', 'Integrity', 'Love/Positivity', 'Community', 'Service'],
+    vision:
+      'To contribute beyond home through friendship, service, stewardship, and community leadership — building relationships, strengthening shared places, and using my gifts to help others flourish.',
   },
 ];
 
@@ -170,7 +178,7 @@ export const initialGoals: Goal[] = [
   },
   {
     id: 'g-comm-long',
-    domainId: 'community',
+    domainId: 'family',
     valueIndexes: [0],
     horizon: 'long',
     title: 'No regrets about time with the people I love',

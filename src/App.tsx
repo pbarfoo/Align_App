@@ -3460,7 +3460,8 @@ function vitalityFor(
 const DOMAIN_COLORS: Record<string, string> = {
   career: '#e8883c',      // orange
   self: '#4eb8e8',        // sky blue
-  community: '#72ce6a',   // green
+  family: '#72ce6a',      // green
+  community: '#a78be8',   // violet
 };
 
 const THREAD_PALETTE = [
@@ -4243,15 +4244,15 @@ function isFocusFlagActive(focusDate: string | undefined, todayStr: string): boo
  * sprintFocusAt + now, so re-deriving it is idempotent.
  */
 function focusDatesEarned(sprintFocusAt: number, now: number): string[] {
-  const todayStr = toDateStr(new Date(now));
+  const fullDays = Math.floor((now - sprintFocusAt) / 86_400_000);
+  if (fullDays < 1) return [];
+
   const out: string[] = [];
   const d = new Date(sprintFocusAt);
   d.setHours(12, 0, 0, 0); // noon-anchored to dodge DST edge cases
-  for (;;) {
+  for (let i = 0; i < fullDays; i += 1) {
     d.setDate(d.getDate() + 1);
-    const ds = toDateStr(d);
-    if (ds > todayStr) break;
-    out.push(ds);
+    out.push(toDateStr(d));
   }
   return out;
 }
