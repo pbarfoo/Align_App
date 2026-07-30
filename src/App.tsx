@@ -11,6 +11,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import {
   domains as seedDomains,
+  sortDomains,
   initialGoals,
   initialHabits,
   uid,
@@ -312,7 +313,7 @@ export default function App() {
       hydrating.current = true; // skip the sync effects triggered by these setState calls
 
       if (d.data?.length) {
-        setDomains(d.data.map(domainFromRow));
+        setDomains(sortDomains(d.data.map(domainFromRow)));
       } else if (!alreadySeeded) {
         supabase.from('domains').insert(seedDomains.map((x) => domainToRow(x, userId)));
       }
@@ -673,7 +674,7 @@ function Foundation({
   domains: Domain[];
   setDomains: (d: Domain[]) => void;
 }) {
-  const [open, setOpen] = useState<DomainId | null>('career');
+  const [open, setOpen] = useState<DomainId | null>('self');
 
   const updateVision = (id: DomainId, vision: string) =>
     setDomains(domains.map((d) => (d.id === id ? { ...d, vision } : d)));

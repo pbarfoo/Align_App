@@ -91,14 +91,6 @@ export interface Habit {
 
 export const domains: Domain[] = [
   {
-    id: 'career',
-    name: 'Career',
-    blurb: 'The work you put into the world.',
-    values: ['Leadership', 'Autonomy', 'Flexibility', 'Professional Respect', 'Competence', 'Service'],
-    vision:
-      'To build a respected and flexible career in film and media where I have the autonomy to teach, create meaningful work, and positively contribute to others.',
-  },
-  {
     id: 'self',
     name: 'Self',
     blurb: 'Your mind, body, and inner life.',
@@ -115,6 +107,14 @@ export const domains: Domain[] = [
       'To be a present, loving husband and father who leads his family with integrity, warmth, and a long view — creating a stable, generous home.',
   },
   {
+    id: 'career',
+    name: 'Career',
+    blurb: 'The work you put into the world.',
+    values: ['Leadership', 'Autonomy', 'Flexibility', 'Professional Respect', 'Competence', 'Service'],
+    vision:
+      'To build a respected and flexible career in film and media where I have the autonomy to teach, create meaningful work, and positively contribute to others.',
+  },
+  {
     id: 'community',
     name: 'Community / Service',
     blurb: 'The people and communities you serve beyond home.',
@@ -123,6 +123,11 @@ export const domains: Domain[] = [
       'To contribute beyond home through friendship, service, stewardship, and community leadership — building relationships, strengthening shared places, and using my gifts to help others flourish.',
   },
 ];
+
+const domainOrder: DomainId[] = ['self', 'family', 'career', 'community'];
+
+export const sortDomains = (items: Domain[]): Domain[] =>
+  [...items].sort((a, b) => domainOrder.indexOf(a.id) - domainOrder.indexOf(b.id));
 
 // Seed goals use realistic past start dates so the time-remaining bars
 // show non-trivial values in the dashboard demo.
