@@ -11,7 +11,7 @@ describe('LifeOS domain model', () => {
     ]);
 
     expect(domains.find((domain) => domain.id === 'family')?.name).toBe('Family / Home');
-    expect(domains.find((domain) => domain.id === 'community')?.name).toBe('Community / Service');
+    expect(domains.find((domain) => domain.id === 'community')?.name).toBe('Community');
   });
 
   it('restores the app order after domains load in arbitrary database order', () => {
