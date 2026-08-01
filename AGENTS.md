@@ -70,6 +70,33 @@ work" row (`h-mpv4a9mv-0`) was cleaned up in prod: skips collapsed to the two
 weekly periods genuinely missed since the last ride (`2026-07-13`,
 `2026-07-20`), `start_date` reset to `2026-07-27`.
 
+## Lapsed habits stay on Today (2026-08)
+
+The Today tab built its habit list from `isHabitScheduledToday` alone, which
+answers "is it due today" — the wrong question for a habit that has already
+lapsed. A weekly habit anchored to Friday was therefore only ever visible ON
+Fridays: "Work on Business" (`h-mqfwsqdf-0`, weekly, `start_date 2026-07-17`)
+went un-logged on Friday 2026-07-24 and then disappeared from Today for six
+days, carrying an invisible missed-day chip that could be neither logged nor
+skipped, before reappearing on 2026-07-31 (the screenshot the user reported).
+Its goal health kept bleeding the whole time.
+
+Fix: `isHabitRelevantToday(h)` = `isHabitScheduledToday(h) || getGraceDays(h).length > 0`
+now gates the Today list, so a habit with an outstanding missed day stays
+visible on its off-days until it's completed or skipped. `doneHabits` still
+gates on `isHabitScheduledToday` so a habit pulled in only by its backlog
+doesn't land in "Done today" after the backlog clears — it just goes quiet.
+The urgency sort already weights `getGraceDays(h).length * 30`, so a lapsed
+habit surfaces at the top of "Habits today". Tests: `src/App.schedule.test.ts`.
+
+Note on the same row's live data: `completions` holds three off-cadence dates
+(`2026-06-28` Sun, `2026-07-02` Thu, `2026-07-04` Sat) from before it was
+anchored to Friday. They're inert for grace-day detection (the walk-back only
+inspects scheduled weekdays) but `computeStreakFromCompletions` reads raw
+completions, so closely-spaced legacy dates can each count as a streak step for
+a weekly habit. Left in place — it's real history, and the current streak
+computes to 0 either way.
+
 ## Coach card removed (2026-07)
 
 The daily Gemini "coach card" on the Today tab was removed — it repeatedly
