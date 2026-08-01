@@ -2326,11 +2326,20 @@ function Today({
   const today = toDateStr(new Date());
 
   // --- Classify what's relevant *today* ---
+  // A habit belongs on Today when it's due today OR it still owes a missed day
+  // (see isHabitRelevantToday). Gating purely on the cadence made a weekly
+  // habit vanish for six days after it lapsed — a "Weekly on Friday" habit
+  // missed on the 24th was invisible Sat–Thu and only reappeared the following
+  // Friday, so the backlog it carried could never be logged or skipped.
   const scheduledHabits = habits.filter(
-    (h) => h.kind === 'habit' && isHabitScheduledToday(h),
+    (h) => h.kind === 'habit' && isHabitRelevantToday(h),
   );
   const openHabits = scheduledHabits.filter((h) => !isHabitDoneThisPeriod(h));
-  const doneHabits = scheduledHabits.filter((h) => isHabitDoneThisPeriod(h));
+  // Done stays anchored to the real cadence — a habit only pulled in by its
+  // backlog shouldn't sit in "Done today" once that backlog is cleared.
+  const doneHabits = scheduledHabits.filter(
+    (h) => isHabitScheduledToday(h) && isHabitDoneThisPeriod(h),
+  );
 
   const tasks = habits.filter((h) => h.kind === 'task');
   const openTasks = tasks.filter((h) => !h.completed);
@@ -3405,6 +3414,7 @@ export const __test_computeHealth = computeHealth;
 export const __test_toggleHabitCompletion = toggleHabitCompletion;
 export const __test_valueAlignmentScore = valueAlignmentScore;
 export const __test_isHabitScheduledToday = isHabitScheduledToday;
+export const __test_isHabitRelevantToday = isHabitRelevantToday;
 export const __test_focusFlagDate = focusFlagDate;
 export const __test_isFocusFlagActive = isFocusFlagActive;
 export const __test_applySprintFocus = applySprintFocus;
@@ -4366,6 +4376,20 @@ function isHabitScheduledToday(h: Habit): boolean {
     default:
       return true;
   }
+}
+
+/**
+ * Should this habit appear on the Today tab at all?
+ *
+ * `isHabitScheduledToday` alone answers "is it due today", which is the wrong
+ * question for a lapsed habit: a weekly Friday habit that goes un-logged is
+ * only *due* on Fridays, so between one missed Friday and the next it dropped
+ * off Today entirely — carrying a red missed-day chip nobody could see, let
+ * alone clear. A habit is relevant when it's due today OR it still has an
+ * outstanding missed day to log or skip.
+ */
+function isHabitRelevantToday(h: Habit): boolean {
+  return isHabitScheduledToday(h) || getGraceDays(h).length > 0;
 }
 
 /** Roughly how many days between expected completions, by cadence. */

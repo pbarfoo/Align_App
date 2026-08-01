@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   __test_isHabitScheduledToday as isHabitScheduledToday,
+  __test_isHabitRelevantToday as isHabitRelevantToday,
   __test_skipDayPatch as skipDayPatch,
   __test_getGraceDays as getGraceDays,
 } from './App';
@@ -30,6 +31,51 @@ describe('isHabitScheduledToday — weekly cadence', () => {
   it('falls back to showing an unanchored weekly habit (no startDate)', () => {
     vi.setSystemTime(new Date('2026-07-18T12:00:00')); // Saturday
     expect(isHabitScheduledToday(weekly(undefined))).toBe(true);
+  });
+});
+
+// The live "Work on Business" row: weekly, anchored to Friday 2026-07-17, last
+// logged that same Friday, with 2026-07-10 explicitly skipped. It went missing
+// from Today for the six days between its missed Friday and the next one.
+const workOnBusiness = (over: Partial<Habit> = {}): Habit => ({
+  id: 'h-mqfwsqdf-0', goalId: 'g', title: 'Work on Business', kind: 'habit',
+  doneToday: false, recurrence: 'weekly', startDate: '2026-07-17',
+  completions: ['2026-06-26', '2026-06-28', '2026-07-02', '2026-07-04', '2026-07-17'],
+  skippedDates: ['2026-07-10'], streak: 0, ...over,
+});
+
+describe('isHabitRelevantToday — a lapsed habit stays on Today', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('keeps a weekly habit visible on the days after its missed Friday', () => {
+    // Sunday, two days after the un-logged Friday 2026-07-24.
+    vi.setSystemTime(new Date('2026-07-26T12:00:00'));
+    const h = workOnBusiness();
+    expect(isHabitScheduledToday(h)).toBe(false);   // not due — this was the bug
+    expect(getGraceDays(h)).toEqual(['2026-07-24']); // but a missed day is owed
+    expect(isHabitRelevantToday(h)).toBe(true);
+  });
+
+  it('still shows it on its own Friday', () => {
+    vi.setSystemTime(new Date('2026-07-31T12:00:00'));
+    expect(isHabitRelevantToday(workOnBusiness())).toBe(true);
+  });
+
+  it('goes quiet on off-days once nothing is owed', () => {
+    // Friday 2026-07-24 logged: no backlog, and Sunday is not its day.
+    vi.setSystemTime(new Date('2026-07-26T12:00:00'));
+    const h = workOnBusiness({
+      completions: [...(workOnBusiness().completions ?? []), '2026-07-24'],
+    });
+    expect(getGraceDays(h)).toEqual([]);
+    expect(isHabitRelevantToday(h)).toBe(false);
+  });
+
+  it('goes quiet on off-days once the missed day is skipped', () => {
+    vi.setSystemTime(new Date('2026-07-26T12:00:00'));
+    const h = workOnBusiness({ skippedDates: ['2026-07-10', '2026-07-24'] });
+    expect(getGraceDays(h)).toEqual([]);
+    expect(isHabitRelevantToday(h)).toBe(false);
   });
 });
 
