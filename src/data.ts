@@ -100,7 +100,7 @@ export const domains: Domain[] = [
   },
   {
     id: 'family',
-    name: 'Family / Home',
+    name: 'Family',
     blurb: 'The people and home you protect first.',
     values: ['Leadership', 'Financial Security', 'Presence', 'Integrity', 'Love/Positivity'],
     vision:

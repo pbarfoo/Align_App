@@ -10,7 +10,7 @@ describe('LifeOS domain model', () => {
       'community',
     ]);
 
-    expect(domains.find((domain) => domain.id === 'family')?.name).toBe('Family / Home');
+    expect(domains.find((domain) => domain.id === 'family')?.name).toBe('Family');
     expect(domains.find((domain) => domain.id === 'community')?.name).toBe('Community');
   });
 
