@@ -3330,6 +3330,12 @@ function computeHealth(
    * capped. Both are passed only when graced, so the bonus lifts the health the
    * user sees without leaking into the decoupled value-alignment math. */
   sprintFocusDays?: string[],
+  /** multiplier on EARNED points (build-out, completions, and the behavioural
+   * penalties) — see `subGoalScale`. 1 = a top-level goal, measured on the full
+   * 0–100 scale. >1 lifts a sub-goal, whose earning capacity is structurally
+   * smaller, onto a comparable scale. Deliberately NOT applied to the fixed
+   * credits (birth, sprint focus), which are the same size for every goal. */
+  earnedScale = 1,
 ): number {
   const DAY = 86_400_000;
   const decay = (ms: number) => Math.pow(0.5, Math.max(0, (now - ms) / DAY) / halfLifeDays);
@@ -3350,12 +3356,15 @@ function computeHealth(
   const tasks  = treeHabits.filter((h) => h.kind === 'task');
   const habits = treeHabits.filter((h) => h.kind === 'habit');
 
-  let pos = 0, pen = 0;
+  // `fixed` = credits every goal gets at full size regardless of its scale
+  // (birth, sprint focus); `pos`/`pen` = the earned ledger, which is what
+  // `earnedScale` re-bases for sub-goals.
+  let fixed = 0, pos = 0, pen = 0;
 
   // Birth credit — a goal is worth 50 the moment it's created, then this fades
   // at the same half-life as everything else. Build-out/completions add on top;
   // left alone, the goal decays down from 50 on its own.
-  if (goalCreatedAt != null) pos += 50 * decay(goalCreatedAt);
+  if (goalCreatedAt != null) fixed += 50 * decay(goalCreatedAt);
 
   // Sprint-focus bonus — a small reward for each FULL day the goal was held as
   // the single sprint focus. Every earned day is a dated event that DECAYS from
@@ -3368,7 +3377,7 @@ function computeHealth(
     if (sprintFocusAt != null) for (const d of focusDatesEarned(sprintFocusAt, now)) focusDays.add(d);
     let sprintBonus = 0;
     for (const d of focusDays) sprintBonus += SPRINT_DAY * decay(dayMs(d));
-    pos += Math.min(sprintBonus, SPRINT_CAP);
+    fixed += Math.min(sprintBonus, SPRINT_CAP);
   }
 
   // Build-out — structural credit, fading from when each item was added.
@@ -3404,13 +3413,18 @@ function computeHealth(
     }
   }
 
-  const base = Math.max(0, Math.min((pos - pen) / 100, 1));
+  // Earned points are re-based by `earnedScale` (1 for top-level goals), the
+  // fixed credits are not — so a sub-goal's thinner ledger reads on a
+  // comparable 0–100 scale without a brand-new sub-goal outranking its parent.
+  const base = Math.max(0, Math.min((fixed + (pos - pen) * earnedScale) / 100, 1));
   // Priority-position nudge: a gentle ± for where the goal ranks in its domain.
   const focusAdj = (base - 0.5) * 0.15 * focusStrength;
   return Math.max(0, Math.min(base + focusAdj, 1));
 }
 
 export const __test_computeHealth = computeHealth;
+export const __test_subGoalScale = subGoalScale;
+export const __test_subGoalHalfLife = subGoalHalfLife;
 export const __test_toggleHabitCompletion = toggleHabitCompletion;
 export const __test_valueAlignmentScore = valueAlignmentScore;
 export const __test_isHabitScheduledToday = isHabitScheduledToday;
@@ -3447,6 +3461,48 @@ function computeDone(subGoals: Goal[], treeHabits: Habit[], allHabits: Habit[], 
   return done / total;
 }
 
+/* ---- Sub-goal scale correction -------------------------------------------
+ * Sub-goals funnel INTO their parent: every habit-day and task they carry also
+ * counts toward the parent's tally, and on top of that the parent earns the
+ * biggest point values in the model — +10 per sub-goal built and +40 per
+ * sub-goal completed — which a leaf milestone can never earn at all. Its
+ * horizon is also shorter, so the SAME event decays out of a 14-day sub-goal
+ * roughly four times faster than out of its 60-day parent. Net effect before
+ * this correction: identical real work reads ~100 on the parent and ~24 on the
+ * sub-goal doing it. Two adjustments, both applied ONLY to goals that have a
+ * parent, so top-level scores are untouched:
+ *   1. `subGoalHalfLife` — decay halfway between the goal's own horizon and its
+ *      parent's. A 3-month milestone inside a 5-year arc is expected to move at
+ *      a slower cadence than a standalone 3-month goal, so it shouldn't be
+ *      graded on the standalone clock.
+ *   2. `subGoalScale` — a multiplier on the EARNED ledger (build-out,
+ *      completions, and the behavioural penalties together, so a skip stays
+ *      exactly as costly relative to a completion). This is the "smaller
+ *      denominator" idea: health asks how alive a goal is on its OWN scale, and
+ *      a sub-goal's scale is smaller.
+ * Both key off having a parent — not off being childless — so they never flip
+ * when a sub-goal gains a child of its own, and adding structure still can't
+ * lower a score. */
+
+const HALF_LIFE_BY_HORIZON = { long: 60, short: 14, ongoing: 30 } as const;
+
+/** Earned-point multiplier for a goal with a parent (see above). 1 = no lift. */
+const SUBGOAL_SCALE = 1.6;
+
+function subGoalScale(g: Goal): number {
+  return g.parentGoalId ? SUBGOAL_SCALE : 1;
+}
+
+/** Decay half-life in days: own horizon for a top-level goal, else the midpoint
+ * between its own and its parent's (never faster than its own). */
+function subGoalHalfLife(g: Goal, goals: Goal[]): number {
+  const own = HALF_LIFE_BY_HORIZON[g.horizon];
+  if (!g.parentGoalId) return own;
+  const parent = goals.find((p) => p.id === g.parentGoalId);
+  if (!parent) return own;
+  return Math.max(own, (own + HALF_LIFE_BY_HORIZON[parent.horizon]) / 2);
+}
+
 function vitalityFor(
   lg: Goal,
   goals: Goal[],
@@ -3464,7 +3520,7 @@ function vitalityFor(
 
   const completion = computeDone(subGoals, subtreeHabits, habits, now);
   // Long-horizon goals decay slowest (60-day half-life).
-  const health     = computeHealth(subGoals, subtreeHabits, now, focusStrength, 60, graced ? lg.createdAt : undefined, graced ? lg.sprintFocusAt : undefined, graced ? lg.sprintFocusDays : undefined);
+  const health     = computeHealth(subGoals, subtreeHabits, now, focusStrength, subGoalHalfLife(lg, goals), graced ? lg.createdAt : undefined, graced ? lg.sprintFocusAt : undefined, graced ? lg.sprintFocusDays : undefined, subGoalScale(lg));
   return { time: elapsed, completion, health };
 }
 
@@ -3490,8 +3546,9 @@ function stGoalMetrics(sg: Goal, goals: Goal[], habits: Habit[], focusStrength =
   const sgHabits  = habits.filter((h) => subtree.has(h.goalId));
 
   const completion = computeDone(subGoals, sgHabits, habits, now);
-  // Short-horizon goals decay fastest (14-day half-life).
-  const health     = computeHealth(subGoals, sgHabits, now, focusStrength, 14, graced ? sg.createdAt : undefined, graced ? sg.sprintFocusAt : undefined, graced ? sg.sprintFocusDays : undefined);
+  // Short-horizon goals decay fastest (14-day half-life) — unless they hang off
+  // a longer-horizon parent, which slows them toward the parent's clock.
+  const health     = computeHealth(subGoals, sgHabits, now, focusStrength, subGoalHalfLife(sg, goals), graced ? sg.createdAt : undefined, graced ? sg.sprintFocusAt : undefined, graced ? sg.sprintFocusDays : undefined, subGoalScale(sg));
   return { time: elapsed, completion, health };
 }
 
@@ -3509,7 +3566,7 @@ function ongoingGoalMetrics(og: Goal, goals: Goal[], habits: Habit[], focusStren
   const ogHabits = habits.filter((h) => subtree.has(h.goalId));
 
   const completion = computeDone(subGoals, ogHabits, habits, now);
-  const health     = computeHealth(subGoals, ogHabits, now, focusStrength, 30, graced ? og.createdAt : undefined, graced ? og.sprintFocusAt : undefined, graced ? og.sprintFocusDays : undefined);
+  const health     = computeHealth(subGoals, ogHabits, now, focusStrength, subGoalHalfLife(og, goals), graced ? og.createdAt : undefined, graced ? og.sprintFocusAt : undefined, graced ? og.sprintFocusDays : undefined, subGoalScale(og));
   return { time: 0, completion, health };
 }
 
@@ -3790,6 +3847,7 @@ function GoalsDashboard({
       <div className="dash-health-note-title">How Health is calculated</div>
       <p>Structure · Habit consistency · Recent throughput · Recency — blended with a light weakest-link pull, then scaled down by overdue tasks</p>
       <p>New goals start at 50% and settle to their earned score over the first 14 days.</p>
+      <p>Sub-goals are scored on their own smaller scale — their work counts for less on paper than a parent's, so it's weighted up and faded at a rate closer to the parent's horizon.</p>
     </div>
   );
 

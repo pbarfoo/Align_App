@@ -195,6 +195,51 @@ Primary files:
 
 - `src/App.tsx`, `src/data.ts`, `src/App.health.test.ts`, `supabase/schema.sql`
 
+## Sub-goal scale correction (2026-08)
+
+Sub-goals read far lower than their parents for the *same* work, because health
+is an absolute 0–100 tally and a sub-goal simply can't earn as many points:
+
+1. **Double-count upward** — a sub-goal's habits/tasks are in the parent's
+   subtree, so the parent banks all the child's activity too.
+2. **Milestone points are parent-only** — the two biggest values in the model
+   (+10 built / +40 completed per sub-goal) are earned by whoever *has*
+   sub-goals. A leaf milestone can never earn them.
+3. **Faster clock** — the same event decays out of a 14-day short sub-goal ~4×
+   faster than out of its 60-day long parent.
+
+Measured before the fix: a sub-goal with two weekly habits kept perfectly for 60
+days scored **24** while its parent (crediting the same habits) scored **100**.
+
+Two adjustments, both gated on `g.parentGoalId` — top-level goals are untouched:
+
+- `subGoalHalfLife(g, goals)` — a sub-goal decays at the **midpoint** between its
+  own horizon half-life and its immediate parent's (`HALF_LIFE_BY_HORIZON`,
+  long 60 / ongoing 30 / short 14), never faster than its own. Short-under-long
+  = 37d. Missing/parked parent falls back to the goal's own.
+- `subGoalScale(g)` → `SUBGOAL_SCALE` (**1.6**) — multiplies the **earned**
+  ledger only. `computeHealth` now splits its tally into `fixed` (birth credit +
+  sprint bonus, identical for every goal) and the earned `pos`/`pen`:
+  `base = (fixed + (pos − pen) * earnedScale) / 100`. Penalties scale with
+  credits, so a skip stays exactly as costly *relative* to a completion.
+
+Keying on **having a parent** (not on being childless) is deliberate: the factor
+never flips when a sub-goal gains a child, so "adding structure can't lower your
+score" still holds.
+
+After: that same sub-goal reads **87**. A brand-new sub-goal still starts at 50
+(the birth credit is unscaled), an empty sub-goal still stays *below* a
+comparable top-level goal at every age, and a neglected one (stale habits +
+overdue task) still lands red at 31 — it's a change of scale, not a floor.
+
+`SUBGOAL_SCALE` and the midpoint rule are the tuning knobs. An alternative
+considered and rejected: blending a sub-goal's health toward its parent's
+(`max(own, 0.6·parent)`) — simpler, but it hides genuinely neglected sub-goals
+under a healthy parent.
+
+Primary files: `src/App.tsx` (`computeHealth`, `vitalityFor`, `stGoalMetrics`,
+`ongoingGoalMetrics`), `src/App.subGoalScale.test.ts`. No DB change.
+
 ## Verification
 
 Use a Node version compatible with the project lockfile. The bundled Codex runtime worked:
