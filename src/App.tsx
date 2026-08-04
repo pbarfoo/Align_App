@@ -276,10 +276,16 @@ export default function App() {
   // by another session/tab).
   const hydrating = useRef(false);
 
+  // Bumped to force a re-read of the DB (see the visibility effect below).
+  const [reloadKey, setReloadKey] = useState(0);
+  // When the last successful load finished, so a refetch only fires if the data
+  // on screen has actually had time to go stale.
+  const lastLoadedAt = useRef(0);
+
   // Load data from Supabase on sign-in. Keyed on the user id (not the whole
-  // session object) so it runs ONCE per user — not on every token refresh or
-  // tab-focus auth event, which would otherwise re-read stale data and clobber
-  // in-progress local edits.
+  // session object) so it doesn't re-run on every token refresh or auth event,
+  // which would re-read stale data and clobber in-progress local edits — plus
+  // `reloadKey` for the deliberate refetches below.
   useEffect(() => {
     if (!session) { setDataLoaded(true); return; }
     const userId = session.user.id;
@@ -294,7 +300,9 @@ export default function App() {
         .order('created_at', { ascending: true }),
       supabase.from('habits').select('*').eq('user_id', userId).order('id'),
       supabase.from('reflections').select('*').eq('user_id', userId).order('date'),
-      supabase.from('stale_tasks').select('*'),
+      // Scoped to the user like every other load — stale_tasks is a plain view,
+      // so it does NOT inherit the underlying tables' row-level security.
+      supabase.from('stale_tasks').select('*').eq('user_id', userId),
     ]).then(([d, g, h, r, st]) => {
       const dbError = d.error || g.error || h.error || r.error;
       if (dbError) {
@@ -357,6 +365,7 @@ export default function App() {
       // Mark this account as seeded so we never reseed/overwrite again.
       if (!alreadySeeded) supabase.auth.updateUser({ data: { seeded: true } });
       clearTimeout(timeout);
+      lastLoadedAt.current = Date.now();
       setDataLoaded(true);
     }).catch((err) => {
       clearTimeout(timeout);
@@ -364,6 +373,31 @@ export default function App() {
       setToast({ msg: '⚠ Could not reach database — check your connection' });
       setDataLoaded(true);
     });
+  }, [session?.user?.id, reloadKey]);
+
+  // Re-read the DB when the tab comes back to the foreground. Without this the
+  // app only ever showed the snapshot it loaded at page open: edit on your
+  // phone, and the desktop tab kept serving stale goals indefinitely — and
+  // since the sync is a whole-array upsert, that stale tab would then write its
+  // old view back over the newer one on the next edit.
+  //
+  // Throttled so tab-flicking doesn't hammer the DB, and skipped while an edit
+  // is mid-flight would be nice — but the sync is fire-and-forget and already
+  // last-write-wins, so a refetch is strictly fresher than what's on screen.
+  useEffect(() => {
+    if (!session) return;
+    const REFETCH_AFTER_MS = 60_000;
+    const maybeRefetch = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (Date.now() - lastLoadedAt.current < REFETCH_AFTER_MS) return;
+      setReloadKey((k) => k + 1);
+    };
+    document.addEventListener('visibilitychange', maybeRefetch);
+    window.addEventListener('online', maybeRefetch);
+    return () => {
+      document.removeEventListener('visibilitychange', maybeRefetch);
+      window.removeEventListener('online', maybeRefetch);
+    };
   }, [session?.user?.id]);
 
   // Sync domains
@@ -844,8 +878,14 @@ const INACTIVE_ZONE_ID = 'inactive-zone';
 
 /** The always-present drop target at the bottom of a domain — a labelled
  * section you drag goals into to set them inactive (empty until you do). */
-function InactiveDropZone({ count, open, onToggle, children }: {
-  count: number; open: boolean; onToggle: () => void; children: React.ReactNode;
+function InactiveDropZone({ count, totalPaused, open, onToggle, children }: {
+  /** Top-level paused goals — what the drop zone accepts, and what drives the
+   *  empty state. */
+  count: number;
+  /** Everything actually paused, sub-goals included, so the badge doesn't
+   *  under-report a paused branch. */
+  totalPaused: number;
+  open: boolean; onToggle: () => void; children: React.ReactNode;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: INACTIVE_ZONE_ID });
   return (
@@ -856,7 +896,7 @@ function InactiveDropZone({ count, open, onToggle, children }: {
         title="Paused goals — excluded from health, the dashboard, and Today. Drag a goal here to pause it."
       >
         <PauseLinesIcon />
-        <span>Inactive{count > 0 ? ` (${count})` : ''}</span>
+        <span>Inactive{totalPaused > 0 ? ` (${totalPaused})` : ''}</span>
         {count > 0 && <span className="inactive-caret">{open ? '▾' : '▸'}</span>}
       </button>
       {count === 0
@@ -995,6 +1035,26 @@ function Align({
   const activeTopGoals   = topGoals.filter((g) => !g.archivedAt);
   const archivedTopGoals = topGoals.filter((g) => !!g.archivedAt);
 
+  // Pausing a goal pauses its whole branch (archivedGoalIdSet walks the tree),
+  // so its sub-goals must be LISTED here too. Without this they render nowhere
+  // at all: not in the active spine (they have a parent, so they only ever
+  // render nested under it), not on Today, not on the dashboard — a live
+  // sub-goal with open tasks would silently vanish the moment its parent was
+  // paused. Depth-first so nesting reads top-down.
+  const pausedSubGoalsOf = (root: Goal): { goal: Goal; depth: number }[] => {
+    const out: { goal: Goal; depth: number }[] = [];
+    const walk = (parentId: string, depth: number) => {
+      for (const g of domainGoals) {
+        if (g.parentGoalId !== parentId) continue;
+        out.push({ goal: g, depth });
+        walk(g.id, depth + 1);
+      }
+    };
+    walk(root.id, 0);
+    return out;
+  };
+  const pausedSubGoalCount = archivedTopGoals.reduce((n, g) => n + pausedSubGoalsOf(g).length, 0);
+
   // The goal under the pointer during a drag, plus its thread colour, so the
   // floating DragOverlay clone matches the card it lifted from.
   const activeDragGoal = activeDragId ? goals.find((g) => g.id === activeDragId) ?? null : null;
@@ -1084,10 +1144,11 @@ function Align({
     setHabits((prev) => prev.map((h) => (h.id === id ? { ...h, ...updates } : h)));
 
   const deleteGoal = (id: string) => {
-    const remove = new Set<string>([id]);
-    goals.forEach((g) => {
-      if (g.parentGoalId && remove.has(g.parentGoalId)) remove.add(g.id);
-    });
+    // Full subtree, not just direct children — a grandchild left behind would
+    // keep a parentGoalId pointing at a goal that no longer exists, and an
+    // orphan renders nowhere in Align (sub-goals only ever render nested under
+    // their parent) while still counting toward health and Today.
+    const remove = goalSubtreeIds(goals, id);
     if (addingFor && remove.has(addingFor)) setAddingFor(null);
     // Snapshot removed rows (goals with their original index, plus their
     // habits/tasks) so Undo can splice them back into place. Restoring to
@@ -1428,11 +1489,14 @@ function Align({
             back up into the list above to reactivate it. */}
         <InactiveDropZone
           count={archivedTopGoals.length}
+          totalPaused={archivedTopGoals.length + pausedSubGoalCount}
           open={inactiveOpen}
           onToggle={() => setInactiveOpen((o) => !o)}
         >
           <SortableContext items={archivedTopGoals.map((g) => g.id)} strategy={verticalListSortingStrategy}>
-            {archivedTopGoals.map((goal) => (
+            {archivedTopGoals.map((goal) => {
+              const paused = pausedSubGoalsOf(goal);
+              return (
               <SortableGoal key={goal.id} id={goal.id}>
                 <div className="inactive-node">
                   <GoalNode
@@ -1441,9 +1505,27 @@ function Align({
                     onDelete={() => setPendingDeleteGoalId(goal.id)}
                     showDragHandle
                   />
+                  {/* Paused with their parent. Shown so the branch is visible
+                      somewhere — reactivating the parent brings them all back. */}
+                  {paused.length > 0 && (
+                    <ul className="inactive-subgoals">
+                      {paused.map(({ goal: sg, depth }) => {
+                        const open = habits.filter((h) => h.goalId === sg.id && !h.completed).length;
+                        return (
+                          <li key={sg.id} style={{ '--sub-depth': depth } as React.CSSProperties}>
+                            <span className="inactive-sub-title">{sg.title}</span>
+                            {sg.completedAt
+                              ? <span className="inactive-sub-meta">done</span>
+                              : open > 0 && <span className="inactive-sub-meta">{open} open</span>}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
                 </div>
               </SortableGoal>
-            ))}
+              );
+            })}
           </SortableContext>
         </InactiveDropZone>
 
@@ -2295,21 +2377,9 @@ function Today({
   // Every goal id in the focus goal's subtree — itself plus all descendant
   // sub-goals — so a top-level focus pulls in the tasks/habits hanging off its
   // sub-goals too, not just the ones tagged directly on it.
-  const sprintFocusGoalIds = (() => {
-    if (!sprintFocusGoal) return new Set<string>();
-    const ids = new Set<string>([sprintFocusGoal.id]);
-    let grew = true;
-    while (grew) {
-      grew = false;
-      for (const g of goals) {
-        if (!ids.has(g.id) && g.parentGoalId && ids.has(g.parentGoalId)) {
-          ids.add(g.id);
-          grew = true;
-        }
-      }
-    }
-    return ids;
-  })();
+  const sprintFocusGoalIds = sprintFocusGoal
+    ? goalSubtreeIds(goals, sprintFocusGoal.id)
+    : new Set<string>();
   // The focus goal's whole to-do: every habit under it, plus its still-open
   // tasks (completed tasks drop off). Tasks first (soonest due first, undated
   // last), then habits — a stable, actionable order.
@@ -2502,16 +2572,17 @@ function Today({
       g.id === id ? { ...g, timeframe: (g.timeframe || 1) + 1 } : g
     ));
 
-  // Same cascade as Align's deleteGoal: goal + sub-goals + their habits.
+  // Same cascade as Align's deleteGoal: goal + its whole sub-goal subtree +
+  // their habits. Note this walks `allGoals`, not the parked-filtered `goals`,
+  // so deleting from Today can't strand a paused branch in the DB.
   const deleteGoalCascade = (id: string) => {
-    const remove = new Set<string>([id]);
-    goals.forEach((g) => {
-      if (g.parentGoalId && remove.has(g.parentGoalId)) remove.add(g.id);
-    });
-    const removedGoals = goals
+    const remove = goalSubtreeIds(allGoals, id);
+    // Snapshot from the UNfiltered lists so Undo restores the whole branch,
+    // including any paused sub-goals that Today itself never displayed.
+    const removedGoals = allGoals
       .map((g, i) => ({ g, i }))
       .filter(({ g }) => remove.has(g.id));
-    const removedHabits = habits.filter((h) => remove.has(h.goalId));
+    const removedHabits = allHabits.filter((h) => remove.has(h.goalId));
     setGoals((prev) => prev.filter((g) => !remove.has(g.id)));
     setHabits((ph) => ph.filter((h) => !remove.has(h.goalId)));
     onDeleteGoalFromDb([...remove]);
@@ -3590,23 +3661,41 @@ function focusStrengthByDomain(topLevelGoals: Goal[]): Map<string, number> {
   return strength;
 }
 
+/** Grow a set of root goal ids into every id in their subtrees — the roots plus
+ * all descendant sub-goals, at any depth. Runs to a fixpoint, so it does NOT
+ * care what order `goals` happens to be in (a single pass would only catch a
+ * grandchild that sits after its parent in the array, and drag-to-reorder
+ * renumbers sortOrder globally with no parents-first guarantee).
+ *
+ * This is the ONE tree walk — archiving, the sprint-focus subtree, and the
+ * delete cascade all share it so they can never disagree about what "this goal
+ * and everything under it" means. */
+export function expandGoalSubtrees(goals: Goal[], rootIds: Iterable<string>): Set<string> {
+  const ids = new Set<string>(rootIds);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const g of goals) {
+      if (!ids.has(g.id) && g.parentGoalId && ids.has(g.parentGoalId)) {
+        ids.add(g.id);
+        grew = true;
+      }
+    }
+  }
+  return ids;
+}
+
+/** Every id in one goal's subtree — itself plus all descendant sub-goals. */
+export function goalSubtreeIds(goals: Goal[], rootId: string): Set<string> {
+  return expandGoalSubtrees(goals, [rootId]);
+}
+
 /** Ids of every inactive (paused) goal plus all their descendant sub-goals —
  * the set excluded from health, the dashboard, and the Today lists so a parked
  * goal can neither help nor hurt. Archiving is offered on top-level goals, but
  * this walks the tree so a whole branch goes quiet together. */
 function archivedGoalIdSet(goals: Goal[]): Set<string> {
-  const parked = new Set(goals.filter((g) => g.archivedAt).map((g) => g.id));
-  let grew = true;
-  while (grew) {
-    grew = false;
-    for (const g of goals) {
-      if (!parked.has(g.id) && g.parentGoalId && parked.has(g.parentGoalId)) {
-        parked.add(g.id);
-        grew = true;
-      }
-    }
-  }
-  return parked;
+  return expandGoalSubtrees(goals, goals.filter((g) => g.archivedAt).map((g) => g.id));
 }
 
 /**
@@ -4759,7 +4848,9 @@ function ConfirmDialog({
 /** Warning body listing what a goal delete will cascade into. */
 function goalDeleteWarning(goalId: string, goals: Goal[], habits: Habit[]): { title: string; body: string } {
   const g = goals.find((x) => x.id === goalId);
-  const remove = new Set<string>([goalId, ...goals.filter((x) => x.parentGoalId === goalId).map((x) => x.id)]);
+  // Whole subtree, matching what the delete actually removes — counting only
+  // direct children undercounted a nested branch in the confirm dialog.
+  const remove = goalSubtreeIds(goals, goalId);
   const subCount  = remove.size - 1;
   const itemCount = habits.filter((h) => remove.has(h.goalId)).length;
   const extras = [

@@ -1,5 +1,60 @@
 # Align App Agent Handoff
 
+## Paused branches, goal-tree walk, staleness (2026-08)
+
+Fixes for "goals in the Goals tab aren't reflected in the app, and there's lag".
+
+**Paused sub-goals were invisible everywhere.** Pausing a goal parks its whole
+branch (`archivedGoalIdSet` walks the tree), and Today / the dashboard filter
+that set out. But the Align tab's Inactive section only rendered the top-level
+`GoalNode` — it never recursed. So a sub-goal under a paused parent rendered
+*nowhere*: not in the active spine (it has a parent, so it only ever renders
+nested under it), not in the Inactive list, not on Today. Three live goals were
+in that state, one of them ("Decide whether to take the MFA") with **2 open
+tasks**. The Inactive section now lists each paused goal's sub-goals beneath it
+(`pausedSubGoalsOf` in `Align`, depth-indented, with an open-item count), and
+the section badge counts everything paused, not just tops. Styles:
+`.inactive-subgoals` / `.inactive-sub-title` / `.inactive-sub-meta`.
+Note the walk uses `domainGoals`, so a sub-goal in a *different* domain than its
+parent still wouldn't list — same limitation the active spine has always had; no
+such rows exist today.
+
+**One shared goal-tree walk.** `expandGoalSubtrees(goals, rootIds)` +
+`goalSubtreeIds(goals, rootId)` (both exported, near `archivedGoalIdSet`). It
+runs to a fixpoint, so it is **order-independent**. `archivedGoalIdSet`,
+`sprintFocusGoalIds`, `deleteGoal`, `deleteGoalCascade`, and `goalDeleteWarning`
+all route through it. The two delete paths and the confirm dialog previously did
+a **single forward pass**, catching only direct children plus whatever
+grandchildren happened to sit after their parent in the array — and drag-to-
+reorder renumbers `sortOrder` globally with no parents-first guarantee. A missed
+grandchild survived the delete with a `parentGoalId` pointing at a goal that no
+longer existed: invisible in Align, still counted in health and Today. Latent,
+not yet fired (0 orphans in prod at the time of the fix), but a live 3-level
+tree exists (Financial Security → Lower Monthly Expenses → lease / storage).
+`deleteGoalCascade` also now snapshots Undo from the **unfiltered** `allGoals` /
+`allHabits` so restoring brings the paused part of a branch back too.
+Tests: `src/App.goalTree.test.ts`.
+
+**Staleness.** The load effect was keyed on `session?.user?.id` alone, so the app
+showed the snapshot it read at page open and never refetched — with no realtime
+subscription, an edit on another device stayed invisible indefinitely, and since
+the sync is a whole-array upsert the stale tab would write its old view back
+over the newer one on the next edit. Added a `reloadKey` refetch on
+`visibilitychange` / `online`, throttled to 60s via `lastLoadedAt`.
+
+**Still open (deliberately not done here):**
+- **Realtime is NOT wired up.** It needs `alter publication supabase_realtime add
+  table goals, habits` on prod, and combined with the whole-array upsert it
+  invites clobber-thrash (device A upserts → B refetches mid-edit). Do the
+  per-row / dirty-tracked sync first.
+- **Whole-array upsert is still last-write-wins** and can resurrect rows another
+  device deleted (`upsert` on `id text primary key` never deletes).
+- **Sync effects depend only on `[goals]` / `[habits]`** while early-returning on
+  `dataLoaded` / `session` / `hydrating`. An edit landing in that window is
+  dropped silently and never retried.
+- The `goal_health` view still uses the OLD health formula and is unused —
+  candidate for dropping.
+
 ## Sprint Focus (single chosen goal, 2026-07)
 
 The user can nominate **one** goal as the current "sprint focus". It is mostly a
