@@ -836,6 +836,17 @@ h1 {
   .inactive-node:hover { opacity: 0.9; }
 }
 
+/* Nested sub-goals (a sub-goal of a sub-goal). Indent is capped at 3 levels so
+   a deep chain can't push cards off a phone screen. */
+.node.sub-depth-1 { margin-left: 12px; }
+.node.sub-depth-2 { margin-left: 24px; }
+.node.sub-depth-3 { margin-left: 36px; }
+@media (max-width: 420px) {
+  .node.sub-depth-1 { margin-left: 8px; }
+  .node.sub-depth-2 { margin-left: 16px; }
+  .node.sub-depth-3 { margin-left: 24px; }
+}
+
 /* Sub-goals paused along with their parent. Listed rather than rendered as
    full cards: they aren't independently actionable while the branch is parked,
    but they must be visible somewhere. */

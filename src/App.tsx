@@ -1228,6 +1228,68 @@ function Align({
       return toggleHabitCompletion(h);
     }));
 
+  /**
+   * Render a goal's sub-goals, recursively, to ANY depth.
+   *
+   * This tab used to render exactly two levels — a top-level goal and its
+   * direct sub-goals — because ShortWithActions draws a goal node plus its
+   * habits and then stops; it never recursed into its own children. Every
+   * other surface (the Goals dashboard, Today, the health map, the delete
+   * cascade) walks the tree with no depth limit, so a sub-sub-goal was live
+   * everywhere in the app while being visible nowhere in the tab that is
+   * supposed to be the source of truth for it — it read as a goal that had
+   * been deleted but kept haunting the dashboard.
+   *
+   * Rendered as a flat depth-ordered sequence rather than nested markup,
+   * because ShortWithActions returns a fragment (node + habit rows) into the
+   * goal-thread's own flow; `depth` carries the indent.
+   */
+  const renderSubTree = (parentId: string, depth: number): React.ReactNode[] =>
+    domainGoals
+      .filter((s) => s.parentGoalId === parentId)
+      .flatMap((sg) => {
+        // Hidden by the "Hide completed" toggle — but keep walking, so an
+        // ACTIVE child never vanishes just because its parent is done. It
+        // takes the hidden parent's slot rather than indenting under nothing.
+        if (hideCompleted && sg.completedAt) return renderSubTree(sg.id, depth);
+        const hasHabits   = habits.some((h) => h.goalId === sg.id);
+        const hasSubGoals = domainGoals.some((s) => s.parentGoalId === sg.id);
+        const collapsed   = collapsedGoals.has(sg.id);
+        return [
+          <ShortWithActions
+            key={sg.id}
+            goal={sg}
+            depth={depth}
+            displayValues={[]}
+            habits={habits}
+            health={goalHealthMap[sg.id]}
+            addingFor={addingFor}
+            setAddingFor={setAddingFor}
+            onAddAction={addAction}
+            onDeleteGoal={setPendingDeleteGoalId}
+            onRenameGoal={updateGoalTitle}
+            onChangeGoalTimeframe={updateGoalTimeframe}
+            onDeleteHabit={deleteHabit}
+            onEditHabit={updateHabit}
+            onToggleGoalComplete={toggleGoalComplete}
+            onToggleHabit={toggleHabit}
+            onToggleTaskFocus={toggleTaskFocus}
+            isSprintFocus={!!sg.sprintFocusAt}
+            onToggleSprintFocus={() => setSprintFocus(sg.id)}
+            todayStr={todayStr}
+            hideCompleted={hideCompleted}
+            domainValues={domain.values}
+            domainVision={domain.vision}
+            isCollapsed={collapsed}
+            // Collapsible if it has anything to hide — sub-goals now count,
+            // not just habits, or a goal whose only children are sub-goals
+            // could never be folded away.
+            onToggleCollapse={hasHabits || hasSubGoals ? () => toggleCollapse(sg.id) : undefined}
+          />,
+          ...(collapsed ? [] : renderSubTree(sg.id, depth + 1)),
+        ];
+      });
+
   return (
     <div className="screen">
       {pendingDeleteGoalId && (() => {
@@ -1417,36 +1479,7 @@ function Align({
                   </React.Fragment>
                 );
               })}
-            {!collapsedGoals.has(goal.id) && domainGoals
-              .filter((s) => s.parentGoalId === goal.id)
-              .map((sg) => (
-                <ShortWithActions
-                  key={sg.id}
-                  goal={sg}
-                  displayValues={[]}
-                  habits={habits}
-                  health={goalHealthMap[sg.id]}
-                  addingFor={addingFor}
-                  setAddingFor={setAddingFor}
-                  onAddAction={addAction}
-                  onDeleteGoal={setPendingDeleteGoalId}
-                  onRenameGoal={updateGoalTitle}
-                  onChangeGoalTimeframe={updateGoalTimeframe}
-                  onDeleteHabit={deleteHabit}
-                  onEditHabit={updateHabit}
-                  onToggleGoalComplete={toggleGoalComplete}
-                  onToggleHabit={toggleHabit}
-                  onToggleTaskFocus={toggleTaskFocus}
-                  isSprintFocus={!!sg.sprintFocusAt}
-                  onToggleSprintFocus={() => setSprintFocus(sg.id)}
-                  todayStr={todayStr}
-                  hideCompleted={hideCompleted}
-                  domainValues={domain.values}
-                  domainVision={domain.vision}
-                  isCollapsed={collapsedGoals.has(sg.id)}
-                  onToggleCollapse={habits.some((h) => h.goalId === sg.id) ? () => toggleCollapse(sg.id) : undefined}
-                />
-              ))}
+            {!collapsedGoals.has(goal.id) && renderSubTree(goal.id, 0)}
             {/* Add form always renders — even while the goal is collapsed —
                 otherwise tapping + on a collapsed goal appears to do nothing. */}
             {addingFor === goal.id && (
@@ -1568,6 +1601,7 @@ function ShortWithActions({
   onToggleTaskFocus,
   todayStr,
   hideCompleted,
+  depth = 0,
   editValuesActive,
   onEditValues,
   onChangeValues,
@@ -1605,6 +1639,8 @@ function ShortWithActions({
   onToggleTaskFocus: (id: string) => void;
   todayStr: string;
   hideCompleted: boolean;
+  /** Nesting level below the top-level goal; 0 = a direct sub-goal. */
+  depth?: number;
   editValuesActive?: boolean;
   onEditValues?: () => void;
   onChangeValues?: (idxs: number[]) => void;
@@ -1619,12 +1655,17 @@ function ShortWithActions({
   const [editingHabitId, setEditingHabitId] = useState<string | null>(null);
   if (hideCompleted && !!goal.completedAt) return null;
 
+  // Nesting level below the top-level goal (0 = a direct sub-goal). Capped in
+  // CSS so a deep chain can't indent itself off a phone screen.
+  const depthClass = depth > 0 ? ` sub-depth-${Math.min(depth, 3)}` : '';
+
   return (
     <>
       <GoalNode
         goal={goal}
         values={displayValues}
         short
+        className={`node${depthClass}`}
         canAddChild
         addActive={addingFor === goal.id}
         onAddChild={() =>
@@ -3881,7 +3922,11 @@ function GoalsDashboard({
 }) {
   // Inactive goals (and their sub-goals) drop out of the dashboard entirely.
   const parked = archivedGoalIdSet(allGoals);
-  const goals  = allGoals.filter((g) => !parked.has(g.id));
+  // Achieved goals drop out too. This board is "how are my live goals doing" —
+  // a finished goal was still being drawn here with a ticking "N days left"
+  // countdown and a decaying health bar, reading exactly like an active goal,
+  // while the Align tab hides it by default. Same rule on both surfaces now.
+  const goals  = allGoals.filter((g) => !parked.has(g.id) && !g.completedAt);
   const longGoals    = goals.filter((g) => g.horizon === 'long'    && !g.parentGoalId);
   // Short-term includes sub-goals — they get their own strip with a "↳ parent"
   // label, so goals added under a long-term goal still register here.
