@@ -836,6 +836,25 @@ h1 {
   .inactive-node:hover { opacity: 0.9; }
 }
 
+/* Count of sub-goals folded inside a collapsed goal, so hidden structure
+   announces itself instead of reading as an empty goal. */
+.node-collapse { position: relative; }
+.node-collapse-count {
+  position: absolute;
+  top: -5px;
+  right: -7px;
+  min-width: 13px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: var(--line, rgba(255, 255, 255, 0.16));
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 13px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
 /* Nested sub-goals (a sub-goal of a sub-goal). Indent is capped at 3 levels so
    a deep chain can't push cards off a phone screen. */
 .node.sub-depth-1 { margin-left: 12px; }

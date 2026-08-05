@@ -878,13 +878,13 @@ const INACTIVE_ZONE_ID = 'inactive-zone';
 
 /** The always-present drop target at the bottom of a domain — a labelled
  * section you drag goals into to set them inactive (empty until you do). */
-function InactiveDropZone({ count, totalPaused, open, onToggle, children }: {
-  /** Top-level paused goals — what the drop zone accepts, and what drives the
-   *  empty state. */
+function InactiveDropZone({ count, open, onToggle, children }: {
+  /** Paused top-level goals — the cards actually rendered in this section, and
+   *  what the drop zone accepts. The badge counts exactly these: it briefly
+   *  counted nested paused sub-goals too, which made it read one higher than
+   *  the number of cards on screen. Their sub-goals are listed as detail rows
+   *  inside each card, not as separate entries. */
   count: number;
-  /** Everything actually paused, sub-goals included, so the badge doesn't
-   *  under-report a paused branch. */
-  totalPaused: number;
   open: boolean; onToggle: () => void; children: React.ReactNode;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: INACTIVE_ZONE_ID });
@@ -896,7 +896,7 @@ function InactiveDropZone({ count, totalPaused, open, onToggle, children }: {
         title="Paused goals — excluded from health, the dashboard, and Today. Drag a goal here to pause it."
       >
         <PauseLinesIcon />
-        <span>Inactive{totalPaused > 0 ? ` (${totalPaused})` : ''}</span>
+        <span>Inactive{count > 0 ? ` (${count})` : ''}</span>
         {count > 0 && <span className="inactive-caret">{open ? '▾' : '▸'}</span>}
       </button>
       {count === 0
@@ -1053,7 +1053,6 @@ function Align({
     walk(root.id, 0);
     return out;
   };
-  const pausedSubGoalCount = archivedTopGoals.reduce((n, g) => n + pausedSubGoalsOf(g).length, 0);
 
   // The goal under the pointer during a drag, plus its thread colour, so the
   // floating DragOverlay clone matches the card it lifted from.
@@ -1285,6 +1284,7 @@ function Align({
             // not just habits, or a goal whose only children are sub-goals
             // could never be folded away.
             onToggleCollapse={hasHabits || hasSubGoals ? () => toggleCollapse(sg.id) : undefined}
+            subGoalCount={domainGoals.filter((s) => s.parentGoalId === sg.id).length}
           />,
           ...(collapsed ? [] : renderSubTree(sg.id, depth + 1)),
         ];
@@ -1391,6 +1391,7 @@ function Align({
               onToggleComplete={() => toggleGoalComplete(goal.id)}
               isCollapsed={collapsedGoals.has(goal.id)}
               onToggleCollapse={hasChildren ? () => toggleCollapse(goal.id) : undefined}
+              subGoalCount={domainGoals.filter((s) => s.parentGoalId === goal.id).length}
               focusStrength={focusStrength}
               isSprintFocus={!!goal.sprintFocusAt}
               onToggleSprintFocus={() => setSprintFocus(goal.id)}
@@ -1522,7 +1523,6 @@ function Align({
             back up into the list above to reactivate it. */}
         <InactiveDropZone
           count={archivedTopGoals.length}
-          totalPaused={archivedTopGoals.length + pausedSubGoalCount}
           open={inactiveOpen}
           onToggle={() => setInactiveOpen((o) => !o)}
         >
@@ -1602,6 +1602,7 @@ function ShortWithActions({
   todayStr,
   hideCompleted,
   depth = 0,
+  subGoalCount = 0,
   editValuesActive,
   onEditValues,
   onChangeValues,
@@ -1641,6 +1642,8 @@ function ShortWithActions({
   hideCompleted: boolean;
   /** Nesting level below the top-level goal; 0 = a direct sub-goal. */
   depth?: number;
+  /** Sub-goals folded inside this one, shown on the caret while collapsed. */
+  subGoalCount?: number;
   editValuesActive?: boolean;
   onEditValues?: () => void;
   onChangeValues?: (idxs: number[]) => void;
@@ -1683,6 +1686,7 @@ function ShortWithActions({
         domainValues={domainValues}
         isCollapsed={isCollapsed}
         onToggleCollapse={onToggleCollapse}
+        subGoalCount={subGoalCount}
         focusStrength={focusStrength}
         isSprintFocus={isSprintFocus}
         onToggleSprintFocus={onToggleSprintFocus}
@@ -2105,6 +2109,7 @@ function GoalNode({
   onToggleComplete,
   isCollapsed,
   onToggleCollapse,
+  subGoalCount = 0,
   focusStrength,
   isSprintFocus,
   onToggleSprintFocus,
@@ -2130,6 +2135,9 @@ function GoalNode({
   onToggleComplete?: () => void;
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
+  /** Sub-goals folded inside this one — surfaced on the caret while collapsed
+   *  so hidden structure is visible rather than looking like nothing's there. */
+  subGoalCount?: number;
   /** 0–1: how strongly to show this goal as "in focus". Priority order now
    * persists (drag-to-reorder), so this tapers by position rather than being
    * an all-or-nothing badge on the top card alone. */
@@ -2170,12 +2178,20 @@ function GoalNode({
         {onToggleCollapse && (
           <button
             className={`node-collapse${isCollapsed ? ' collapsed' : ''}`}
-            title={isCollapsed ? 'Expand' : 'Collapse'}
+            title={isCollapsed
+              ? `Expand${subGoalCount ? ` — ${subGoalCount} sub-goal${subGoalCount !== 1 ? 's' : ''} inside` : ''}`
+              : 'Collapse'}
             onClick={(e) => { e.stopPropagation(); onToggleCollapse(); }}
           >
             <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
               <path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
+            {/* The tree opens fully collapsed on every visit, so a goal gives
+                no sign that it has sub-goals folded inside it — they read as
+                missing rather than hidden. Surface the count. */}
+            {isCollapsed && subGoalCount > 0 && (
+              <span className="node-collapse-count">{subGoalCount}</span>
+            )}
           </button>
         )}
         {showDragHandle && <DragHandle />}
