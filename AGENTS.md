@@ -4,20 +4,37 @@
 
 Fixes for "goals in the Goals tab aren't reflected in the app, and there's lag".
 
-**Paused sub-goals were invisible everywhere.** Pausing a goal parks its whole
-branch (`archivedGoalIdSet` walks the tree), and Today / the dashboard filter
-that set out. But the Align tab's Inactive section only rendered the top-level
-`GoalNode` — it never recursed. So a sub-goal under a paused parent rendered
-*nowhere*: not in the active spine (it has a parent, so it only ever renders
-nested under it), not in the Inactive list, not on Today. Three live goals were
-in that state, one of them ("Decide whether to take the MFA") with **2 open
-tasks**. The Inactive section now lists each paused goal's sub-goals beneath it
-(`pausedSubGoalsOf` in `Align`, depth-indented, with an open-item count), and
-the section badge counts everything paused, not just tops. Styles:
-`.inactive-subgoals` / `.inactive-sub-title` / `.inactive-sub-meta`.
-Note the walk uses `domainGoals`, so a sub-goal in a *different* domain than its
-parent still wouldn't list — same limitation the active spine has always had; no
-such rows exist today.
+**The Goals tab rendered only two levels — the headline bug.** `ShortWithActions`
+draws a goal node plus its habits and stops; it never recursed into its own
+sub-goals. Every other surface (the Goals dashboard, Today, the health map, the
+delete cascade) walks the tree with no depth limit, so a **depth-2 sub-goal was
+live everywhere in the app and visible nowhere in the Goals tab**. The user read
+that as goals that had been deleted but kept haunting the dashboard — and they
+literally could not delete them, because there was no card to tap. Fixed with
+`renderSubTree(parentId, depth)` in `Align`: a flat depth-ordered sequence
+(ShortWithActions returns a fragment into the goal-thread flow, so `depth` carries
+the indent via `.node.sub-depth-{1,2,3}`, capped at 3). A goal whose only children
+are sub-goals is now collapsible too, and a sub-goal hidden by "Hide completed"
+no longer takes its active children down with it — the walk continues through it.
+
+**The dashboard showed completed goals.** `GoalsDashboard` filtered parked goals
+but not completed ones, so an achieved goal kept a ticking "N days left"
+countdown and a health bar there while the Align tab hid it by default. Both
+surfaces apply the same rule now.
+
+**Paused branches: the Inactive section lists ONLY the goals you paused.** Not
+their sub-goals. This was tried the other way first (a nested list under each
+paused card) and rejected in review — "Inactive" means the goals you chose to
+pause, and the parent card stands for the whole branch, which returns intact on
+reactivation. **Known tradeoff:** a sub-goal under a paused parent is displayed
+nowhere until the parent is reactivated. Fine when the branch was parked
+deliberately; the failure mode to watch for is a goal getting paused
+unintentionally and going silent. Three goals are in that state today, one
+("Decide whether to take the MFA") with 2 open tasks.
+
+Do not re-add: a sub-goal count badge on collapsed goal cards (an unlabelled
+digit in the card corner — added and reverted, read as noise), or the paused
+sub-goal list described above.
 
 **One shared goal-tree walk.** `expandGoalSubtrees(goals, rootIds)` +
 `goalSubtreeIds(goals, rootId)` (both exported, near `archivedGoalIdSet`). It
