@@ -1041,11 +1041,19 @@ function Align({
   // render nested under it), not on Today, not on the dashboard — a live
   // sub-goal with open tasks would silently vanish the moment its parent was
   // paused. Depth-first so nesting reads top-down.
+  //
+  // Completed sub-goals are NOT listed here. Achieved and paused are different
+  // states: finishing a goal is an outcome, pausing one is a decision to stop
+  // working on it. Archiving a parent must not retroactively relabel a goal you
+  // already completed as "inactive". They obey the same "Hide completed" toggle
+  // as the rest of the tab; the walk continues through them either way so an
+  // unfinished goal underneath one still surfaces.
   const pausedSubGoalsOf = (root: Goal): { goal: Goal; depth: number }[] => {
     const out: { goal: Goal; depth: number }[] = [];
     const walk = (parentId: string, depth: number) => {
       for (const g of domainGoals) {
         if (g.parentGoalId !== parentId) continue;
+        if (hideCompleted && g.completedAt) { walk(g.id, depth); continue; }
         out.push({ goal: g, depth });
         walk(g.id, depth + 1);
       }
