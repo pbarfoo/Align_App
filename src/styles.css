@@ -847,33 +847,6 @@ h1 {
   .node.sub-depth-3 { margin-left: 24px; }
 }
 
-/* Sub-goals paused along with their parent. Listed rather than rendered as
-   full cards: they aren't independently actionable while the branch is parked,
-   but they must be visible somewhere. */
-.inactive-subgoals {
-  margin: 4px 0 2px;
-  padding: 0 0 0 14px;
-  list-style: none;
-  border-left: 1px solid var(--line, rgba(255, 255, 255, 0.12));
-  margin-left: 10px;
-}
-.inactive-subgoals li {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 3px 0 3px calc(var(--sub-depth, 0) * 12px);
-  font-size: 13px;
-  color: var(--muted);
-}
-.inactive-sub-title { overflow-wrap: anywhere; }
-.inactive-sub-meta {
-  margin-left: auto;
-  flex: none;
-  font-size: 11px;
-  opacity: 0.75;
-  white-space: nowrap;
-}
-
 /* ☀ Flag a task as today's focus — Align tab row control + Today row control */
 .node-sun {
   flex-shrink: 0;

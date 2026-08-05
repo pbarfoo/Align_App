@@ -1035,33 +1035,6 @@ function Align({
   const activeTopGoals   = topGoals.filter((g) => !g.archivedAt);
   const archivedTopGoals = topGoals.filter((g) => !!g.archivedAt);
 
-  // Pausing a goal pauses its whole branch (archivedGoalIdSet walks the tree),
-  // so its sub-goals must be LISTED here too. Without this they render nowhere
-  // at all: not in the active spine (they have a parent, so they only ever
-  // render nested under it), not on Today, not on the dashboard — a live
-  // sub-goal with open tasks would silently vanish the moment its parent was
-  // paused. Depth-first so nesting reads top-down.
-  //
-  // Completed sub-goals are NOT listed here. Achieved and paused are different
-  // states: finishing a goal is an outcome, pausing one is a decision to stop
-  // working on it. Archiving a parent must not retroactively relabel a goal you
-  // already completed as "inactive". They obey the same "Hide completed" toggle
-  // as the rest of the tab; the walk continues through them either way so an
-  // unfinished goal underneath one still surfaces.
-  const pausedSubGoalsOf = (root: Goal): { goal: Goal; depth: number }[] => {
-    const out: { goal: Goal; depth: number }[] = [];
-    const walk = (parentId: string, depth: number) => {
-      for (const g of domainGoals) {
-        if (g.parentGoalId !== parentId) continue;
-        if (hideCompleted && g.completedAt) { walk(g.id, depth); continue; }
-        out.push({ goal: g, depth });
-        walk(g.id, depth + 1);
-      }
-    };
-    walk(root.id, 0);
-    return out;
-  };
-
   // The goal under the pointer during a drag, plus its thread colour, so the
   // floating DragOverlay clone matches the card it lifted from.
   const activeDragGoal = activeDragId ? goals.find((g) => g.id === activeDragId) ?? null : null;
@@ -1533,9 +1506,10 @@ function Align({
           onToggle={() => setInactiveOpen((o) => !o)}
         >
           <SortableContext items={archivedTopGoals.map((g) => g.id)} strategy={verticalListSortingStrategy}>
-            {archivedTopGoals.map((goal) => {
-              const paused = pausedSubGoalsOf(goal);
-              return (
+            {/* Just the goals you paused. Their sub-goals are paused with them
+                and come back on reactivation, but they aren't listed here —
+                the parent card stands for the whole branch. */}
+            {archivedTopGoals.map((goal) => (
               <SortableGoal key={goal.id} id={goal.id}>
                 <div className="inactive-node">
                   <GoalNode
@@ -1544,27 +1518,9 @@ function Align({
                     onDelete={() => setPendingDeleteGoalId(goal.id)}
                     showDragHandle
                   />
-                  {/* Paused with their parent. Shown so the branch is visible
-                      somewhere — reactivating the parent brings them all back. */}
-                  {paused.length > 0 && (
-                    <ul className="inactive-subgoals">
-                      {paused.map(({ goal: sg, depth }) => {
-                        const open = habits.filter((h) => h.goalId === sg.id && !h.completed).length;
-                        return (
-                          <li key={sg.id} style={{ '--sub-depth': depth } as React.CSSProperties}>
-                            <span className="inactive-sub-title">{sg.title}</span>
-                            {sg.completedAt
-                              ? <span className="inactive-sub-meta">done</span>
-                              : open > 0 && <span className="inactive-sub-meta">{open} open</span>}
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  )}
                 </div>
               </SortableGoal>
-              );
-            })}
+            ))}
           </SortableContext>
         </InactiveDropZone>
 
