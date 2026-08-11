@@ -39,6 +39,22 @@ export interface Goal {
    * event. While the goal is still the active focus, in-progress days are derived
    * live from sprintFocusAt (not yet written here). */
   sprintFocusDays?: string[];
+  /** Health points banked when something under this goal was DELETED, so that
+   * removing a task / habit / sub-goal never drops the goal's health. Each entry
+   * is the earned credit the deleted items were contributing at the moment they
+   * were removed, dated so it keeps decaying exactly as those items would have.
+   * `ref` tags the delete batch so Undo can take the credit back. */
+  retainedCredits?: HealthCredit[];
+}
+
+/** One banked, decaying health credit — see `Goal.retainedCredits`. */
+export interface HealthCredit {
+  /** unix ms the credit was banked (the deletion time) — the decay anchor */
+  at: number;
+  /** points on the 0–100 health scale, pre-decay from `at` */
+  points: number;
+  /** delete-batch id, so an Undo can remove exactly what that delete added */
+  ref?: string;
 }
 
 export type ActionKind = 'habit' | 'task';

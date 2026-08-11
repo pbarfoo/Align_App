@@ -1,5 +1,56 @@
 # Align App Agent Handoff
 
+## Deleting never lowers health (2026-08)
+
+Health is a tally over the items a goal currently holds, so deleting one erased
+its credit retroactively: removing a finished task or a completed sub-goal made
+it look like the work had never happened and the score fell. That punishes
+tidying up — the opposite of what the model is for.
+
+Fix: at delete time, measure what the goal's **earned** ledger just lost and
+bank it as a dated credit on the surviving goal (`Goal.retainedCredits`).
+Because the credit decays from the deletion date at the same half-life the
+deleted items were on, health isn't merely pinned at the click — it follows the
+**exact curve it would have followed had the items stayed**. Deleted work fades
+out naturally, as all activity does; it's never revoked.
+
+- `earnedLedger(subGoals, treeHabits, now, halfLife)` — the build-out /
+  completion / miss / overdue tally, split out of `computeHealth` so the delete
+  path can measure the same number. `computeHealth` now = `earnedLedger` +
+  retained credits (earned, so `earnedScale` applies) + the fixed credits
+  (birth, sprint) that survive a delete anyway.
+- `retainHealthOnDelete(prevGoals, prevHabits, nextGoals, nextHabits, ref, now)`
+  diffs `goalEarnedNet` per surviving goal and banks the shortfall. Measured,
+  not itemised, so a cascading goal delete (sub-goals + all their habits/tasks)
+  needs no special case.
+- **One-directional**: only DROPS are banked, so deleting an open overdue task
+  still *relieves* its penalty and health goes UP, as before.
+- **Undo**: every credit carries the delete's `ref` (`uid('del')`);
+  `dropRetainedCredits(goals, ref)` withdraws exactly that batch, so restoring
+  the items can't double-count them. Wired into all four delete paths —
+  `deleteGoal` / `deleteHabit` (Align), `deleteItem` / `deleteGoalCascade`
+  (Today). Those paths now compute the next array directly instead of using the
+  `setState(prev => …)` form, since the retention diff needs goals and habits
+  together; `deleteItem` also now snapshots Undo indexes from `allHabits` rather
+  than the parked-filtered list (its splice always targeted the full array).
+- Credits older than `RETAINED_CREDIT_TTL_DAYS` (365) are pruned when a goal
+  next banks one — >6 halvings even at the 60d half-life, so it's housekeeping,
+  not a visible cliff.
+- Counted regardless of `graced`: they're earned points, not a per-goal grace,
+  so value alignment's goal-health element sees them too.
+
+**DB (applied to prod)**: `public.goals.retained_credits jsonb` (migration
+`add_goals_retained_credits`), nullable, round-tripped by `goalToRow` /
+`goalFromRow`. Required — the whole-array upsert would 400 on an unknown column.
+
+**Known gap:** value alignment's separate "lived actions" element (0.25) still
+tallies completions straight off the habits array, so deleting a completed item
+nudges alignment down a little. Health itself is fully covered. Fix that the
+same way if it comes up.
+
+Tests: `src/App.deleteHealth.test.ts` (health identical across the delete, the
+decay curve matching at +7/+30/+90d, overdue relief still rising, Undo).
+
 ## Paused branches, goal-tree walk, staleness (2026-08)
 
 Fixes for "goals in the Goals tab aren't reflected in the app, and there's lag".

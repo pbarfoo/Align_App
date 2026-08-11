@@ -26,6 +26,7 @@ import {
   type Recurrence,
   type CustomUnit,
   type ReflectionEntry,
+  type HealthCredit,
 } from './data';
 import { supabase } from './supabase';
 import type { Session } from '@supabase/supabase-js';
@@ -84,6 +85,7 @@ function goalToRow(g: Goal, userId: string): Row {
     archived_at: g.archivedAt ?? null,
     sprint_focus_at: g.sprintFocusAt ?? null,
     sprint_focus_days: g.sprintFocusDays ?? null,
+    retained_credits: g.retainedCredits ?? null,
   };
 }
 function goalFromRow(row: Row): Goal {
@@ -100,6 +102,7 @@ function goalFromRow(row: Row): Goal {
     archivedAt: row.archived_at ?? undefined,
     sprintFocusAt: row.sprint_focus_at ?? undefined,
     sprintFocusDays: Array.isArray(row.sprint_focus_days) ? row.sprint_focus_days : undefined,
+    retainedCredits: Array.isArray(row.retained_credits) ? row.retained_credits : undefined,
   };
 }
 
@@ -1137,14 +1140,19 @@ function Align({
       .map((g, i) => ({ g, i }))
       .filter(({ g }) => remove.has(g.id));
     const removedHabits = habits.filter((h) => remove.has(h.goalId));
-    setGoals((prev) => prev.filter((g) => !remove.has(g.id)));
-    setHabits((ph) => ph.filter((h) => !remove.has(h.goalId)));
+    // A deleted branch's parent keeps the health its sub-goals had earned —
+    // banked as a decaying credit so the delete itself never drops the score.
+    const ref = deleteBatchRef();
+    const nextGoals  = goals.filter((g) => !remove.has(g.id));
+    const nextHabits = habits.filter((h) => !remove.has(h.goalId));
+    setGoals(retainHealthOnDelete(goals, habits, nextGoals, nextHabits, ref));
+    setHabits(nextHabits);
     onDeleteGoalFromDb([...remove]);
     flash('Deleted', false, {
       label: 'Undo',
       run: () => {
         setGoals((prev) => {
-          const next = [...prev];
+          const next = dropRetainedCredits(prev, ref);
           removedGoals.forEach(({ g, i }) => next.splice(Math.min(i, next.length), 0, g));
           return next;
         });
@@ -1160,11 +1168,16 @@ function Align({
     const removed = habits
       .map((h, i) => ({ h, i }))
       .filter(({ h }) => h.id === id);
-    setHabits((prev) => prev.filter((h) => h.id !== id));
+    // Bank the health this habit/task had earned, so deleting it isn't a demotion.
+    const ref = deleteBatchRef();
+    const nextHabits = habits.filter((h) => h.id !== id);
+    setGoals((prev) => retainHealthOnDelete(prev, habits, prev, nextHabits, ref));
+    setHabits(nextHabits);
     onDeleteHabitFromDb(id);
     flash('Deleted', false, {
       label: 'Undo',
       run: () => {
+        setGoals((prev) => dropRetainedCredits(prev, ref));
         setHabits((prev) => {
           const next = [...prev];
           removed.forEach(({ h, i }) => next.splice(Math.min(i, next.length), 0, h));
@@ -2535,14 +2548,19 @@ function Today({
     // Snapshot the removed row with its index so Undo can splice it back into
     // place. Restoring to state re-triggers the upsert sync, which re-creates
     // the DB row.
-    const removed = habits
+    const removed = allHabits
       .map((h, i) => ({ h, i }))
       .filter(({ h }) => h.id === id);
-    setHabits((prev) => prev.filter((h) => h.id !== id));
+    // Bank the health this habit/task had earned, so deleting it isn't a demotion.
+    const ref = deleteBatchRef();
+    const nextHabits = allHabits.filter((h) => h.id !== id);
+    setGoals((prev) => retainHealthOnDelete(prev, allHabits, prev, nextHabits, ref));
+    setHabits(nextHabits);
     onDeleteHabitFromDb(id);
     flash('Deleted', false, {
       label: 'Undo',
       run: () => {
+        setGoals((prev) => dropRetainedCredits(prev, ref));
         setHabits((prev) => {
           const next = [...prev];
           removed.forEach(({ h, i }) => next.splice(Math.min(i, next.length), 0, h));
@@ -2586,14 +2604,19 @@ function Today({
       .map((g, i) => ({ g, i }))
       .filter(({ g }) => remove.has(g.id));
     const removedHabits = allHabits.filter((h) => remove.has(h.goalId));
-    setGoals((prev) => prev.filter((g) => !remove.has(g.id)));
-    setHabits((ph) => ph.filter((h) => !remove.has(h.goalId)));
+    // A deleted branch's parent keeps the health its sub-goals had earned —
+    // banked as a decaying credit so the delete itself never drops the score.
+    const ref = deleteBatchRef();
+    const nextGoals  = allGoals.filter((g) => !remove.has(g.id));
+    const nextHabits = allHabits.filter((h) => !remove.has(h.goalId));
+    setGoals(retainHealthOnDelete(allGoals, allHabits, nextGoals, nextHabits, ref));
+    setHabits(nextHabits);
     onDeleteGoalFromDb([...remove]);
     flash('Deleted', false, {
       label: 'Undo',
       run: () => {
         setGoals((prev) => {
-          const next = [...prev];
+          const next = dropRetainedCredits(prev, ref);
           removedGoals.forEach(({ g, i }) => next.splice(Math.min(i, next.length), 0, g));
           return next;
         });
@@ -3364,6 +3387,76 @@ function taskCountsInPace(t: Habit, now: number): boolean {
   return new Date(t.dueDate + 'T23:59:59').getTime() < now;
 }
 
+const DAY_MS = 86_400_000;
+
+// Health point values (0–100 scale). Completion > build-out; sub-goal > habit >
+// task. Tasks & habits are deliberately light so a goal's health is driven
+// mostly by sub-goals (real milestones); a pile of tasks/habits alone stays
+// modest. Meant to be tuned.
+const BUILD = { sub: 10, habit: 4, task: 2 };
+const DONE  = { sub: 40, habitDay: 4, task: 6, taskLate: 3 };
+const MISS_HABIT = 1;  // per skipped / missed scheduled habit day — a gentle
+                       // ~1-point nudge; missing also forfeits the +4 the day
+                       // would have earned, so the real cost is already ~5.
+const OVERDUE    = 10; // per open overdue task, scaled by how late
+
+/**
+ * The EARNED half of the health tally for one goal's subtree: build-out and
+ * completion credit against habit-miss and overdue-task penalties, each event
+ * decaying from its own date. Split out of `computeHealth` because deletion
+ * retention needs exactly this number — the part of the score that the items
+ * themselves carry, with none of the fixed per-goal credits (birth, sprint
+ * focus) that survive a delete anyway.
+ */
+function earnedLedger(
+  subGoals: Goal[],
+  treeHabits: Habit[],
+  now: number,
+  halfLifeDays: number,
+): { pos: number; pen: number } {
+  const decay = (ms: number) => Math.pow(0.5, Math.max(0, (now - ms) / DAY_MS) / halfLifeDays);
+  const dayMs = (d: string) => new Date(d + 'T12:00').getTime();
+
+  const tasks  = treeHabits.filter((h) => h.kind === 'task');
+  const habits = treeHabits.filter((h) => h.kind === 'habit');
+  let pos = 0, pen = 0;
+
+  // Build-out — structural credit, fading from when each item was added.
+  for (const g of subGoals) pos += BUILD.sub   * decay(g.createdAt || now);
+  for (const h of habits)   pos += BUILD.habit * decay(h.createdAt ?? now);
+  for (const t of tasks)    pos += BUILD.task  * decay(t.createdAt ?? now);
+
+  // Completion — worth more than build-out.
+  for (const g of subGoals) if (g.completedAt) pos += DONE.sub * decay(g.completedAt);
+  for (const t of tasks) {
+    if (t.completed && t.completedAt) {
+      const late = t.dueDate && toDateStr(new Date(t.completedAt)) > t.dueDate;
+      pos += (late ? DONE.taskLate : DONE.task) * decay(t.completedAt);
+    }
+  }
+  for (const h of habits) for (const d of (h.completions ?? [])) pos += DONE.habitDay * decay(dayMs(d));
+
+  // Skipped habit days — the explicit "I'm not doing this" miss (the red pill).
+  // Each dings, fading from the day it happened. Only EXPLICIT skips are
+  // penalised here: clicking skip is what applies the ding. A day you simply
+  // haven't logged isn't double-counted — a habit that isn't being kept already
+  // fades on its own for lack of incoming completion points.
+  for (const h of habits) {
+    for (const d of (h.skippedDates ?? [])) pen += MISS_HABIT * decay(dayMs(d));
+  }
+
+  // Open overdue tasks — a present drag (not a faded past event), scaled by how
+  // late, until the task is completed or removed.
+  for (const t of tasks) {
+    if (!t.completed && t.dueDate) {
+      const dueMs = new Date(t.dueDate + 'T23:59:59').getTime();
+      if (dueMs < now) pen += OVERDUE * Math.min(1, 0.3 + (now - dueMs) / DAY_MS / 14);
+    }
+  }
+
+  return { pos, pen };
+}
+
 /**
  * Goal health (0–1) — a decaying tally of "how active am I with this goal".
  * Every EVENT contributes points that fade from their own date (half-life set
@@ -3377,6 +3470,10 @@ function taskCountsInPace(t: Habit, now: number): boolean {
  *   − Missed or skipped habit days (rule 4).
  *   − Missed deadlines (rule 5): a task finished late earns reduced credit, and
  *     an open overdue task keeps dragging while it sits there.
+ *   + Retained credit: points banked when items under the goal were DELETED, so
+ *     tidying up never revokes work you actually did (see
+ *     `retainHealthOnDelete`). They decay from the deletion date on the same
+ *     clock, so the score follows the curve it would have followed anyway.
  * The raw point total is clamped to 0–100 and returned as a 0–1 fraction. Used
  * for EVERY horizon; "ongoing" just picks the middle decay rate.
  */
@@ -3410,30 +3507,30 @@ function computeHealth(
    * smaller, onto a comparable scale. Deliberately NOT applied to the fixed
    * credits (birth, sprint focus), which are the same size for every goal. */
   earnedScale = 1,
+  /** points banked when items under this goal were DELETED, so removing a task /
+   * habit / sub-goal never drops the score (see `retainHealthOnDelete`). Part of
+   * the EARNED ledger — they stand in for the deleted items' own credit, so they
+   * scale and decay exactly as those items would have. */
+  retainedCredits?: HealthCredit[],
 ): number {
-  const DAY = 86_400_000;
-  const decay = (ms: number) => Math.pow(0.5, Math.max(0, (now - ms) / DAY) / halfLifeDays);
+  const decay = (ms: number) => Math.pow(0.5, Math.max(0, (now - ms) / DAY_MS) / halfLifeDays);
   const dayMs = (d: string) => new Date(d + 'T12:00').getTime();
 
-  // Point values (0–100 scale). Completion > build-out; sub-goal > habit > task.
-  // Tasks & habits are deliberately light so a goal's health is driven mostly by
-  // sub-goals (real milestones); a pile of tasks/habits alone stays modest.
-  const BUILD = { sub: 10, habit: 4, task: 2 };
-  const DONE  = { sub: 40, habitDay: 4, task: 6, taskLate: 3 };
-  const MISS_HABIT = 1;  // per skipped / missed scheduled habit day — a gentle
-                         // ~1-point nudge; missing also forfeits the +4 the day
-                         // would have earned, so the real cost is already ~5.
-  const OVERDUE    = 10; // per open overdue task, scaled by how late
   const SPRINT_DAY = 2;  // per FULL day a goal is held as the sprint focus
   const SPRINT_CAP = 10; // cap on the sprint credit (~5 days) — stays a nudge
-
-  const tasks  = treeHabits.filter((h) => h.kind === 'task');
-  const habits = treeHabits.filter((h) => h.kind === 'habit');
 
   // `fixed` = credits every goal gets at full size regardless of its scale
   // (birth, sprint focus); `pos`/`pen` = the earned ledger, which is what
   // `earnedScale` re-bases for sub-goals.
-  let fixed = 0, pos = 0, pen = 0;
+  const { pos: earnedPos, pen } = earnedLedger(subGoals, treeHabits, now, halfLifeDays);
+  let fixed = 0;
+  let pos = earnedPos;
+
+  // Deletion-retained credit — the earned points the deleted items were carrying
+  // at the moment they were removed, decaying from that date at this goal's
+  // half-life (the same clock those items were on). Deleting is therefore health-
+  // neutral: the credit picks up exactly where the items left off.
+  for (const c of (retainedCredits ?? [])) pos += c.points * decay(c.at);
 
   // Birth credit — a goal is worth 50 the moment it's created, then this fades
   // at the same half-life as everything else. Build-out/completions add on top;
@@ -3454,39 +3551,6 @@ function computeHealth(
     fixed += Math.min(sprintBonus, SPRINT_CAP);
   }
 
-  // Build-out — structural credit, fading from when each item was added.
-  for (const g of subGoals) pos += BUILD.sub   * decay(g.createdAt || now);
-  for (const h of habits)   pos += BUILD.habit * decay(h.createdAt ?? now);
-  for (const t of tasks)    pos += BUILD.task  * decay(t.createdAt ?? now);
-
-  // Completion — worth more than build-out.
-  for (const g of subGoals) if (g.completedAt) pos += DONE.sub * decay(g.completedAt);
-  for (const t of tasks) {
-    if (t.completed && t.completedAt) {
-      const late = t.dueDate && toDateStr(new Date(t.completedAt)) > t.dueDate;
-      pos += (late ? DONE.taskLate : DONE.task) * decay(t.completedAt);
-    }
-  }
-  for (const h of habits) for (const d of (h.completions ?? [])) pos += DONE.habitDay * decay(dayMs(d));
-
-  // Skipped habit days — the explicit "I'm not doing this" miss (the red pill).
-  // Each dings, fading from the day it happened. Only EXPLICIT skips are
-  // penalised here: clicking skip is what applies the ding. A day you simply
-  // haven't logged isn't double-counted — a habit that isn't being kept already
-  // fades on its own for lack of incoming completion points.
-  for (const h of habits) {
-    for (const d of (h.skippedDates ?? [])) pen += MISS_HABIT * decay(dayMs(d));
-  }
-
-  // Open overdue tasks — a present drag (not a faded past event), scaled by how
-  // late, until the task is completed or removed.
-  for (const t of tasks) {
-    if (!t.completed && t.dueDate) {
-      const dueMs = new Date(t.dueDate + 'T23:59:59').getTime();
-      if (dueMs < now) pen += OVERDUE * Math.min(1, 0.3 + (now - dueMs) / DAY / 14);
-    }
-  }
-
   // Earned points are re-based by `earnedScale` (1 for top-level goals), the
   // fixed credits are not — so a sub-goal's thinner ledger reads on a
   // comparable 0–100 scale without a brand-new sub-goal outranking its parent.
@@ -3497,6 +3561,9 @@ function computeHealth(
 }
 
 export const __test_computeHealth = computeHealth;
+export const __test_retainHealthOnDelete = retainHealthOnDelete;
+export const __test_dropRetainedCredits = dropRetainedCredits;
+export const __test_goalEarnedNet = goalEarnedNet;
 export const __test_subGoalScale = subGoalScale;
 export const __test_subGoalHalfLife = subGoalHalfLife;
 export const __test_toggleHabitCompletion = toggleHabitCompletion;
@@ -3577,6 +3644,85 @@ function subGoalHalfLife(g: Goal, goals: Goal[]): number {
   return Math.max(own, (own + HALF_LIFE_BY_HORIZON[parent.horizon]) / 2);
 }
 
+/* ---- Deleting never lowers health ----------------------------------------
+ * Health is a tally over the items a goal currently holds, so removing one used
+ * to erase its credit retroactively: deleting a finished task or a completed
+ * sub-goal made it look like the work had never happened, and the score fell.
+ * That punishes tidying up, which is the opposite of what the model is for.
+ *
+ * Fix: at delete time, measure what the goal's EARNED ledger just lost and bank
+ * that number as a dated credit on the goal (`Goal.retainedCredits`). Because
+ * the credit decays from the deletion date at the same half-life the deleted
+ * items were on, health is not merely held steady at the click — it follows the
+ * exact curve it would have followed had the items stayed. The deleted work
+ * fades out of the score naturally, as all activity does; it is never revoked.
+ *
+ * Only DROPS are banked, so this is one-directional: deleting an open overdue
+ * task still relieves its penalty and health goes UP, as before. And credit is
+ * measured, not itemised, so a cascading goal delete (sub-goals + all their
+ * habits and tasks at once) is covered by the same code path. */
+
+/** How long a retained credit is carried before it's dropped as spent. At every
+ * half-life in the model (60d max) a year is >6 halvings — under 1.6% of the
+ * original — so pruning here is housekeeping, not a visible cliff. */
+const RETAINED_CREDIT_TTL_DAYS = 365;
+
+/** Unique tag for one delete action, carried by every credit that delete banks
+ * so Undo can remove exactly those and nothing else. */
+function deleteBatchRef(): string {
+  return uid('del');
+}
+
+/** The earned (non-fixed) health points a goal's subtree is currently carrying.
+ * Mirrors the subtree rule used by `vitalityFor` / `stGoalMetrics` /
+ * `ongoingGoalMetrics`: the goal itself plus its direct sub-goals. */
+function goalEarnedNet(g: Goal, goals: Goal[], habits: Habit[], now: number): number {
+  const subGoals   = goals.filter((x) => x.parentGoalId === g.id);
+  const subtree    = new Set<string>([g.id, ...subGoals.map((x) => x.id)]);
+  const treeHabits = habits.filter((h) => subtree.has(h.goalId));
+  const { pos, pen } = earnedLedger(subGoals, treeHabits, now, subGoalHalfLife(g, goals));
+  return pos - pen;
+}
+
+/**
+ * Given the goal/habit lists either side of a delete, return the surviving goals
+ * with a retained credit added wherever the delete cost earned points. `ref`
+ * tags the batch so `dropRetainedCredits` can reverse it on Undo.
+ *
+ * Note the credit is computed from the earned NET, so a delete that removes
+ * both credit and penalty banks only the shortfall — and a delete that is a net
+ * relief banks nothing.
+ */
+function retainHealthOnDelete(
+  prevGoals: Goal[],
+  prevHabits: Habit[],
+  nextGoals: Goal[],
+  nextHabits: Habit[],
+  ref: string,
+  now = Date.now(),
+): Goal[] {
+  const before = new Map(prevGoals.map((g) => [g.id, goalEarnedNet(g, prevGoals, prevHabits, now)]));
+  return nextGoals.map((g) => {
+    const was = before.get(g.id);
+    if (was == null) return g; // a goal that didn't exist before this delete
+    const lost = was - goalEarnedNet(g, nextGoals, nextHabits, now);
+    if (lost <= 0.005) return g; // no loss (or a net relief) — nothing to bank
+    const kept = (g.retainedCredits ?? [])
+      .filter((c) => (now - c.at) / DAY_MS < RETAINED_CREDIT_TTL_DAYS);
+    return { ...g, retainedCredits: [...kept, { at: now, points: lost, ref }] };
+  });
+}
+
+/** Undo counterpart: strip the credits a single delete batch banked, so
+ * restoring the items doesn't leave their points counted twice. */
+function dropRetainedCredits(goals: Goal[], ref: string): Goal[] {
+  return goals.map((g) => {
+    if (!g.retainedCredits?.some((c) => c.ref === ref)) return g;
+    const kept = g.retainedCredits.filter((c) => c.ref !== ref);
+    return { ...g, retainedCredits: kept.length ? kept : undefined };
+  });
+}
+
 function vitalityFor(
   lg: Goal,
   goals: Goal[],
@@ -3594,7 +3740,7 @@ function vitalityFor(
 
   const completion = computeDone(subGoals, subtreeHabits, habits, now);
   // Long-horizon goals decay slowest (60-day half-life).
-  const health     = computeHealth(subGoals, subtreeHabits, now, focusStrength, subGoalHalfLife(lg, goals), graced ? lg.createdAt : undefined, graced ? lg.sprintFocusAt : undefined, graced ? lg.sprintFocusDays : undefined, subGoalScale(lg));
+  const health     = computeHealth(subGoals, subtreeHabits, now, focusStrength, subGoalHalfLife(lg, goals), graced ? lg.createdAt : undefined, graced ? lg.sprintFocusAt : undefined, graced ? lg.sprintFocusDays : undefined, subGoalScale(lg), lg.retainedCredits);
   return { time: elapsed, completion, health };
 }
 
@@ -3622,7 +3768,7 @@ function stGoalMetrics(sg: Goal, goals: Goal[], habits: Habit[], focusStrength =
   const completion = computeDone(subGoals, sgHabits, habits, now);
   // Short-horizon goals decay fastest (14-day half-life) — unless they hang off
   // a longer-horizon parent, which slows them toward the parent's clock.
-  const health     = computeHealth(subGoals, sgHabits, now, focusStrength, subGoalHalfLife(sg, goals), graced ? sg.createdAt : undefined, graced ? sg.sprintFocusAt : undefined, graced ? sg.sprintFocusDays : undefined, subGoalScale(sg));
+  const health     = computeHealth(subGoals, sgHabits, now, focusStrength, subGoalHalfLife(sg, goals), graced ? sg.createdAt : undefined, graced ? sg.sprintFocusAt : undefined, graced ? sg.sprintFocusDays : undefined, subGoalScale(sg), sg.retainedCredits);
   return { time: elapsed, completion, health };
 }
 
@@ -3640,7 +3786,7 @@ function ongoingGoalMetrics(og: Goal, goals: Goal[], habits: Habit[], focusStren
   const ogHabits = habits.filter((h) => subtree.has(h.goalId));
 
   const completion = computeDone(subGoals, ogHabits, habits, now);
-  const health     = computeHealth(subGoals, ogHabits, now, focusStrength, subGoalHalfLife(og, goals), graced ? og.createdAt : undefined, graced ? og.sprintFocusAt : undefined, graced ? og.sprintFocusDays : undefined, subGoalScale(og));
+  const health     = computeHealth(subGoals, ogHabits, now, focusStrength, subGoalHalfLife(og, goals), graced ? og.createdAt : undefined, graced ? og.sprintFocusAt : undefined, graced ? og.sprintFocusDays : undefined, subGoalScale(og), og.retainedCredits);
   return { time: 0, completion, health };
 }
 

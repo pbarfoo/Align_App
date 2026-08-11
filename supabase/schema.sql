@@ -34,7 +34,12 @@ create table if not exists public.goals (
   -- YYYY-MM-DD dates the goal earned a sprint-focus health bonus (one per full
   -- day held as the sprint). Banked when the focus moves elsewhere so the bonus
   -- persists and then decays. null/empty = none earned yet.
-  sprint_focus_days text[]
+  sprint_focus_days text[],
+  -- Health points banked when items under this goal were DELETED, so removing a
+  -- task / habit / sub-goal never drops the goal's health. Array of
+  -- { at: unix ms (decay anchor), points: number, ref: delete-batch id }.
+  -- null = nothing banked.
+  retained_credits jsonb
 );
 
 -- HABITS
