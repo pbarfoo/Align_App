@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
+  __test_valueAlignmentScore as vaScore,
   __test_computeHealth,
   __test_dropRetainedCredits,
   __test_goalEarnedNet,
@@ -7,7 +8,7 @@ import {
   __test_subGoalHalfLife,
   __test_subGoalScale,
 } from './App';
-import type { Goal, Habit } from './data';
+import type { Domain, Goal, Habit, ReflectionEntry } from './data';
 
 /**
  * Deleting never lowers health.
@@ -186,13 +187,17 @@ describe('the retained credit behaves like the items it replaces', () => {
 });
 
 describe('relief still flows the other way', () => {
-  it('deleting an open overdue task RAISES health and banks no credit', () => {
+  it('deleting an open overdue task RAISES health and banks no health points', () => {
     const goals  = [goal({ id: 'g' })];
     const habits = [task('t1', 'g', { dueDate: ymd(now - 20 * day) })];
     const before = health(goals[0], goals, habits);
 
     const after = del(goals, habits, { habitIds: ['t1'] });
-    expect(find(after.goals, 'g').retainedCredits).toBeUndefined();
+    // The overdue task was judgeable behaviour, so its evidence is retained for
+    // alignment's confidence ramp — but it earned no health, so nothing is
+    // banked there and the goal simply gets the penalty relief.
+    const credits = find(after.goals, 'g').retainedCredits ?? [];
+    expect(credits.map((c) => c.points)).toEqual([0]);
     expect(health(find(after.goals, 'g'), after.goals, after.habits)).toBeGreaterThan(before);
   });
 
@@ -211,5 +216,103 @@ describe('relief still flows the other way', () => {
     const netAfter = __test_goalEarnedNet(g, after.goals, after.habits, now)
       + (g.retainedCredits ?? []).reduce((s, c) => s + c.points, 0);
     expect(netAfter).toBeGreaterThanOrEqual(netBefore - 1e-9);
+  });
+});
+
+/* ---- Value alignment gets the same treatment ------------------------------
+ * Alignment has its own two behavioural ledgers that a delete used to dent:
+ * "lived actions" (its own weights, 28-day clock) and the evidence count behind
+ * the confidence ramp. Both are banked alongside the health credit. */
+
+const domains: Domain[] = [
+  { id: 'career', name: 'Career', blurb: '', values: ['Leadership', 'Autonomy'], vision: '' },
+];
+const KEY = 'career:Leadership'; // value index 0
+
+const tagged = (overrides: Partial<Goal> = {}) =>
+  goal({ horizon: 'ongoing', valueIndexes: [0], ...overrides });
+
+const refl = (s: number): ReflectionEntry =>
+  ({ weekNumber: 1, date: now - 3 * day, scores: { [KEY]: s }, note: '' });
+
+const align = (goals: Goal[], habits: Habit[], reflections: ReflectionEntry[] = [refl(2)]) =>
+  vaScore(KEY, goals, habits, reflections, domains);
+
+describe('deleting an item never lowers value alignment either', () => {
+  it('holds alignment when a completed task is deleted', () => {
+    vi.setSystemTime(now);
+    const goals  = [tagged({ id: 'g' })];
+    const habits = [
+      task('t1', 'g', { completed: true, completedAt: now - 5 * day }),
+      task('t2', 'g', { completed: true, completedAt: now - 12 * day }),
+    ];
+    const before = align(goals, habits);
+
+    const after = del(goals, habits, { habitIds: ['t1'] });
+    expect(align(after.goals, after.habits)).toBeCloseTo(before, 10);
+  });
+
+  it('holds alignment when a kept habit is deleted', () => {
+    vi.setSystemTime(now);
+    const goals  = [tagged({ id: 'g' })];
+    const habits = [habit('h1', 'g', [0, 1, 2, 3, 4, 5, 6, 7])];
+    const before = align(goals, habits);
+
+    const after = del(goals, habits, { habitIds: ['h1'] });
+    expect(align(after.goals, after.habits)).toBeCloseTo(before, 10);
+  });
+
+  it('holds alignment when a completed sub-goal branch is deleted', () => {
+    vi.setSystemTime(now);
+    // The sub-goal inherits the value from its tagged parent, so its actions
+    // count toward the value — and must keep counting once it's deleted.
+    const parent = tagged({ id: 'p' });
+    const sub    = goal({ id: 's', parentGoalId: 'p', valueIndexes: [], completedAt: now - 4 * day });
+    const goals  = [parent, sub];
+    const habits = [
+      task('t1', 's', { completed: true, completedAt: now - 6 * day }),
+      habit('h1', 's', [1, 3, 5, 7]),
+    ];
+    const before = align(goals, habits);
+
+    const after = del(goals, habits, { goalIds: ['s'] });
+    expect(after.goals.map((g) => g.id)).toEqual(['p']);
+    // The whole branch's lived actions and evidence were pushed up to the
+    // surviving parent — the milestone, the task, and the habit-days.
+    const credits = find(after.goals, 'p').retainedCredits!;
+    const credit  = credits[credits.length - 1];
+    expect(credit.actionPoints).toBeGreaterThan(0);
+    expect(credit.evidence).toBe(3);
+    expect(credit.keptDays).toHaveLength(4);
+    // Alignment can't fall. It may tick UP, because the goal-health element
+    // averages over the goals that still exist and the deleted branch is no
+    // longer in that average — see the note on the residual in AGENTS.md.
+    expect(align(after.goals, after.habits)).toBeGreaterThanOrEqual(before - 1e-9);
+  });
+
+  it('keeps the confidence ramp where it was — deleting evidence doesn’t un-know it', () => {
+    vi.setSystemTime(now);
+    const goals  = [tagged({ id: 'g' })];
+    const habits = [
+      task('t1', 'g', { completed: true, completedAt: now - 2 * day }),
+      task('t2', 'g', { completed: true, completedAt: now - 9 * day }),
+      habit('h1', 'g', [0, 2, 4]),
+    ];
+    const after = del(goals, habits, { habitIds: ['t1', 't2', 'h1'] });
+    const credit = find(after.goals, 'g').retainedCredits![0];
+    expect(credit.evidence).toBe(3);
+    expect(align(after.goals, after.habits)).toBeCloseTo(align(goals, habits), 10);
+  });
+
+  it('decays alignment credit on alignment’s own 28-day clock', () => {
+    const goals  = [tagged({ id: 'g' })];
+    const habits = [habit('h1', 'g', [0, 1, 2, 3, 4])];
+    const after  = del(goals, habits, { habitIds: ['h1'] });
+
+    for (const ahead of [7, 28, 60]) {
+      vi.setSystemTime(now + ahead * day);
+      expect(align(after.goals, after.habits)).toBeCloseTo(align(goals, habits), 10);
+    }
+    vi.setSystemTime(now);
   });
 });

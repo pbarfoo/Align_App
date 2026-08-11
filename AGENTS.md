@@ -39,6 +39,56 @@ out naturally, as all activity does; it's never revoked.
 - Counted regardless of `graced`: they're earned points, not a per-goal grace,
   so value alignment's goal-health element sees them too.
 
+### Value alignment gets the same treatment
+
+A delete dented THREE more ledgers inside `valueAlignmentScore`, all now banked
+in the same `HealthCredit` entry, each on the scale/clock its own element uses:
+
+- `actionPoints` — lived actions, VA's own weights (`VA_ACT`) and 28-day clock.
+- `evidence` — the confidence-ramp signal count. A raw tally; does NOT decay
+  (the behaviour happened; deleting the row doesn't un-know it).
+- `keptDays` / `skippedDays` — habit-days for the consistency element, banked as
+  DATES, not a ratio, so they age out of the rolling 28-day window exactly as the
+  live rows would have. Only in-window dates are banked. Missing this was the
+  subtle one: deleting the only tagged habit dropped the element entirely and
+  silently reweighted the whole blend.
+
+`goalActionLedger(g, habits, now)` measures all three. Unlike health's subtree
+roll-up it's strictly PER-GOAL (its own completion + the habits it owns),
+because that's how `valueAlignmentScore` accumulates over tagged goals — so
+`retainHealthOnDelete` additionally pushes a **deleted** goal's alignment ledger
+up to its nearest surviving ancestor (health needs no such step; a parent's
+subtree tally already covered its sub-goals, so the plain diff catches it).
+
+**Residual, accepted:** alignment's goal-health element (weight 0.12) averages
+`computeHealth` over the goals that still exist. Deleting a whole goal removes
+it from that average, which can move alignment slightly EITHER way — up if the
+deleted goal scored below the average, down if it scored above. Retaining that
+would mean keeping ghost goals in the tree. Everything a delete *earned* is
+retained; only the composition of the average changes.
+
+## Health restore: "A New Job - Remote Work" (2026-08-11)
+
+The user reported this goal bleeding out. Root cause is mostly NOT deletion:
+it's `horizon: 'short', timeframe: 12` — a **12-month goal on the short
+horizon**, and `HALF_LIFE_BY_HORIZON` keys off the horizon LABEL, not the actual
+timeframe, so it decays on a 14-day clock. Its +50 birth credit had halved twice
+in 31 days: 50 → 10.5, total reading 13%.
+
+Restored to 50% by banking a retained credit on the live row (`points: 37.12`,
+`at: 1786413418043`, `ref: restore-remote-work-2026-08-11`) — the same mechanism
+the delete fix uses, so it decays honestly from here rather than being a floor.
+Health-only: no `actionPoints`/`evidence` were banked, since there's no record of
+what was deleted and inflating alignment on a guess would be wrong.
+
+**Still open — the user was offered this and chose the number instead, so do NOT
+apply it unprompted:** scaling a short goal's half-life to its real timeframe,
+`clamp(timeframeMonths * 30.44 / 6, 14, 60)` (1mo→14, 3mo→15, 6mo→30, 12mo→60).
+Monotone — no goal would decay faster than it does today. Three goals have the
+short/12 shape: this one, "Film Business", "Promotion at ETMS" (latter two
+paused). Without it, the restored 50% reads ~35% in a week and ~25% in a
+fortnight; expect this to come back.
+
 **DB (applied to prod)**: `public.goals.retained_credits jsonb` (migration
 `add_goals_retained_credits`), nullable, round-tripped by `goalToRow` /
 `goalFromRow`. Required — the whole-array upsert would 400 on an unknown column.

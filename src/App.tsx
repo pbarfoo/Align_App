@@ -3261,6 +3261,9 @@ function valueAlignmentScore(
   // the full behavioural weight. Neglect still shows — it just eases in.
   let evidence = 0;
   for (const g of allTagged) if (g.completedAt) evidence += 1;
+  // Signals from items since DELETED still count — the behaviour happened, and
+  // tidying up shouldn't quietly de-rate the confidence in what we know.
+  for (const g of allTagged) for (const c of (g.retainedCredits ?? [])) evidence += c.evidence ?? 0;
   for (const h of taggedHabits) {
     if (h.kind === 'task') {
       if (h.completed || taskCountsInPace(h, now)) evidence += 1; // done or overdue
@@ -3289,6 +3292,12 @@ function valueAlignmentScore(
         for (const d of (h.completions ?? [])) raw += VA_ACT.habitDay * decay(dayMs(d));
         for (const d of (h.skippedDates ?? [])) raw -= VA_ACT.habitDay * decay(dayMs(d));
       }
+    }
+    // Actions banked when items were DELETED — same treatment as goal health:
+    // the work happened, so removing the row doesn't un-live the value. Decays
+    // from the deletion date on this element's own 28-day clock.
+    for (const g of allTagged) {
+      for (const c of (g.retainedCredits ?? [])) raw += (c.actionPoints ?? 0) * decay(c.at);
     }
     raw = Math.max(0, raw);
     actions = raw / (raw + VA_ACTION_K);
@@ -3322,6 +3331,15 @@ function valueAlignmentScore(
       if (h.kind !== 'habit') continue;
       kept    += (h.completions ?? []).filter((d) => d >= windowStart).length;
       skipped += (h.skippedDates ?? []).filter((d) => d >= windowStart).length;
+    }
+    // Days banked from deleted habits, still inside the window — so deleting a
+    // habit doesn't drop this element (or, if it was the only one, silently drop
+    // the element itself and reweight the blend).
+    for (const g of allTagged) {
+      for (const c of (g.retainedCredits ?? [])) {
+        kept    += (c.keptDays    ?? []).filter((d) => d >= windowStart).length;
+        skipped += (c.skippedDays ?? []).filter((d) => d >= windowStart).length;
+      }
     }
     if (kept + skipped > 0) consistency = kept / (kept + skipped);
   }
@@ -3684,14 +3702,70 @@ function goalEarnedNet(g: Goal, goals: Goal[], habits: Habit[], now: number): nu
   return pos - pen;
 }
 
+/** What ONE goal contributes to value alignment's behavioural elements: its
+ * "lived actions" points (VA's own weights and 28-day clock) and its count of
+ * judgeable signals for the confidence ramp. Strictly per-goal — its own
+ * completion plus the habits/tasks it owns — because that's how
+ * `valueAlignmentScore` accumulates them (over tagged goals), unlike health's
+ * subtree roll-up. */
+function goalActionLedger(
+  g: Goal,
+  habits: Habit[],
+  now: number,
+): { actionPoints: number; evidence: number; keptDays: string[]; skippedDays: string[] } {
+  const decay = (ms: number) => Math.pow(0.5, Math.max(0, (now - ms) / DAY_MS) / VA_HALF_LIFE_DAYS);
+  const dayMs = (d: string) => new Date(d + 'T12:00').getTime();
+  // Consistency runs on a rolling window, so only days still inside it matter.
+  const windowStart = toDateStr(new Date(now - VA_WINDOW_DAYS * DAY_MS));
+  let actionPoints = 0, evidence = 0;
+  const keptDays: string[] = [], skippedDays: string[] = [];
+  if (g.completedAt) { actionPoints += VA_ACT.sub * decay(g.completedAt); evidence += 1; }
+  for (const h of habits) {
+    if (h.goalId !== g.id) continue;
+    if (h.kind === 'task') {
+      if (h.completed && h.completedAt) actionPoints += VA_ACT.task * decay(h.completedAt);
+      if (h.completed || taskCountsInPace(h, now)) evidence += 1;
+    } else {
+      for (const d of (h.completions  ?? [])) actionPoints += VA_ACT.habitDay * decay(dayMs(d));
+      for (const d of (h.skippedDates ?? [])) actionPoints -= VA_ACT.habitDay * decay(dayMs(d));
+      for (const d of (h.completions  ?? [])) if (d >= windowStart) keptDays.push(d);
+      for (const d of (h.skippedDates ?? [])) if (d >= windowStart) skippedDays.push(d);
+      if (habitCountsYet(h, now) || (h.skippedDates?.length ?? 0) > 0) evidence += 1;
+    }
+  }
+  return { actionPoints, evidence, keptDays, skippedDays };
+}
+
+/** Multiset difference over habit-day dates: which of `before` a delete removed.
+ * A multiset, not a set — two habits can have kept the same calendar day, and
+ * consistency counts both. */
+function daysLost(before: string[], after: string[]): string[] {
+  const remaining = new Map<string, number>();
+  for (const d of after) remaining.set(d, (remaining.get(d) ?? 0) + 1);
+  const lost: string[] = [];
+  for (const d of before) {
+    const n = remaining.get(d) ?? 0;
+    if (n > 0) remaining.set(d, n - 1);
+    else lost.push(d);
+  }
+  return lost;
+}
+
 /**
  * Given the goal/habit lists either side of a delete, return the surviving goals
  * with a retained credit added wherever the delete cost earned points. `ref`
  * tags the batch so `dropRetainedCredits` can reverse it on Undo.
  *
- * Note the credit is computed from the earned NET, so a delete that removes
- * both credit and penalty banks only the shortfall — and a delete that is a net
- * relief banks nothing.
+ * Three ledgers are measured, because deleting used to quietly dent all three:
+ * goal health's earned points, value alignment's lived-actions points, and the
+ * evidence count behind alignment's confidence ramp. Each is banked on its own
+ * scale so it decays on the clock that ledger actually uses.
+ *
+ * Losses are computed from the NET, so a delete that removes both credit and
+ * penalty banks only the shortfall — and a delete that is a net relief banks
+ * nothing. A DELETED goal's own alignment ledger is attributed to its nearest
+ * surviving ancestor (health needs no such step: a parent's subtree tally
+ * already covered its sub-goals, so the diff catches it).
  */
 function retainHealthOnDelete(
   prevGoals: Goal[],
@@ -3701,15 +3775,65 @@ function retainHealthOnDelete(
   ref: string,
   now = Date.now(),
 ): Goal[] {
-  const before = new Map(prevGoals.map((g) => [g.id, goalEarnedNet(g, prevGoals, prevHabits, now)]));
+  const survives = new Set(nextGoals.map((g) => g.id));
+  const prevById = new Map(prevGoals.map((g) => [g.id, g]));
+
+  // Alignment credit for goals that are going away, pushed up to the nearest
+  // ancestor that survives (nothing to push to if the whole branch is gone —
+  // the value simply loses that structure, and the blend renormalises).
+  const inherited = new Map<string, ReturnType<typeof goalActionLedger>>();
+  for (const g of prevGoals) {
+    if (survives.has(g.id)) continue;
+    let anc = g.parentGoalId ? prevById.get(g.parentGoalId) : undefined;
+    const seen = new Set<string>([g.id]);
+    while (anc && !survives.has(anc.id) && !seen.has(anc.id)) {
+      seen.add(anc.id);
+      anc = anc.parentGoalId ? prevById.get(anc.parentGoalId) : undefined;
+    }
+    if (!anc || !survives.has(anc.id)) continue;
+    const led = goalActionLedger(g, prevHabits, now);
+    const acc = inherited.get(anc.id)
+      ?? { actionPoints: 0, evidence: 0, keptDays: [], skippedDays: [] };
+    acc.actionPoints += led.actionPoints;
+    acc.evidence     += led.evidence;
+    acc.keptDays.push(...led.keptDays);
+    acc.skippedDays.push(...led.skippedDays);
+    inherited.set(anc.id, acc);
+  }
+
+  const healthBefore = new Map(prevGoals.map((g) => [g.id, goalEarnedNet(g, prevGoals, prevHabits, now)]));
+  const actionBefore = new Map(prevGoals.map((g) => [g.id, goalActionLedger(g, prevHabits, now)]));
+
   return nextGoals.map((g) => {
-    const was = before.get(g.id);
-    if (was == null) return g; // a goal that didn't exist before this delete
-    const lost = was - goalEarnedNet(g, nextGoals, nextHabits, now);
-    if (lost <= 0.005) return g; // no loss (or a net relief) — nothing to bank
-    const kept = (g.retainedCredits ?? [])
+    const wasHealth = healthBefore.get(g.id);
+    const wasAction = actionBefore.get(g.id);
+    if (wasHealth == null || wasAction == null) return g; // new since this delete
+    const extra = inherited.get(g.id)
+      ?? { actionPoints: 0, evidence: 0, keptDays: [], skippedDays: [] };
+    const nowAction = goalActionLedger(g, nextHabits, now);
+
+    const points      = wasHealth - goalEarnedNet(g, nextGoals, nextHabits, now);
+    const action      = wasAction.actionPoints - nowAction.actionPoints + extra.actionPoints;
+    const evidence    = wasAction.evidence     - nowAction.evidence     + extra.evidence;
+    const keptDays    = [...daysLost(wasAction.keptDays,    nowAction.keptDays),    ...extra.keptDays];
+    const skippedDays = [...daysLost(wasAction.skippedDays, nowAction.skippedDays), ...extra.skippedDays];
+    if (points <= 0.005 && action <= 0.005 && evidence <= 0
+        && !keptDays.length && !skippedDays.length) return g; // nothing lost
+
+    const carried = (g.retainedCredits ?? [])
       .filter((c) => (now - c.at) / DAY_MS < RETAINED_CREDIT_TTL_DAYS);
-    return { ...g, retainedCredits: [...kept, { at: now, points: lost, ref }] };
+    return {
+      ...g,
+      retainedCredits: [...carried, {
+        at: now,
+        points: Math.max(0, points),
+        ...(action   > 0.005 ? { actionPoints: action } : {}),
+        ...(evidence > 0     ? { evidence } : {}),
+        ...(keptDays.length    ? { keptDays } : {}),
+        ...(skippedDays.length ? { skippedDays } : {}),
+        ref,
+      }],
+    };
   });
 }
 

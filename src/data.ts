@@ -53,6 +53,18 @@ export interface HealthCredit {
   at: number;
   /** points on the 0–100 health scale, pre-decay from `at` */
   points: number;
+  /** the same loss measured on value alignment's own "lived actions" scale
+   * (its own point values and 28-day clock), pre-decay from `at` */
+  actionPoints?: number;
+  /** count of judgeable behavioural signals the deleted items represented, for
+   * value alignment's confidence ramp. A raw tally — it does not decay. */
+  evidence?: number;
+  /** YYYY-MM-DD habit-days the deleted items had kept / skipped, for value
+   * alignment's consistency element. Kept as dates rather than a ratio so they
+   * age out of its rolling window exactly as the live rows would have; only
+   * dates still inside the window at deletion time are banked. */
+  keptDays?: string[];
+  skippedDays?: string[];
   /** delete-batch id, so an Undo can remove exactly what that delete added */
   ref?: string;
 }
