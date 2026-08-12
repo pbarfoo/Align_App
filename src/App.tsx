@@ -724,8 +724,9 @@ function Foundation({
       <div className="eyebrow">Foundation</div>
       <h1>What matters</h1>
       <p className="lede">
-        Three parts of a life. Name a few values for each, and a vision of who
-        you want to be there. Everything else hangs off this.
+        Four domains of a life, ordered by what matters most right now. Name a
+        few values for each, and a vision of who you want to be there.
+        Everything else hangs off this.
       </p>
 
       {domains.map((d) => {
@@ -1300,8 +1301,9 @@ function Align({
       <div className="eyebrow">Align</div>
       <h1>The thread</h1>
       <p className="lede">
-        Your vision, goals, and the habits and tasks that serve them. Tap
-        anything to trace it back.
+        Your vision, goals and sub-goals, and the habits and tasks that serve
+        them. Each goal carries a health score, and one can be held as your
+        sprint focus. Tap anything to trace it back.
       </p>
 
       <div className="pills">
@@ -2819,8 +2821,8 @@ function Today({
       <div className="eyebrow">Today</div>
       <h1>Small, aligned acts</h1>
       <p className="lede">
-        Not a to-do list. Just the habits and tasks that move your values
-        forward.
+        Not a to-do list. Just today's habits and tasks — your sprint focus
+        first, then everything else that moves your values forward.
       </p>
 
       <div className="today-reflect-row">
