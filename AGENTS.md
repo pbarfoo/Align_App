@@ -173,6 +173,21 @@ over the newer one on the next edit. Added a `reloadKey` refetch on
 - The `goal_health` view still uses the OLD health formula and is unused —
   candidate for dropping.
 
+### DB audit 2026-08-13
+- `supabase/schema.sql` was regenerated from the live database. It had documented
+  only the four tables, omitting `stale_tasks` (which `App.tsx` reads), plus
+  `goal_health`, `coach_feedback`, `get_coach_context()`, and the
+  `habits_sync_completions` trigger. `.remote/schema_dump.sql` is an old dump —
+  header now says so; do not use it as reference.
+- `goal_health` had no `security_invoker`, so it ran as its owner and bypassed
+  RLS for any authenticated caller. Set to `security_invoker = true`.
+- **`get_coach_context()` is broken**: it selects `h.streak`, dropped from
+  `habits`, so every call fails with 42703. Dead code from the removed coach —
+  drop it along with `goal_health` / `coach_feedback`, or repair it.
+- `goals.value_indexes` are positional into `domains.values` and are NOT
+  re-indexed when a domain value is deleted. Nine goals were left pointing at a
+  non-existent index 5 and have been cleaned up. Re-index on value removal.
+
 ## Sprint Focus (single chosen goal, 2026-07)
 
 The user can nominate **one** goal as the current "sprint focus". It is mostly a
@@ -346,9 +361,11 @@ down and any single edit only nudges it.
 Weights live at the top of `computeHealth` and are meant to be tuned.
 
 `computeHabitConsistency` and `applyNewGoalGrace` were removed. New goals start
-at 50 via a **birth credit**: `computeHealth`'s optional `goalCreatedAt` adds
-`50 * decay(goalCreatedAt)` to the tally, so a goal is 50 the moment it's
-created and — left alone — fades from there through the SAME decay as everything
+at 50 — **sub-goals at 75** — via a **birth credit**: `computeHealth`'s optional
+`goalCreatedAt` adds `birthPoints * decay(goalCreatedAt)` to the tally, where
+`birthPoints` comes from `birthCredit(g)` (`BIRTH_CREDIT` 50 top-level,
+`SUBGOAL_BIRTH_CREDIT` 75 for anything with a `parentGoalId`). So a goal is at
+its birth value the moment it's created and — left alone — fades from there through the SAME decay as everything
 else (no special glide). Build-out/completions add on top. The wrappers pass
 `goalCreatedAt` only when `graced` (default true); value-alignment passes
 `graced=false` so a brand-new empty goal scores its true 0 there.
@@ -390,18 +407,26 @@ Two adjustments, both gated on `g.parentGoalId` — top-level goals are untouche
   own horizon half-life and its immediate parent's (`HALF_LIFE_BY_HORIZON`,
   long 60 / ongoing 30 / short 14), never faster than its own. Short-under-long
   = 37d. Missing/parked parent falls back to the goal's own.
-- `subGoalScale(g)` → `SUBGOAL_SCALE` (**1.6**) — multiplies the **earned**
-  ledger only. `computeHealth` now splits its tally into `fixed` (birth credit +
-  sprint bonus, identical for every goal) and the earned `pos`/`pen`:
-  `base = (fixed + (pos − pen) * earnedScale) / 100`. Penalties scale with
-  credits, so a skip stays exactly as costly *relative* to a completion.
+- `subGoalScale(g)` → `SUBGOAL_SCALE` (**1.6**) — multiplies the **sub-goal and
+  habit** ledger only. `computeHealth` splits its tally three ways: `fixed`
+  (birth credit + sprint bonus, identical for every goal), the scaled earned
+  `pos`/`pen`, and `flat` — the net TASK ledger (build-out, completion, overdue
+  drag), which is deliberately NOT scaled:
+  `base = (fixed + flat + (pos − pen) * earnedScale) / 100`. A task is the same
+  unit of work wherever it hangs, so ticking one off a sub-goal is worth the
+  same +6 it is anywhere else (it was reading +9.6 and lifting sub-goals too
+  fast). Within the scaled ledger penalties scale with credits, so a skip stays
+  exactly as costly *relative* to a completion.
+- Deletion retention banks the two buckets separately (`HealthCredit.points` for
+  the scaled ledger, `flatPoints` for the task ledger) so a delete re-enters the
+  score on the same side of the scale the removed items were earning on.
 
 Keying on **having a parent** (not on being childless) is deliberate: the factor
 never flips when a sub-goal gains a child, so "adding structure can't lower your
 score" still holds.
 
-After: that same sub-goal reads **87**. A brand-new sub-goal still starts at 50
-(the birth credit is unscaled), an empty sub-goal still stays *below* a
+After: that same sub-goal reads **87**. The scale leaves the birth credit alone
+(a brand-new sub-goal starts at its own birth value, 75), an empty sub-goal still stays *below* a
 comparable top-level goal at every age, and a neglected one (stale habits +
 overdue task) still lands red at 31 — it's a change of scale, not a floor.
 
