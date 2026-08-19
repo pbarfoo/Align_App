@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { __test_computeHealth, __test_subGoalHalfLife, __test_subGoalScale } from './App';
+import { __test_birthCredit, __test_computeHealth, __test_subGoalHalfLife, __test_subGoalScale } from './App';
 import type { Goal, Habit } from './data';
 
 /**
@@ -79,12 +79,20 @@ describe('sub-goal earned-point scale', () => {
     );
   });
 
-  it('lifts EARNED points but leaves the birth credit alone — a brand-new sub-goal still starts at 50', () => {
+  it('lifts EARNED points only — the scale leaves the birth credit alone', () => {
     vi.setSystemTime(now);
     const plain  = __test_computeHealth([], [], now, 0, 30, now);
     const scaled = __test_computeHealth([], [], now, 0, 30, now, undefined, undefined, 1.6);
     expect(Math.round(plain * 100)).toBe(50);
     expect(scaled).toBe(plain); // no earned ledger yet → the scale changes nothing
+  });
+
+  it('births a sub-goal at 75 and a top-level goal at 50', () => {
+    vi.setSystemTime(now);
+    expect(__test_birthCredit(goal({ id: 'top' }))).toBe(50);
+    expect(__test_birthCredit(goal({ id: 's', parentGoalId: 'p' }))).toBe(75);
+    const sub = __test_computeHealth([], [], now, 0, 30, now, undefined, undefined, 1.6, undefined, 75);
+    expect(Math.round(sub * 100)).toBe(75);
   });
 
   it('closes the gap on identical real work: a weekly-habit sub-goal is no longer rock bottom', () => {

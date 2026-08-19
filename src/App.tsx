@@ -3500,10 +3500,11 @@ function computeHealth(
   focusStrength = 0,
   /** decay half-life in days — shorter horizons fade faster (rule 3). */
   halfLifeDays = 30,
-  /** goal's creation time. When given, a +50 "birth credit" is added and
-   * decayed like everything else, so a goal starts at 50 and — left alone —
-   * fades from there via the normal decay (no special glide). Omit to disable
-   * (e.g. value-alignment, where a brand-new empty goal must score its true 0). */
+  /** goal's creation time. When given, a "birth credit" (`birthCredit`) is added
+   * and decayed like everything else, so a goal starts at that value and — left
+   * alone — fades from there via the normal decay (no special glide). Omit to
+   * disable (e.g. value-alignment, where a brand-new empty goal must score its
+   * true 0). */
   goalCreatedAt?: number,
   /** unix ms when this goal is CURRENTLY the sprint focus (undefined = not the
    * focus right now). Used to derive the in-progress focus-days live, on top of
@@ -3527,6 +3528,10 @@ function computeHealth(
    * the EARNED ledger — they stand in for the deleted items' own credit, so they
    * scale and decay exactly as those items would have. */
   retainedCredits?: HealthCredit[],
+  /** size of the birth credit — see `birthCredit`. Sub-goals are born higher
+   * than top-level goals: they're a commitment made inside an existing goal, so
+   * they start with more of the parent's momentum behind them. */
+  birthPoints = BIRTH_CREDIT,
 ): number {
   const decay = (ms: number) => Math.pow(0.5, Math.max(0, (now - ms) / DAY_MS) / halfLifeDays);
   const dayMs = (d: string) => new Date(d + 'T12:00').getTime();
@@ -3547,10 +3552,11 @@ function computeHealth(
   // neutral: the credit picks up exactly where the items left off.
   for (const c of (retainedCredits ?? [])) pos += c.points * decay(c.at);
 
-  // Birth credit — a goal is worth 50 the moment it's created, then this fades
-  // at the same half-life as everything else. Build-out/completions add on top;
-  // left alone, the goal decays down from 50 on its own.
-  if (goalCreatedAt != null) fixed += 50 * decay(goalCreatedAt);
+  // Birth credit — a goal is worth `birthPoints` the moment it's created (50
+  // top-level, 75 for a sub-goal), then this fades at the same half-life as
+  // everything else. Build-out/completions add on top; left alone, the goal
+  // decays down from there on its own.
+  if (goalCreatedAt != null) fixed += birthPoints * decay(goalCreatedAt);
 
   // Sprint-focus bonus — a small reward for each FULL day the goal was held as
   // the single sprint focus. Every earned day is a dated event that DECAYS from
@@ -3580,6 +3586,7 @@ export const __test_retainHealthOnDelete = retainHealthOnDelete;
 export const __test_dropRetainedCredits = dropRetainedCredits;
 export const __test_goalEarnedNet = goalEarnedNet;
 export const __test_subGoalScale = subGoalScale;
+export const __test_birthCredit = birthCredit;
 export const __test_subGoalHalfLife = subGoalHalfLife;
 export const __test_toggleHabitCompletion = toggleHabitCompletion;
 export const __test_valueAlignmentScore = valueAlignmentScore;
@@ -3647,6 +3654,14 @@ const SUBGOAL_SCALE = 1.6;
 
 function subGoalScale(g: Goal): number {
   return g.parentGoalId ? SUBGOAL_SCALE : 1;
+}
+
+/** Birth credit a goal is worth the moment it's created (see `computeHealth`). */
+const BIRTH_CREDIT = 50;
+const SUBGOAL_BIRTH_CREDIT = 75;
+
+function birthCredit(g: Goal): number {
+  return g.parentGoalId ? SUBGOAL_BIRTH_CREDIT : BIRTH_CREDIT;
 }
 
 /** Decay half-life in days: own horizon for a top-level goal, else the midpoint
@@ -3861,7 +3876,7 @@ function vitalityFor(
 
   const completion = computeDone(subGoals, subtreeHabits, habits, now);
   // Long-horizon goals decay slowest (60-day half-life).
-  const health     = computeHealth(subGoals, subtreeHabits, now, focusStrength, subGoalHalfLife(lg, goals), graced ? lg.createdAt : undefined, graced ? lg.sprintFocusAt : undefined, graced ? lg.sprintFocusDays : undefined, subGoalScale(lg), lg.retainedCredits);
+  const health     = computeHealth(subGoals, subtreeHabits, now, focusStrength, subGoalHalfLife(lg, goals), graced ? lg.createdAt : undefined, graced ? lg.sprintFocusAt : undefined, graced ? lg.sprintFocusDays : undefined, subGoalScale(lg), lg.retainedCredits, birthCredit(lg));
   return { time: elapsed, completion, health };
 }
 
@@ -3889,7 +3904,7 @@ function stGoalMetrics(sg: Goal, goals: Goal[], habits: Habit[], focusStrength =
   const completion = computeDone(subGoals, sgHabits, habits, now);
   // Short-horizon goals decay fastest (14-day half-life) — unless they hang off
   // a longer-horizon parent, which slows them toward the parent's clock.
-  const health     = computeHealth(subGoals, sgHabits, now, focusStrength, subGoalHalfLife(sg, goals), graced ? sg.createdAt : undefined, graced ? sg.sprintFocusAt : undefined, graced ? sg.sprintFocusDays : undefined, subGoalScale(sg), sg.retainedCredits);
+  const health     = computeHealth(subGoals, sgHabits, now, focusStrength, subGoalHalfLife(sg, goals), graced ? sg.createdAt : undefined, graced ? sg.sprintFocusAt : undefined, graced ? sg.sprintFocusDays : undefined, subGoalScale(sg), sg.retainedCredits, birthCredit(sg));
   return { time: elapsed, completion, health };
 }
 
@@ -3907,7 +3922,7 @@ function ongoingGoalMetrics(og: Goal, goals: Goal[], habits: Habit[], focusStren
   const ogHabits = habits.filter((h) => subtree.has(h.goalId));
 
   const completion = computeDone(subGoals, ogHabits, habits, now);
-  const health     = computeHealth(subGoals, ogHabits, now, focusStrength, subGoalHalfLife(og, goals), graced ? og.createdAt : undefined, graced ? og.sprintFocusAt : undefined, graced ? og.sprintFocusDays : undefined, subGoalScale(og), og.retainedCredits);
+  const health     = computeHealth(subGoals, ogHabits, now, focusStrength, subGoalHalfLife(og, goals), graced ? og.createdAt : undefined, graced ? og.sprintFocusAt : undefined, graced ? og.sprintFocusDays : undefined, subGoalScale(og), og.retainedCredits, birthCredit(og));
   return { time: 0, completion, health };
 }
 
