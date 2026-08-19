@@ -208,13 +208,14 @@ describe('relief still flows the other way', () => {
       task('t1', 'g', { dueDate: ymd(now - 30 * day) }),
       task('t2', 'g', { completed: true, completedAt: now - day }),
     ];
-    const netBefore = __test_goalEarnedNet(goals[0], goals, habits, now);
+    const sum = (n: { scaled: number; flat: number }) => n.scaled + n.flat;
+    const netBefore = sum(__test_goalEarnedNet(goals[0], goals, habits, now));
     // Delete both at once: the completed task's credit is banked, the overdue
     // task's penalty is simply gone, so the net can only improve.
     const after = del(goals, habits, { habitIds: ['t1', 't2'] });
     const g = find(after.goals, 'g');
-    const netAfter = __test_goalEarnedNet(g, after.goals, after.habits, now)
-      + (g.retainedCredits ?? []).reduce((s, c) => s + c.points, 0);
+    const netAfter = sum(__test_goalEarnedNet(g, after.goals, after.habits, now))
+      + (g.retainedCredits ?? []).reduce((s, c) => s + c.points + (c.flatPoints ?? 0), 0);
     expect(netAfter).toBeGreaterThanOrEqual(netBefore - 1e-9);
   });
 });

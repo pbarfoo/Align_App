@@ -3422,31 +3422,37 @@ const OVERDUE    = 10; // per open overdue task, scaled by how late
  * retention needs exactly this number — the part of the score that the items
  * themselves carry, with none of the fixed per-goal credits (birth, sprint
  * focus) that survive a delete anyway.
+ *
+ * Returned in two buckets: `pos`/`pen` are the SCALED ledger (sub-goals and
+ * habits — the structure whose earning capacity `subGoalScale` re-bases), and
+ * `flat` is the net TASK ledger, which is deliberately NOT scaled. A task is
+ * the same unit of work wherever it hangs, so ticking one off a sub-goal moves
+ * the score exactly as much as ticking one off a top-level goal.
  */
 function earnedLedger(
   subGoals: Goal[],
   treeHabits: Habit[],
   now: number,
   halfLifeDays: number,
-): { pos: number; pen: number } {
+): { pos: number; pen: number; flat: number } {
   const decay = (ms: number) => Math.pow(0.5, Math.max(0, (now - ms) / DAY_MS) / halfLifeDays);
   const dayMs = (d: string) => new Date(d + 'T12:00').getTime();
 
   const tasks  = treeHabits.filter((h) => h.kind === 'task');
   const habits = treeHabits.filter((h) => h.kind === 'habit');
-  let pos = 0, pen = 0;
+  let pos = 0, pen = 0, flat = 0;
 
   // Build-out — structural credit, fading from when each item was added.
   for (const g of subGoals) pos += BUILD.sub   * decay(g.createdAt || now);
   for (const h of habits)   pos += BUILD.habit * decay(h.createdAt ?? now);
-  for (const t of tasks)    pos += BUILD.task  * decay(t.createdAt ?? now);
+  for (const t of tasks)    flat += BUILD.task * decay(t.createdAt ?? now);
 
   // Completion — worth more than build-out.
   for (const g of subGoals) if (g.completedAt) pos += DONE.sub * decay(g.completedAt);
   for (const t of tasks) {
     if (t.completed && t.completedAt) {
       const late = t.dueDate && toDateStr(new Date(t.completedAt)) > t.dueDate;
-      pos += (late ? DONE.taskLate : DONE.task) * decay(t.completedAt);
+      flat += (late ? DONE.taskLate : DONE.task) * decay(t.completedAt);
     }
   }
   for (const h of habits) for (const d of (h.completions ?? [])) pos += DONE.habitDay * decay(dayMs(d));
@@ -3465,11 +3471,11 @@ function earnedLedger(
   for (const t of tasks) {
     if (!t.completed && t.dueDate) {
       const dueMs = new Date(t.dueDate + 'T23:59:59').getTime();
-      if (dueMs < now) pen += OVERDUE * Math.min(1, 0.3 + (now - dueMs) / DAY_MS / 14);
+      if (dueMs < now) flat -= OVERDUE * Math.min(1, 0.3 + (now - dueMs) / DAY_MS / 14);
     }
   }
 
-  return { pos, pen };
+  return { pos, pen, flat };
 }
 
 /**
@@ -3542,15 +3548,19 @@ function computeHealth(
   // `fixed` = credits every goal gets at full size regardless of its scale
   // (birth, sprint focus); `pos`/`pen` = the earned ledger, which is what
   // `earnedScale` re-bases for sub-goals.
-  const { pos: earnedPos, pen } = earnedLedger(subGoals, treeHabits, now, halfLifeDays);
+  const { pos: earnedPos, pen, flat: earnedFlat } = earnedLedger(subGoals, treeHabits, now, halfLifeDays);
   let fixed = 0;
   let pos = earnedPos;
+  let flat = earnedFlat;
 
   // Deletion-retained credit — the earned points the deleted items were carrying
   // at the moment they were removed, decaying from that date at this goal's
   // half-life (the same clock those items were on). Deleting is therefore health-
   // neutral: the credit picks up exactly where the items left off.
-  for (const c of (retainedCredits ?? [])) pos += c.points * decay(c.at);
+  for (const c of (retainedCredits ?? [])) {
+    pos  += c.points * decay(c.at);
+    flat += (c.flatPoints ?? 0) * decay(c.at);
+  }
 
   // Birth credit — a goal is worth `birthPoints` the moment it's created (50
   // top-level, 75 for a sub-goal), then this fades at the same half-life as
@@ -3575,7 +3585,8 @@ function computeHealth(
   // Earned points are re-based by `earnedScale` (1 for top-level goals), the
   // fixed credits are not — so a sub-goal's thinner ledger reads on a
   // comparable 0–100 scale without a brand-new sub-goal outranking its parent.
-  const base = Math.max(0, Math.min((fixed + (pos - pen) * earnedScale) / 100, 1));
+  // The task ledger (`flat`) sits outside the scale too — see `earnedLedger`.
+  const base = Math.max(0, Math.min((fixed + flat + (pos - pen) * earnedScale) / 100, 1));
   // Priority-position nudge: a gentle ± for where the goal ranks in its domain.
   const focusAdj = (base - 0.5) * 0.15 * focusStrength;
   return Math.max(0, Math.min(base + focusAdj, 1));
@@ -3703,15 +3714,20 @@ function deleteBatchRef(): string {
   return uid('del');
 }
 
-/** The earned (non-fixed) health points a goal's subtree is currently carrying.
+/** The earned (non-fixed) health points a goal's subtree is currently carrying,
+ * kept in the same two buckets `computeHealth` spends them in: `scaled` (the
+ * sub-goal/habit ledger, which `subGoalScale` re-bases) and `flat` (the task
+ * ledger, which it doesn't). Banking them separately is what keeps a delete
+ * neutral — the credit re-enters the score on the same side of the scale the
+ * deleted items were earning on.
  * Mirrors the subtree rule used by `vitalityFor` / `stGoalMetrics` /
  * `ongoingGoalMetrics`: the goal itself plus its direct sub-goals. */
-function goalEarnedNet(g: Goal, goals: Goal[], habits: Habit[], now: number): number {
+function goalEarnedNet(g: Goal, goals: Goal[], habits: Habit[], now: number): { scaled: number; flat: number } {
   const subGoals   = goals.filter((x) => x.parentGoalId === g.id);
   const subtree    = new Set<string>([g.id, ...subGoals.map((x) => x.id)]);
   const treeHabits = habits.filter((h) => subtree.has(h.goalId));
-  const { pos, pen } = earnedLedger(subGoals, treeHabits, now, subGoalHalfLife(g, goals));
-  return pos - pen;
+  const { pos, pen, flat } = earnedLedger(subGoals, treeHabits, now, subGoalHalfLife(g, goals));
+  return { scaled: pos - pen, flat };
 }
 
 /** What ONE goal contributes to value alignment's behavioural elements: its
@@ -3824,12 +3840,14 @@ function retainHealthOnDelete(
       ?? { actionPoints: 0, evidence: 0, keptDays: [], skippedDays: [] };
     const nowAction = goalActionLedger(g, nextHabits, now);
 
-    const points      = wasHealth - goalEarnedNet(g, nextGoals, nextHabits, now);
+    const nowHealth   = goalEarnedNet(g, nextGoals, nextHabits, now);
+    const points      = wasHealth.scaled - nowHealth.scaled;
+    const flatPoints  = wasHealth.flat   - nowHealth.flat;
     const action      = wasAction.actionPoints - nowAction.actionPoints + extra.actionPoints;
     const evidence    = wasAction.evidence     - nowAction.evidence     + extra.evidence;
     const keptDays    = [...daysLost(wasAction.keptDays,    nowAction.keptDays),    ...extra.keptDays];
     const skippedDays = [...daysLost(wasAction.skippedDays, nowAction.skippedDays), ...extra.skippedDays];
-    if (points <= 0.005 && action <= 0.005 && evidence <= 0
+    if (points <= 0.005 && flatPoints <= 0.005 && action <= 0.005 && evidence <= 0
         && !keptDays.length && !skippedDays.length) return g; // nothing lost
 
     const carried = (g.retainedCredits ?? [])
@@ -3839,6 +3857,7 @@ function retainHealthOnDelete(
       retainedCredits: [...carried, {
         at: now,
         points: Math.max(0, points),
+        ...(flatPoints > 0.005 ? { flatPoints } : {}),
         ...(action   > 0.005 ? { actionPoints: action } : {}),
         ...(evidence > 0     ? { evidence } : {}),
         ...(keptDays.length    ? { keptDays } : {}),

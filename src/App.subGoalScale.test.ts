@@ -87,6 +87,19 @@ describe('sub-goal earned-point scale', () => {
     expect(scaled).toBe(plain); // no earned ledger yet → the scale changes nothing
   });
 
+  it('leaves TASK points outside the lift — ticking one off a sub-goal moves it no more than off a top-level goal', () => {
+    vi.setSystemTime(now);
+    const done: Habit = {
+      id: 't', goalId: 'g-sub', title: 'Task', kind: 'task', doneToday: false,
+      completed: true, completedAt: now, createdAt: now,
+    };
+    const empty  = __test_computeHealth([], [], now, 0, 30, now);
+    const top    = __test_computeHealth([], [done], now, 0, 30, now);
+    const sub    = __test_computeHealth([], [done], now, 0, 30, now, undefined, undefined, 1.6);
+    expect(Math.round((top - empty) * 100)).toBe(8);  // +2 built, +6 completed
+    expect(sub).toBeCloseTo(top, 10);                 // the 1.6x doesn't touch it
+  });
+
   it('births a sub-goal at 75 and a top-level goal at 50', () => {
     vi.setSystemTime(now);
     expect(__test_birthCredit(goal({ id: 'top' }))).toBe(50);
@@ -116,7 +129,10 @@ describe('sub-goal earned-point scale', () => {
       completed: false, dueDate: ymd(now - 10 * day), createdAt: now - 30 * day,
     };
     const scaled = __test_computeHealth([], [...stale, overdue], now, 0, 37, now - 120 * day, undefined, undefined, 1.6);
-    expect(Math.round(scaled * 100)).toBeLessThanOrEqual(33); // still reads red
+    // Lands at 37: still well under the 50 a goal is born at, so neglect still
+    // visibly bleeds it. (Was 33 while the overdue drag was scaled too — tasks
+    // now sit outside the lift on BOTH sides, credit and penalty.)
+    expect(Math.round(scaled * 100)).toBeLessThanOrEqual(40);
   });
 
   it('scales penalties along with credits, so a skip stays exactly as costly relative to a completion', () => {

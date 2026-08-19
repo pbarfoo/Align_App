@@ -51,8 +51,12 @@ export interface Goal {
 export interface HealthCredit {
   /** unix ms the credit was banked (the deletion time) — the decay anchor */
   at: number;
-  /** points on the 0–100 health scale, pre-decay from `at` */
+  /** points on the 0–100 health scale, pre-decay from `at`. The SCALED bucket
+   * — the sub-goal / habit ledger that `subGoalScale` re-bases. */
   points: number;
+  /** the same, for the UNSCALED task ledger (see `earnedLedger`), so a deleted
+   * task's credit re-enters the score on the side of the scale it earned on */
+  flatPoints?: number;
   /** the same loss measured on value alignment's own "lived actions" scale
    * (its own point values and 28-day clock), pre-decay from `at` */
   actionPoints?: number;
