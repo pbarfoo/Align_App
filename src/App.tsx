@@ -239,6 +239,31 @@ function LoginScreen() {
   );
 }
 
+// Auth failures that a page refresh would have fixed on its own: an expired or
+// mid-rotation access token, or one whose `iat` is ahead of Supabase's clock
+// (a device clock a few seconds fast). None of these mean the schema is wrong,
+// so they get a token refresh + retry instead of an error toast.
+const AUTH_RETRY_LIMIT = 2;
+function isTransientAuthError(msg: string): boolean {
+  return /jwt|token is expired|issued at future|invalid claim|bad_jwt|refresh token/i.test(msg);
+}
+
+// Report a failed write, retrying once through a refreshed token when the
+// failure was one of the transient auth cases above.
+function reportSyncError(
+  label: string,
+  error: { message: string },
+  retry: (() => void) | null,
+  setToast: (t: { msg: string }) => void,
+) {
+  console.error(`sync ${label}:`, error);
+  if (retry && isTransientAuthError(error.message)) {
+    supabase.auth.refreshSession().catch(() => {}).then(() => retry());
+    return;
+  }
+  setToast({ msg: `⚠ Save failed: ${error.message}` });
+}
+
 export default function App() {
   // Auth
   const [session, setSession] = useState<Session | null>(null);
@@ -284,6 +309,8 @@ export default function App() {
   // When the last successful load finished, so a refetch only fires if the data
   // on screen has actually had time to go stale.
   const lastLoadedAt = useRef(0);
+  // Consecutive transient-auth retries for the current load (reset on success).
+  const authRetries = useRef(0);
 
   // Load data from Supabase on sign-in. Keyed on the user id (not the whole
   // session object) so it doesn't re-run on every token refresh or auth event,
@@ -310,10 +337,25 @@ export default function App() {
       const dbError = d.error || g.error || h.error || r.error;
       if (dbError) {
         console.error('Supabase load error:', dbError.message);
+        // A token that's expired, mid-rotation, or stamped in the future
+        // (phone clock slightly ahead of Supabase) fails the whole load even
+        // though nothing is wrong with the schema. That's exactly the case a
+        // manual refresh fixes, so do it ourselves: refresh the token and
+        // re-run the load rather than showing a scary schema error.
+        if (isTransientAuthError(dbError.message) && authRetries.current < AUTH_RETRY_LIMIT) {
+          authRetries.current += 1;
+          clearTimeout(timeout);
+          const backoff = 400 * authRetries.current;
+          supabase.auth.refreshSession()
+            .catch(() => {})
+            .then(() => setTimeout(() => setReloadKey((k) => k + 1), backoff));
+          return;
+        }
         setToast({ msg: `⚠ DB error: ${dbError.message} — run supabase/schema.sql` });
         setDataLoaded(true);
         return;
       }
+      authRetries.current = 0;
 
       // Seed default content ONLY for brand-new accounts. Once an account has
       // been seeded, never repopulate defaults — an empty table means the user
@@ -406,29 +448,37 @@ export default function App() {
   // Sync domains
   useEffect(() => {
     if (!dataLoaded || hydrating.current || !session) return;
-    supabase.from('domains').upsert(domains.map((x) => domainToRow(x, session.user.id)), { onConflict: 'id,user_id' })
-      .then(({ error }) => { if (error) { console.error('sync domains:', error); setToast({ msg: `⚠ Save failed: ${error.message}` }); } });
+    let retried = false;
+    const push = () => supabase.from('domains').upsert(domains.map((x) => domainToRow(x, session.user.id)), { onConflict: 'id,user_id' })
+      .then(({ error }) => { if (error) reportSyncError('domains', error, retried ? null : push, setToast); retried = true; });
+    push();
   }, [domains]);
 
   // Sync goals
   useEffect(() => {
     if (!dataLoaded || hydrating.current || !session || !goals.length) return;
-    supabase.from('goals').upsert(goals.map((x) => goalToRow(x, session.user.id)))
-      .then(({ error }) => { if (error) { console.error('sync goals:', error); setToast({ msg: `⚠ Save failed: ${error.message}` }); } });
+    let retried = false;
+    const push = () => supabase.from('goals').upsert(goals.map((x) => goalToRow(x, session.user.id)))
+      .then(({ error }) => { if (error) reportSyncError('goals', error, retried ? null : push, setToast); retried = true; });
+    push();
   }, [goals]);
 
   // Sync habits
   useEffect(() => {
     if (!dataLoaded || hydrating.current || !session || !habits.length) return;
-    supabase.from('habits').upsert(habits.map((x) => habitToRow(x, session.user.id)))
-      .then(({ error }) => { if (error) { console.error('sync habits:', error); setToast({ msg: `⚠ Save failed: ${error.message}` }); } });
+    let retried = false;
+    const push = () => supabase.from('habits').upsert(habits.map((x) => habitToRow(x, session.user.id)))
+      .then(({ error }) => { if (error) reportSyncError('habits', error, retried ? null : push, setToast); retried = true; });
+    push();
   }, [habits]);
 
   // Sync reflections
   useEffect(() => {
     if (!dataLoaded || hydrating.current || !session || !reflections.length) return;
-    supabase.from('reflections').upsert(reflections.map((x) => reflToRow(x, session.user.id)))
-      .then(({ error }) => { if (error) { console.error('sync reflections:', error); setToast({ msg: `⚠ Save failed: ${error.message}` }); } });
+    let retried = false;
+    const push = () => supabase.from('reflections').upsert(reflections.map((x) => reflToRow(x, session.user.id)))
+      .then(({ error }) => { if (error) reportSyncError('reflections', error, retried ? null : push, setToast); retried = true; });
+    push();
   }, [reflections]);
 
   // Clear the hydration flag after the sync effects above have evaluated for
