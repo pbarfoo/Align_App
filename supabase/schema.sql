@@ -80,6 +80,19 @@ create table if not exists public.habits (
   created_at bigint default (extract(epoch from now()) * 1000)::bigint
 );
 
+-- PRINCIPLES — cross-domain operating principles (Foundation tab).
+-- Deliberately NOT per-domain and NOT scored: domains.values are the tags the
+-- alignment engine measures goals against; principles are the tiebreakers the
+-- user reads when two values conflict. Added 2026-08-22.
+create table if not exists public.principles (
+  id text primary key,
+  user_id uuid not null references auth.users on delete cascade,
+  title text,
+  detail text,
+  sort_order int,
+  created_at bigint default (extract(epoch from now()) * 1000)::bigint
+);
+
 -- REFLECTIONS
 create table if not exists public.reflections (
   id text primary key,
@@ -167,6 +180,7 @@ alter table public.domains        enable row level security;
 alter table public.goals          enable row level security;
 alter table public.habits         enable row level security;
 alter table public.reflections    enable row level security;
+alter table public.principles     enable row level security;
 alter table public.coach_feedback enable row level security;
 
 -- Drop policies first so this script is safe to re-run
@@ -174,10 +188,12 @@ drop policy if exists "own domains"               on public.domains;
 drop policy if exists "own goals"                 on public.goals;
 drop policy if exists "own habits"                on public.habits;
 drop policy if exists "own reflections"           on public.reflections;
+drop policy if exists "own principles"            on public.principles;
 drop policy if exists "Users manage own feedback" on public.coach_feedback;
 
 create policy "own domains"               on public.domains        for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "own goals"                 on public.goals          for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "own habits"                on public.habits         for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "own reflections"           on public.reflections    for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+create policy "own principles"            on public.principles     for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "Users manage own feedback" on public.coach_feedback for all using (auth.uid() = user_id) with check (auth.uid() = user_id);

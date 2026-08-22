@@ -8,6 +8,22 @@ export interface Domain {
   vision: string;
 }
 
+/** A cross-domain operating principle — how Patrick decides when two values
+ *  collide. Distinct from `Domain.values`, which are per-domain tags the
+ *  alignment engine scores goals against. Principles are read, not scored.
+ *  The canonical wording is Patrick's; LifeOS.md Part 1 mirrors what is set
+ *  here (see AGENTS.md — one source of truth, synced one way). */
+export interface Principle {
+  id: string;
+  /** the short name, e.g. "Family is priority" */
+  title: string;
+  /** the sentence that makes it usable at a decision point */
+  detail: string;
+  /** position in the list — lower shows first */
+  sortOrder: number;
+  createdAt: number;
+}
+
 export interface Goal {
   id: string;
   domainId: DomainId;
@@ -160,6 +176,50 @@ const domainOrder: DomainId[] = ['self', 'family', 'career', 'community'];
 
 export const sortDomains = (items: Domain[]): Domain[] =>
   [...items].sort((a, b) => domainOrder.indexOf(a.id) - domainOrder.indexOf(b.id));
+
+/** Seeded for brand-new accounts only — Patrick's five, from LifeOS.md Part 1.
+ *  Never repopulated once an account holds its own (same rule as seed domains):
+ *  an empty table means they were deleted, not that the account is new. */
+export const principles: Principle[] = [
+  {
+    id: 'p-family-first',
+    title: 'Family is priority',
+    detail: 'Home comes first when time or attention is contested.',
+    sortOrder: 0,
+    createdAt: 0,
+  },
+  {
+    id: 'p-simplicity',
+    title: 'Simplicity is key',
+    detail: 'Don\u2019t put too much on your plate. Ask: \u201cWhat if it were simple?\u201d',
+    sortOrder: 1,
+    createdAt: 0,
+  },
+  {
+    id: 'p-small-bets',
+    title: 'Make small, persistent bets',
+    detail:
+      'When outcomes are unpredictable, keep creating opportunities without risking what matters most.',
+    sortOrder: 2,
+    createdAt: 0,
+  },
+  {
+    id: 'p-finish',
+    title: 'Finish what you start',
+    detail:
+      'Prefer closing or consciously pausing existing commitments before opening another meaningful project.',
+    sortOrder: 3,
+    createdAt: 0,
+  },
+  {
+    id: 'p-challenge',
+    title: 'Challenge yourself selectively',
+    detail:
+      'Choose challenges that advance your goals without compromising family, health, or stability.',
+    sortOrder: 4,
+    createdAt: 0,
+  },
+];
 
 // Seed goals use realistic past start dates so the time-remaining bars
 // show non-trivial values in the dashboard demo.

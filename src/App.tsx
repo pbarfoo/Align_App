@@ -11,6 +11,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import {
   domains as seedDomains,
+  principles as seedPrinciples,
   sortDomains,
   initialGoals,
   initialHabits,
@@ -27,6 +28,7 @@ import {
   type CustomUnit,
   type ReflectionEntry,
   type HealthCredit,
+  type Principle,
 } from './data';
 import { supabase } from './supabase';
 import type { Session } from '@supabase/supabase-js';
@@ -163,6 +165,23 @@ function reflFromRow(row: Row): ReflectionEntry {
   return { weekNumber: row.week_number, date: row.date, scores: row.scores, note: row.note };
 }
 
+function principleToRow(p: Principle, userId: string): Row {
+  return {
+    id: p.id, user_id: userId,
+    title: p.title, detail: p.detail,
+    sort_order: p.sortOrder, created_at: p.createdAt,
+  };
+}
+function principleFromRow(row: Row): Principle {
+  return {
+    id: row.id,
+    title: row.title ?? '',
+    detail: row.detail ?? '',
+    sortOrder: row.sort_order ?? 0,
+    createdAt: row.created_at ?? 0,
+  };
+}
+
 /* ---- Login screen ---- */
 function LoginScreen() {
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
@@ -293,6 +312,12 @@ export default function App() {
   const [domains, setDomains] = useState<Domain[]>(seedDomains);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [habits, setHabits] = useState<Habit[]>([]);
+  const [principles, setPrinciples] = useState<Principle[]>(seedPrinciples);
+  // False when the `principles` table isn't in the database yet (the migration
+  // in supabase/schema.sql hasn't been run). The app still works — principles
+  // just stay local to the session instead of syncing — so a deploy that lands
+  // before the migration can't brick Foundation.
+  const principlesTableOk = useRef(true);
   const [reflectOpen, setReflectOpen] = useState(false);
   const [reflections, setReflections] = useState<ReflectionEntry[]>([]);
   // Overdue tasks needing triage (stale_tasks view, worst-first). Snapshot
@@ -333,7 +358,9 @@ export default function App() {
       // Scoped to the user like every other load — stale_tasks is a plain view,
       // so it does NOT inherit the underlying tables' row-level security.
       supabase.from('stale_tasks').select('*').eq('user_id', userId),
-    ]).then(([d, g, h, r, st]) => {
+      supabase.from('principles').select('*').eq('user_id', userId)
+        .order('sort_order', { ascending: true, nullsFirst: false }),
+    ]).then(([d, g, h, r, st, pr]) => {
       const dbError = d.error || g.error || h.error || r.error;
       if (dbError) {
         console.error('Supabase load error:', dbError.message);
@@ -392,6 +419,22 @@ export default function App() {
           if (!cur || e.date > cur.date) byKey.set(k, e);
         }
         setReflections([...byKey.values()]);
+      }
+
+      // Principles are additive, and their table may not exist yet (migration
+      // not run). Like stale_tasks, a failure here must never block the app —
+      // it just means principles don't sync this session.
+      if (pr.error) {
+        principlesTableOk.current = false;
+        console.warn('principles load:', pr.error.message);
+      } else if (pr.data?.length) {
+        setPrinciples(pr.data.map(principleFromRow));
+      } else if (!alreadySeeded) {
+        supabase.from('principles').insert(seedPrinciples.map((x) => principleToRow(x, userId)));
+        setPrinciples(seedPrinciples);
+      } else {
+        // Seeded account with no rows = deliberately emptied. Respect that.
+        setPrinciples([]);
       }
 
       // Triage list is additive — a view error must never block the app.
@@ -481,6 +524,23 @@ export default function App() {
     push();
   }, [reflections]);
 
+  // Sync principles. Unlike the others this CAN legitimately go to zero rows
+  // (delete the last principle), so removals are handled by deletePrinciple
+  // below rather than by a length guard here.
+  useEffect(() => {
+    if (!dataLoaded || hydrating.current || !session) return;
+    if (!principlesTableOk.current || !principles.length) return;
+    supabase.from('principles').upsert(principles.map((x) => principleToRow(x, session.user.id)))
+      .then(({ error }) => { if (error) { console.error('sync principles:', error); setToast({ msg: `⚠ Save failed: ${error.message}` }); } });
+  }, [principles]);
+
+  // Explicit delete — upsert never removes rows.
+  const deletePrincipleFromDb = (id: string) => {
+    if (!session || !principlesTableOk.current) return;
+    supabase.from('principles').delete().eq('id', id).eq('user_id', session.user.id)
+      .then(({ error }) => { if (error) console.error('delete principle:', error); });
+  };
+
   // Clear the hydration flag after the sync effects above have evaluated for
   // this render, so subsequent user edits sync normally.
   useEffect(() => {
@@ -527,7 +587,13 @@ export default function App() {
     <div className="app">
       <main>
         {tab === 'foundation' && (
-          <Foundation domains={domains} setDomains={setDomains} />
+          <Foundation
+            domains={domains}
+            setDomains={setDomains}
+            principles={principles}
+            setPrinciples={setPrinciples}
+            onDeletePrincipleFromDb={deletePrincipleFromDb}
+          />
         )}
         {tab === 'align' && (
           <Align
@@ -757,9 +823,15 @@ function TimeBtn({ value, onChange, placeholder, clearable }: { value: string; o
 function Foundation({
   domains,
   setDomains,
+  principles,
+  setPrinciples,
+  onDeletePrincipleFromDb,
 }: {
   domains: Domain[];
   setDomains: (d: Domain[]) => void;
+  principles: Principle[];
+  setPrinciples: (p: Principle[]) => void;
+  onDeletePrincipleFromDb: (id: string) => void;
 }) {
   const [open, setOpen] = useState<DomainId | null>('self');
 
@@ -774,8 +846,16 @@ function Foundation({
       <div className="eyebrow">Foundation</div>
       <h1>What matters</h1>
       <p className="lede">
-        Four domains, ranked by priority — your values and vision for each.
+        How you decide, then what you're aiming at in each domain.
       </p>
+
+      <Principles
+        principles={principles}
+        setPrinciples={setPrinciples}
+        onDeleteFromDb={onDeletePrincipleFromDb}
+      />
+
+      <div className="section-head">Domains</div>
 
       {domains.map((d) => {
         const isOpen = open === d.id;
@@ -811,6 +891,130 @@ function Foundation({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/** A textarea that grows to fit its content. Principle titles and details are
+ *  free text of unpredictable length; a fixed-height field clipped them on
+ *  narrow screens (a plain <input> can't wrap at all). */
+function AutoTextarea({
+  className,
+  value,
+  placeholder,
+  onChange,
+}: {
+  className: string;
+  value: string;
+  placeholder: string;
+  onChange: (v: string) => void;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [value]);
+  return (
+    <textarea
+      ref={ref}
+      className={className}
+      rows={1}
+      value={value}
+      placeholder={placeholder}
+      onChange={(e) => onChange(e.target.value)}
+    />
+  );
+}
+
+/* ---------------- Operating principles ----------------
+ * Cross-domain, above the domains, and collapsible like a domain card so
+ * Foundation reads as one stack. Values are the per-domain tags the alignment
+ * engine scores goals against; principles are the tiebreakers you read when two
+ * of them pull against each other — deliberately NOT scored, and deliberately
+ * unordered (no ranking implied). */
+function Principles({
+  principles,
+  setPrinciples,
+  onDeleteFromDb,
+}: {
+  principles: Principle[];
+  setPrinciples: (p: Principle[]) => void;
+  onDeleteFromDb: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(true);
+
+  // sortOrder just preserves the order rows were added in, so the list reads
+  // back stably across devices. It is not a priority ranking.
+  const commit = (next: Principle[]) =>
+    setPrinciples(next.map((x, i) => ({ ...x, sortOrder: i })));
+
+  const update = (id: string, patch: Partial<Principle>) =>
+    commit(principles.map((x) => (x.id === id ? { ...x, ...patch } : x)));
+
+  const remove = (id: string) => {
+    commit(principles.filter((x) => x.id !== id));
+    onDeleteFromDb(id); // upsert never removes rows
+  };
+
+  const add = () =>
+    commit([
+      ...principles,
+      { id: uid('p'), title: '', detail: '', sortOrder: principles.length, createdAt: Date.now() },
+    ]);
+
+  return (
+    <div className={`domain-card principles-card${open ? ' open' : ''}`}>
+      <button className="domain-head" onClick={() => setOpen(!open)}>
+        <span>
+          <span className="domain-name">Operating principles</span>
+          <span className="domain-blurb">
+            How you choose when two values pull against each other.
+          </span>
+        </span>
+        <Chevron up={open} />
+      </button>
+
+      {open && (
+        <div className="domain-body">
+          {principles.length === 0 && (
+            <div className="values-empty">No principles yet.</div>
+          )}
+
+          <ul className="principle-list">
+            {principles.map((x) => (
+              <li key={x.id} className="principle-row">
+                <div className="principle-main">
+                  <AutoTextarea
+                    className="principle-title"
+                    value={x.title}
+                    placeholder="Name it — e.g. Family is priority"
+                    onChange={(v) => update(x.id, { title: v })}
+                  />
+                  <AutoTextarea
+                    className="principle-detail"
+                    value={x.detail}
+                    placeholder="The sentence that makes it usable at a decision point"
+                    onChange={(v) => update(x.id, { detail: v })}
+                  />
+                </div>
+                <button
+                  className="principle-remove"
+                  aria-label={`Remove ${x.title || 'principle'}`}
+                  onClick={() => remove(x.id)}
+                >
+                  ×
+                </button>
+              </li>
+            ))}
+          </ul>
+
+          <button className="principle-add" onClick={add}>
+            + Add principle
+          </button>
+        </div>
+      )}
     </div>
   );
 }

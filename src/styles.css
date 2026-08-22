@@ -2856,3 +2856,102 @@ h1 {
 .date-clear:hover { color: var(--text); background: var(--line); }
 /* Keep the facade's value text from sliding under the clear button. */
 .date-input-wrap:has(.date-clear) .date-facade { padding-right: 38px; }
+
+/* ---------- Foundation: operating principles ----------
+ * The card itself reuses .domain-card so it sits in the same visual family as
+ * the domains below it; only the inner list is bespoke. */
+.section-head {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+
+.principles-card {
+  margin-bottom: 26px;
+}
+
+.principle-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.principle-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  background: var(--surface-2);
+  border-radius: 12px;
+  padding: 12px 10px 12px 12px;
+}
+
+.principle-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.principle-title,
+.principle-detail {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-family: inherit;
+  border-radius: 8px;
+  padding: 3px 6px;
+  /* height is set from scrollHeight by AutoTextarea — never scroll or clip */
+  resize: none;
+  overflow: hidden;
+}
+
+.principle-title {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.principle-detail {
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.5;
+  margin-top: 1px;
+}
+
+.principle-title:focus,
+.principle-detail:focus {
+  outline: 1px solid var(--accent);
+  background: var(--surface);
+}
+
+.principle-remove {
+  flex: none;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  padding: 6px 8px;
+  border-radius: 8px;
+}
+
+.principle-remove:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.principle-add {
+  margin-top: 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  padding: 8px 14px;
+  border: 1px dashed var(--line);
+  border-radius: 999px;
+}
+
+.principle-add:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
