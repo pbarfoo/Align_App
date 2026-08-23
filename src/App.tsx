@@ -968,9 +968,9 @@ function Principles({
     <div className={`domain-card principles-card${open ? ' open' : ''}`}>
       <button className="domain-head" onClick={() => setOpen(!open)}>
         <span>
-          <span className="domain-name">Rules I live by</span>
+          <span className="domain-name">Operating Principles</span>
           <span className="domain-blurb">
-            How you choose when two values pull against each other.
+            Frameworks I live by.
           </span>
         </span>
         <Chevron up={open} />
