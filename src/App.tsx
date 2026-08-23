@@ -833,7 +833,7 @@ function Foundation({
   setPrinciples: (p: Principle[]) => void;
   onDeletePrincipleFromDb: (id: string) => void;
 }) {
-  const [open, setOpen] = useState<DomainId | null>('self');
+  const [open, setOpen] = useState<DomainId | null>(null);
 
   const updateVision = (id: DomainId, vision: string) =>
     setDomains(domains.map((d) => (d.id === id ? { ...d, vision } : d)));
@@ -943,7 +943,7 @@ function Principles({
   setPrinciples: (p: Principle[]) => void;
   onDeleteFromDb: (id: string) => void;
 }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
 
   // sortOrder just preserves the order rows were added in, so the list reads
   // back stably across devices. It is not a priority ranking.
@@ -970,7 +970,7 @@ function Principles({
         <span>
           <span className="domain-name">Operating principles</span>
           <span className="domain-blurb">
-            How you choose when two values pull against each other.
+            The rules you live by when two values pull against each other.
           </span>
         </span>
         <Chevron up={open} />
