@@ -438,6 +438,36 @@ under a healthy parent.
 Primary files: `src/App.tsx` (`computeHealth`, `vitalityFor`, `stGoalMetrics`,
 `ongoingGoalMetrics`), `src/App.subGoalScale.test.ts`. No DB change.
 
+## Operating Principles on Foundation (2026-08-22)
+
+Foundation now opens with an **Operating principles** card sitting above the
+domain cards, so the tab reads as one stack: principles first, then per-domain
+values.
+
+The distinction that matters: **values are scored, principles are not.** Values
+are the per-domain tags the alignment engine matches goals against. Principles
+are the tiebreakers you *read* when two values pull against each other — they
+never enter a score, and they are deliberately **unordered**, so no ranking is
+implied. `sortOrder` exists only to keep the list reading back in the same
+order across devices; it is insertion order, not priority.
+
+- `Principle { id, title, detail, sortOrder, createdAt }` in `src/data.ts`,
+  seeded from `principles`.
+- `<Principles>` in `src/App.tsx` — a collapsible `domain-card` so it matches
+  the domain cards visually. Each row is a title + detail `AutoTextarea` pair
+  (grow-to-fit, no scrollbars) with a `×` remove and a `+ Add principle`
+  footer. Empty state: "No principles yet."
+- Persistence mirrors the other collections, with one difference: the list can
+  legitimately go to **zero** rows, and `upsert` never deletes, so removals go
+  through `deletePrincipleFromDb` explicitly.
+- **Soft-fails if the table is missing.** `principlesTableOk` flips false when
+  the load errors, the failure is a `console.warn` rather than a toast, and
+  syncing is skipped for the session. Loading the app before the migration runs
+  cannot brick Foundation — principles simply stay local.
+
+**Migration required:** `supabase/migrations/2026-08-22-principles.sql`
+(`public.principles`, RLS `auth.uid() = user_id`). Idempotent — safe to re-run.
+
 ## Verification
 
 Use a Node version compatible with the project lockfile. The bundled Codex runtime worked:
@@ -452,13 +482,18 @@ Verified results before this handoff:
 - `npm test -- --run`: 4 tests passed.
 - `npm run build`: passed.
 
+Re-verified 2026-08-23 (after the Operating Principles work):
+
+- `npx vitest run`: 11 files, 93 tests passed.
+- `npm run build`: passed.
+
 ## Supabase Notes
 
 Supabase project discovered during debugging:
 
 - Project name: `Align`
 - Project ref: `hossofghephkcncecesp`
-- Relevant tables: `public.goals`, `public.habits`
+- Relevant tables: `public.goals`, `public.habits`, `public.principles`
 
 Observed live data had at least one task row with `completions: {}` while most rows had `completions: []`. The code fix normalizes this locally; no live data migration has been applied.
 
@@ -468,6 +503,5 @@ Observed live data had at least one task row with `completions: {}` while most r
 
 ## Remaining Choices
 
-- Decide whether to commit and push these local changes to `pbarfoo/Align_App`.
 - Decide whether to add a Supabase data cleanup migration/query to convert non-array `habits.completions` values to `[]`.
 - If UX still feels off, tune `computeOngoingHealth` weights rather than changing completion persistence again.
