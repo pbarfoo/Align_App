@@ -4726,6 +4726,13 @@ function ReviewPanel({
   const [confirmReset, setConfirmReset] = useState(false);
   const [logOpen, setLogOpen] = useState(false);
   const [collapsedDomains, setCollapsedDomains] = useState<Set<string>>(new Set());
+  /* Values stay grouped by domain; this only reorders the rows INSIDE each
+   * group. 'custom' keeps the domain's own value order. */
+  const [valueSort, setValueSort] = useState<'custom' | 'desc' | 'asc'>('custom');
+  const cycleValueSort = () =>
+    setValueSort((v) => (v === 'custom' ? 'desc' : v === 'desc' ? 'asc' : 'custom'));
+  const valueSortLabel =
+    valueSort === 'desc' ? 'Highest first' : valueSort === 'asc' ? 'Lowest first' : 'Custom order';
 
   const toggleDomain = (id: string) =>
     setCollapsedDomains((prev) => {
@@ -4754,14 +4761,35 @@ function ReviewPanel({
 
           {/* Domain-grouped value breakdown */}
           <div className="review-values-section">
+            <div className="review-sort-bar">
+              <button
+                className={`review-sort-btn${valueSort === 'custom' ? '' : ' active'}`}
+                onClick={cycleValueSort}
+                title="Reorder values within each domain"
+              >
+                <span>{valueSortLabel}</span>
+                <span className="review-sort-arrow">
+                  {valueSort === 'desc' ? '↓' : valueSort === 'asc' ? '↑' : '↕'}
+                </span>
+              </button>
+            </div>
             {domains.map((d) => {
               const domainColor = DOMAIN_COLORS[d.id] ?? 'var(--accent)';
-              const allValueRows = d.values.map((v) => ({ label: v, key: `${d.id}:${v}` }));
+              const allValueRows = d.values.map((v) => ({
+                label: v,
+                key: `${d.id}:${v}`,
+                score: valueAlignmentScore(`${d.id}:${v}`, goals, habits, reflections, domains),
+              }));
               if (!allValueRows.length) return null;
+              const sortedValueRows =
+                valueSort === 'custom'
+                  ? allValueRows
+                  : [...allValueRows].sort((a, b) =>
+                      valueSort === 'desc' ? b.score - a.score : a.score - b.score,
+                    );
               const isCollapsed = collapsedDomains.has(d.id);
-              const avgScore = allValueRows.reduce(
-                (sum, { key }) => sum + valueAlignmentScore(key, goals, habits, reflections, domains), 0,
-              ) / allValueRows.length;
+              const avgScore =
+                allValueRows.reduce((sum, { score }) => sum + score, 0) / allValueRows.length;
               const domainPct = Math.round(avgScore * 10);
               return (
                 <div key={d.id} className="review-value-domain-group">
@@ -4776,8 +4804,7 @@ function ReviewPanel({
                       <span className="review-domain-chevron">{isCollapsed ? '▾' : '▴'}</span>
                     </span>
                   </button>
-                  {!isCollapsed && allValueRows.map(({ label, key }) => {
-                    const score = valueAlignmentScore(key, goals, habits, reflections, domains);
+                  {!isCollapsed && sortedValueRows.map(({ label, key, score }) => {
                     const pct = score / 10;
                     return (
                       <div key={key} className="review-value-row">
