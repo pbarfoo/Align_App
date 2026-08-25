@@ -497,6 +497,20 @@ Supabase project discovered during debugging:
 
 Observed live data had at least one task row with `completions: {}` while most rows had `completions: []`. The code fix normalizes this locally; no live data migration has been applied.
 
+### `goals` has an outside reader (2026-08-25)
+
+The Portal (the sibling `Portal-Agent` repo) reads `public.goals` and
+`public.domains` over Supabase's REST API, scoped to one `user_id`, so a radar
+opportunity can be filed against the goal it serves. It is **read-only** — the
+Portal never writes to Align — and it reads `id`, `title`, `domain_id`,
+`horizon`, `completed_at`, `archived_at`, `sort_order` only.
+
+What that means here: **`goals.id` is now a foreign reference held outside this
+database.** Renaming a goal is safe (the Portal resolves titles at read time and
+shows the new one); changing or recycling a goal's `id` is not, and would leave
+a radar record pointing at nothing. Dropping or renaming one of the columns above
+breaks the Portal's read, so mirror the change there.
+
 ## Cleanup Notes
 
 `node_modules/`, `dist/`, `*.tsbuildinfo`, and `.npm-cache/` are generated and should not be committed.
