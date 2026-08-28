@@ -497,19 +497,48 @@ Supabase project discovered during debugging:
 
 Observed live data had at least one task row with `completions: {}` while most rows had `completions: []`. The code fix normalizes this locally; no live data migration has been applied.
 
-### `goals` has an outside reader (2026-08-25)
+### `goals` has an outside reader (2026-08-25, widened 2026-08-28)
 
-The Portal (the sibling `Portal-Agent` repo) reads `public.goals` and
-`public.domains` over Supabase's REST API, scoped to one `user_id`, so a radar
-opportunity can be filed against the goal it serves. It is **read-only** — the
-Portal never writes to Align — and it reads `id`, `title`, `domain_id`,
-`horizon`, `completed_at`, `archived_at`, `sort_order` only.
+The Portal (the sibling `Portal-Agent` repo) reads this database over Supabase's
+REST API, scoped to one `user_id`. It is **read-only** — the Portal never writes
+to Align, holds no goals collection of its own, and has no write path. A goal is
+edited here and nowhere else.
 
-What that means here: **`goals.id` is now a foreign reference held outside this
-database.** Renaming a goal is safe (the Portal resolves titles at read time and
-shows the new one); changing or recycling a goal's `id` is not, and would leave
-a radar record pointing at nothing. Dropping or renaming one of the columns above
-breaks the Portal's read, so mirror the change there.
+It reads exactly this, and nothing else:
+
+| Table | Columns |
+| --- | --- |
+| `goals` | `id`, `title`, `domain_id`, `value_indexes`, `horizon`, `parent_goal_id`, `timeframe`, `completed_at`, `archived_at`, `sort_order`, `sprint_focus_at` |
+| `domains` | `id`, `name`, `values` |
+| `principles` | `id`, `title`, `detail`, `sort_order` |
+
+What that means here:
+
+- **`goals.id` is a foreign reference held outside this database.** Renaming a
+  goal is safe (the Portal resolves titles at read time and shows the new one);
+  changing or recycling a goal's `id` is not, and would leave a Portal record
+  pointing at nothing.
+- **Dropping or renaming any column above breaks the Portal's read**, so mirror
+  the change there. `principles` is the one exception: the Portal reads it on its
+  own error budget, so an unreadable principles table costs it that card and
+  nothing else.
+- **`sort_order` and `sprint_focus_at` are read as the priority order**, not just
+  as display order. The Portal derives a tier from them — sprint focus first,
+  then the first active goal in each domain by `sort_order`, then the rest, then
+  ended goals — and sorts its own overview by it. Reordering goals here reorders
+  the Portal's dashboard. Nothing about that derivation lives in this repo, and
+  it needs nothing from us beyond keeping those two columns meaning what they
+  mean today.
+- **`value_indexes` are read and resolved positionally against `domains.values`.**
+  The known gap that they are not re-indexed when a domain value is deleted (see
+  the DB audit above) is handled defensively on the Portal side — an index past
+  the end of the list is dropped rather than guessed at — but re-indexing on
+  value removal remains the real fix, and now has a second reader depending on
+  it.
+
+There is deliberately **no view, function, or migration** for this. The Portal
+derives everything it needs from the columns already here, so the contract is a
+column list, not an API surface to keep in sync.
 
 ## Cleanup Notes
 
