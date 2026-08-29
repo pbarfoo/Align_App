@@ -50,4 +50,23 @@ describe('computeStreakFromCompletions', () => {
     const completions = [daysAgo(10), daysAgo(11), daysAgo(12)];
     expect(computeStreak(completions, daily())).toBe(0);
   });
+
+  // "Bike to work", custom every 1 week: logged 08-31 and 09-07, viewed 09-15.
+  // The first gap is measured against today, not a completion — the current
+  // period is simply still open, and the chain itself is exactly on interval.
+  it('keeps a period cadence streak while its current period is still open', () => {
+    vi.setSystemTime(new Date('2026-09-15T12:00:00'));
+    const weekly = daily({
+      recurrence: 'custom', customInterval: 1, customUnit: 'weeks',
+    });
+    expect(computeStreak(['2026-08-31', '2026-09-07'], weekly)).toBe(2);
+  });
+
+  it('still breaks a period cadence streak once a whole period is skipped', () => {
+    vi.setSystemTime(new Date('2026-09-25T12:00:00'));
+    const weekly = daily({
+      recurrence: 'custom', customInterval: 1, customUnit: 'weeks',
+    });
+    expect(computeStreak(['2026-08-31', '2026-09-07'], weekly)).toBe(0);
+  });
 });

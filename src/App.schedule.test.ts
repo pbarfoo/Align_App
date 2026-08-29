@@ -4,6 +4,8 @@ import {
   __test_isHabitRelevantToday as isHabitRelevantToday,
   __test_skipDayPatch as skipDayPatch,
   __test_getGraceDays as getGraceDays,
+  __test_isHabitDoneThisPeriod as isHabitDoneThisPeriod,
+  __test_toggleHabitCompletion as toggleHabitCompletion,
 } from './App';
 import type { Habit } from './data';
 
@@ -114,5 +116,84 @@ describe('getGraceDays — weekly custom habit does not re-nag daily', () => {
     // A full interval later, the next elapsed period flags again.
     vi.setSystemTime(new Date('2026-07-22T12:00:00'));
     expect(getGraceDays(skipped)).toEqual(['2026-07-15']);
+  });
+});
+
+/* ---- The live "Bike to work" row: Custom → every 1 week, started 2026-08-29.
+ * Choosing that cadence produced a habit that behaved exactly like a daily one:
+ * it sat on Today all seven days of the week, because `isHabitScheduledToday`
+ * called every custom cadence an open commitment and returned true outright. */
+
+describe('isHabitScheduledToday — custom interval cadence', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('is due on its start date when it has never been logged', () => {
+    vi.setSystemTime(new Date('2026-08-29T10:42:00'));
+    expect(isHabitScheduledToday(customWeekly('2026-08-29'))).toBe(true);
+  });
+
+  it('goes quiet for the whole interval after a completion', () => {
+    const h = customWeekly('2026-08-29', { completions: ['2026-08-31'] });
+    for (const day of ['2026-09-01', '2026-09-04', '2026-09-06']) {
+      vi.setSystemTime(new Date(day + 'T10:42:00'));
+      expect(isHabitScheduledToday(h)).toBe(false);
+      expect(isHabitDoneThisPeriod(h)).toBe(true);
+    }
+  });
+
+  it('comes back due exactly one interval later, and stays due until logged', () => {
+    const h = customWeekly('2026-08-29', { completions: ['2026-08-31'] });
+    for (const day of ['2026-09-07', '2026-09-08', '2026-09-12']) {
+      vi.setSystemTime(new Date(day + 'T10:42:00'));
+      expect(isHabitScheduledToday(h)).toBe(true);
+      expect(isHabitDoneThisPeriod(h)).toBe(false);
+    }
+  });
+
+  it('does not surface a habit whose start date is still in the future', () => {
+    vi.setSystemTime(new Date('2026-08-29T10:42:00'));
+    expect(isHabitScheduledToday(customWeekly('2026-12-01'))).toBe(false);
+    expect(isHabitRelevantToday(customWeekly('2026-12-01'))).toBe(false);
+  });
+});
+
+describe('isHabitDoneThisPeriod — the period ends on a day boundary', () => {
+  afterEach(() => vi.useRealTimers());
+
+  // The window used to be measured in milliseconds from `now`, so it expired at
+  // whatever time of day sat 7×24h after the completion: the row flipped out of
+  // Done partway through day 7 and the schedule check disagreed with it.
+  it('holds for the whole of day 6 and releases at the start of day 7', () => {
+    const h = customWeekly('2026-08-29', { completions: ['2026-08-31'] });
+    vi.setSystemTime(new Date('2026-09-06T23:30:00'));
+    expect(isHabitDoneThisPeriod(h)).toBe(true);
+    vi.setSystemTime(new Date('2026-09-07T00:30:00'));
+    expect(isHabitDoneThisPeriod(h)).toBe(false);
+  });
+});
+
+describe('getGraceDays — a lapsed custom habit flags one fixed day', () => {
+  afterEach(() => vi.useRealTimers());
+
+  // Previously the flagged day was `today − interval`, which slid forward with
+  // the calendar: a different, never-scheduled date every morning.
+  it('names the same scheduled occurrence on every later day', () => {
+    const h = customWeekly('2026-08-29', { completions: ['2026-08-31'] });
+    // Due again 09-07. Its period is not fully elapsed until 09-14.
+    vi.setSystemTime(new Date('2026-09-10T10:42:00'));
+    expect(getGraceDays(h)).toEqual([]);
+    for (const day of ['2026-09-14', '2026-09-15', '2026-09-19']) {
+      vi.setSystemTime(new Date(day + 'T10:42:00'));
+      expect(getGraceDays(h)).toEqual(['2026-09-07']);
+    }
+  });
+
+  it('logging the missed day records the scheduled date, and clears the chip', () => {
+    vi.setSystemTime(new Date('2026-09-15T10:42:00'));
+    const h = customWeekly('2026-08-29', { completions: ['2026-08-31'] });
+    const done = toggleHabitCompletion(h);
+    expect(done.completions).toEqual(['2026-08-31', '2026-09-07']);
+    expect(done.streak).toBe(2);
+    expect(getGraceDays(done)).toEqual([]);
   });
 });

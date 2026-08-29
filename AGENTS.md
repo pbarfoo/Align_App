@@ -1,5 +1,50 @@
 # Align App Agent Handoff
 
+## Custom-interval habits run on a grid, not a sliding window (2026-08)
+
+"Bike to work — Custom → every 1 week" behaved like a daily habit. Three
+functions all defined a custom habit's "period" as a window measured backwards
+from `now`, with nothing anchoring it to the schedule:
+
+- `isHabitScheduledToday` returned `true` outright for custom (and monthly /
+  yearly), on the "open commitment" reasoning. For a calendar cadence like
+  monthly that is its own gate, but for an interval cadence it meant the habit
+  sat on Today all seven days of the week, from the moment it was created.
+- `dateInCurrentPeriod` compared `Date.now() - completion` in MILLISECONDS, so
+  the period expired at whatever time of day the last completion sat at — the
+  row flipped out of Done mid-morning on day 7, and never lined up with the
+  day-granular schedule check.
+- `getGraceDays` flagged `today − interval` as the missed day. That date slides
+  with the calendar, so a lapsed weekly habit showed a red chip for a different,
+  never-scheduled day every morning (Sep 1, then Sep 2, then Sep 3…), and
+  logging it wrote a completion on a day the habit was never due.
+
+Fix: `nextExpectedDate(h)` anchors period cadences to a grid — one natural
+interval after the last completion, or `startDate` if never logged, whichever is
+LATER (so the `startDate` a skip pushes forward still governs, and
+`skipDayPatch` needed no change).
+
+- `isHabitScheduledToday` (custom): due from `nextExpectedDate` onward, and
+  stays due until logged. Monthly / yearly keep the calendar-period gate but
+  now also respect a future `startDate` — the Start date field the form offers
+  for those cadences was previously ignored entirely.
+- `dateInCurrentPeriod` (custom): whole days via `daysBetween`, the exact
+  complement of the schedule check, so the two can never disagree.
+- `getGraceDays` (period path): flags the latest grid occurrence a full interval
+  in the past. It names a day the habit was genuinely due and STAYS on that day
+  until logged or skipped.
+- `computeStreakFromCompletions`: the first gap is measured from today, which is
+  not a completion but the still-open current period, so it gets the same slack
+  `getGraceDays` grants (`max(graceDays, interval)`). A weekly habit no longer
+  loses its streak for being a day late, and catching up a missed week through
+  the chip no longer logs the right date but reports 0. Gaps BETWEEN completions
+  keep the tight `interval + graceDays` cap, so an irregular run still breaks.
+
+Note the remaining wrinkle (not a bug, worth knowing): "Weekly" and "Custom →
+every 1 week" are still different schedules. Weekly is anchored to a weekday;
+custom every-7-days is anchored to when you last did it, so it drifts if you log
+late. Both now surface one day a week.
+
 ## Deleting never lowers health (2026-08)
 
 Health is a tally over the items a goal currently holds, so deleting one erased
