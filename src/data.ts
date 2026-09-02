@@ -344,6 +344,14 @@ export const initialHabits: Habit[] = [
     completedAt: new Date('2026-05-20').getTime(),
     streak: 7,
   },
+  {
+    id: 'h6',
+    goalId: 'g-comm-long',
+    title: 'Call TD Insurance',
+    kind: 'task',
+    doneToday: false,
+    completed: false,
+  },
 ];
 
 export interface ReflectionEntry {
