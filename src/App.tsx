@@ -548,12 +548,19 @@ export default function App() {
   });
 
   // Explicit delete helpers (upsert doesn't remove rows)
-  const deleteGoalFromDb = (ids: string[]) => {
+  const deleteGoalFromDb = async (ids: string[]) => {
     if (!session) return;
-    supabase.from('habits').delete().in('goal_id', ids)
-      .then(({ error }) => { if (error) console.error('delete habits for goal:', error); });
-    supabase.from('goals').delete().in('id', ids)
-      .then(({ error }) => { if (error) { console.error('delete goals:', error); flash('Delete failed: ' + error.message, true); } });
+    const { error: habitError } = await supabase.from('habits').delete().in('goal_id', ids);
+    if (habitError) {
+      console.error('delete habits for goal:', habitError);
+      flash('Delete failed: ' + habitError.message, true);
+      return;
+    }
+    const { error: goalError } = await supabase.from('goals').delete().in('id', ids);
+    if (goalError) {
+      console.error('delete goals:', goalError);
+      flash('Delete failed: ' + goalError.message, true);
+    }
   };
   const deleteHabitFromDb = (id: string) => {
     if (!session) return;
@@ -1144,11 +1151,8 @@ const INACTIVE_ZONE_ID = 'inactive-zone';
 /** The always-present drop target at the bottom of a domain — a labelled
  * section you drag goals into to set them inactive (empty until you do). */
 function InactiveDropZone({ count, open, onToggle, children }: {
-  /** Paused top-level goals — the cards actually rendered in this section, and
-   *  what the drop zone accepts. The badge counts exactly these: it briefly
-   *  counted nested paused sub-goals too, which made it read one higher than
-   *  the number of cards on screen. Their sub-goals are listed as detail rows
-   *  inside each card, not as separate entries. */
+  /** Explicitly paused branch roots — top-level goals or sub-goals. Descendants
+   *  made inactive only because an ancestor is paused are not separate cards. */
   count: number;
   open: boolean; onToggle: () => void; children: React.ReactNode;
 }) {
@@ -1158,14 +1162,14 @@ function InactiveDropZone({ count, open, onToggle, children }: {
       <button
         className="inactive-toggle"
         onClick={onToggle}
-        title="Paused goals — excluded from health, the dashboard, and Today. Drag a goal here to pause it."
+        title="Paused goals and sub-goals — excluded from health, the dashboard, and Today."
       >
         <PauseLinesIcon />
         <span>Inactive{count > 0 ? ` (${count})` : ''}</span>
         {count > 0 && <span className="inactive-caret">{open ? '▾' : '▸'}</span>}
       </button>
       {count === 0
-        ? <div className="inactive-hint">Drag a goal here to set it inactive</div>
+        ? <div className="inactive-hint">Pause a goal or sub-goal to set it aside</div>
         : open && <div className="inactive-list">{children}</div>}
     </div>
   );
@@ -1271,8 +1275,7 @@ function Align({
 
     // Crossed the active/inactive boundary: pause it or reactivate it.
     if (targetArchived !== wasArchived) {
-      setGoals((prev) => prev.map((g) =>
-        g.id === active.id ? { ...g, archivedAt: targetArchived ? Date.now() : undefined } : g));
+      setGoals((prev) => setGoalInactive(prev, String(active.id), targetArchived));
       if (targetArchived) setInactiveOpen(true);
       return;
     }
@@ -1294,11 +1297,12 @@ function Align({
 
   const domain = domains.find((d) => d.id === domainId)!;
   const domainGoals = goals.filter((g) => g.domainId === domainId);
+  const parkedGoalIds = archivedGoalIdSet(domainGoals);
   const topGoals = domainGoals.filter((g) => !g.parentGoalId);
   // Inactive (paused) goals drop out of the active spine into their own
   // collapsed section at the bottom; the rest render as normal.
   const activeTopGoals   = topGoals.filter((g) => !g.archivedAt);
-  const archivedTopGoals = topGoals.filter((g) => !!g.archivedAt);
+  const inactiveRoots = inactiveGoalRoots(domainGoals);
 
   // The goal under the pointer during a drag, plus its thread colour, so the
   // floating DragOverlay clone matches the card it lifted from.
@@ -1383,6 +1387,17 @@ function Align({
 
   const updateGoalTimeframe = (id: string, horizon: 'long' | 'short' | 'ongoing', timeframe: number) =>
     setGoals((prev) => prev.map((g) => (g.id === id ? { ...g, horizon, timeframe } : g)));
+
+  const toggleGoalInactive = (id: string) => {
+    const goingInactive = !goals.find((g) => g.id === id)?.archivedAt;
+    if (goingInactive && addingFor && goalSubtreeIds(goals, id).has(addingFor)) {
+      setAddingFor(null);
+      setAddingForKind(null);
+    }
+    setGoals((prev) => setGoalInactive(prev, id, goingInactive));
+    if (goingInactive) setInactiveOpen(true);
+    flash(goingInactive ? 'Moved to Inactive' : 'Reactivated');
+  };
 
 
   const updateHabit = (id: string, updates: Partial<Habit>) =>
@@ -1501,14 +1516,14 @@ function Align({
    */
   const renderSubTree = (parentId: string, depth: number): React.ReactNode[] =>
     domainGoals
-      .filter((s) => s.parentGoalId === parentId)
+      .filter((s) => s.parentGoalId === parentId && !parkedGoalIds.has(s.id))
       .flatMap((sg) => {
         // Hidden by the "Hide completed" toggle — but keep walking, so an
         // ACTIVE child never vanishes just because its parent is done. It
         // takes the hidden parent's slot rather than indenting under nothing.
         if (hideCompleted && sg.completedAt) return renderSubTree(sg.id, depth);
         const hasHabits   = habits.some((h) => h.goalId === sg.id);
-        const hasSubGoals = domainGoals.some((s) => s.parentGoalId === sg.id);
+        const hasSubGoals = domainGoals.some((s) => s.parentGoalId === sg.id && !parkedGoalIds.has(s.id));
         const collapsed   = collapsedGoals.has(sg.id);
         return [
           <ShortWithActions
@@ -1531,6 +1546,7 @@ function Align({
             onToggleTaskFocus={toggleTaskFocus}
             isSprintFocus={!!sg.sprintFocusAt}
             onToggleSprintFocus={() => setSprintFocus(sg.id)}
+            onToggleInactive={() => toggleGoalInactive(sg.id)}
             todayStr={todayStr}
             hideCompleted={hideCompleted}
             domainValues={domain.values}
@@ -1648,6 +1664,7 @@ function Align({
               focusStrength={focusStrength}
               isSprintFocus={!!goal.sprintFocusAt}
               onToggleSprintFocus={() => setSprintFocus(goal.id)}
+              onToggleInactive={() => toggleGoalInactive(goal.id)}
               showDragHandle
               health={goalHealthMap[goal.id]}
             />
@@ -1775,21 +1792,28 @@ function Align({
         {/* Drag a goal past the new-goal form into here to pause it; drag one
             back up into the list above to reactivate it. */}
         <InactiveDropZone
-          count={archivedTopGoals.length}
+          count={inactiveRoots.length}
           open={inactiveOpen}
           onToggle={() => setInactiveOpen((o) => !o)}
         >
-          <SortableContext items={archivedTopGoals.map((g) => g.id)} strategy={verticalListSortingStrategy}>
-            {/* Just the goals you paused. Their sub-goals are paused with them
-                and come back on reactivation, but they aren't listed here —
-                the parent card stands for the whole branch. */}
-            {archivedTopGoals.map((goal) => (
+          <SortableContext items={inactiveRoots.map((g) => g.id)} strategy={verticalListSortingStrategy}>
+            {/* One card per explicitly paused branch root. A sub-goal paused on
+                its own is shown here; descendants inherited from a paused
+                ancestor remain represented by that ancestor's card. */}
+            {inactiveRoots.map((goal) => (
               <SortableGoal key={goal.id} id={goal.id}>
                 <div className="inactive-node">
+                  {goal.parentGoalId && (
+                    <div className="inactive-parent">
+                      ↳ {domainGoals.find((g) => g.id === goal.parentGoalId)?.title ?? 'Parent goal'}
+                    </div>
+                  )}
                   <GoalNode
                     goal={goal}
                     values={goal.valueIndexes.map((i) => domain.values[i]).filter(Boolean)}
                     onDelete={() => setPendingDeleteGoalId(goal.id)}
+                    isInactive
+                    onToggleInactive={() => toggleGoalInactive(goal.id)}
                     showDragHandle
                   />
                 </div>
@@ -1848,6 +1872,7 @@ function ShortWithActions({
   focusStrength,
   isSprintFocus,
   onToggleSprintFocus,
+  onToggleInactive,
   showDragHandle,
   domainVision: _domainVision,
 }: {
@@ -1886,6 +1911,7 @@ function ShortWithActions({
   focusStrength?: number;
   isSprintFocus?: boolean;
   onToggleSprintFocus?: () => void;
+  onToggleInactive?: () => void;
   showDragHandle?: boolean;
 }) {
   const [editingHabitId, setEditingHabitId] = useState<string | null>(null);
@@ -1922,6 +1948,7 @@ function ShortWithActions({
         focusStrength={focusStrength}
         isSprintFocus={isSprintFocus}
         onToggleSprintFocus={onToggleSprintFocus}
+        onToggleInactive={onToggleInactive}
         showDragHandle={showDragHandle}
         health={health}
       />
@@ -2344,6 +2371,8 @@ function GoalNode({
   focusStrength,
   isSprintFocus,
   onToggleSprintFocus,
+  isInactive,
+  onToggleInactive,
   showDragHandle,
   health,
 }: {
@@ -2374,6 +2403,10 @@ function GoalNode({
   isSprintFocus?: boolean;
   /** toggles this goal as the single sprint focus (selecting clears any other). */
   onToggleSprintFocus?: () => void;
+  /** Whether this card is currently in the Inactive section. */
+  isInactive?: boolean;
+  /** Pause this goal/sub-goal, or return it to its original place. */
+  onToggleInactive?: () => void;
   showDragHandle?: boolean;
   health?: GoalHealthInfo;
 }) {
@@ -2555,6 +2588,18 @@ function GoalNode({
         )}
       </div>
       <div className="node-ctrls">
+        {onToggleInactive && (
+          <button
+            className={`node-pause${isInactive ? ' on' : ''}`}
+            title={isInactive ? 'Reactivate' : 'Move to Inactive'}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleInactive();
+            }}
+          >
+            {isInactive ? <PlayIcon /> : <PauseLinesIcon />}
+          </button>
+        )}
         {onToggleSprintFocus && (
           <button
             className={`node-focus${isSprintFocus ? ' on' : ''}`}
@@ -3478,6 +3523,11 @@ const VA_ACT = { sub: 3, task: 1, habitDay: 1 } as const;
 const VA_HALF_LIFE_DAYS = 28;
 const VA_WINDOW_DAYS = 28;
 
+/** Treat stored YYYY-MM-DD values as calendar dates, not local timestamps.
+ * Keeping the decay anchor at UTC noon makes it stable across time zones. */
+const dateOnlyAtNoonUtc = (date: string): number =>
+  new Date(`${date}T12:00:00Z`).getTime();
+
 function valueAlignmentScore(
   key: string,
   goals: Goal[],
@@ -3488,7 +3538,7 @@ function valueAlignmentScore(
   const now = Date.now();
   const DAY = 86_400_000;
   const decay = (ms: number) => Math.pow(0.5, Math.max(0, (now - ms) / DAY) / VA_HALF_LIFE_DAYS);
-  const dayMs = (d: string) => new Date(d + 'T12:00').getTime();
+  const dayMs = dateOnlyAtNoonUtc;
 
   const colonIdx = key.indexOf(':');
   const domainId = key.slice(0, colonIdx);
@@ -3699,7 +3749,7 @@ function earnedLedger(
   halfLifeDays: number,
 ): { pos: number; pen: number; flat: number } {
   const decay = (ms: number) => Math.pow(0.5, Math.max(0, (now - ms) / DAY_MS) / halfLifeDays);
-  const dayMs = (d: string) => new Date(d + 'T12:00').getTime();
+  const dayMs = dateOnlyAtNoonUtc;
 
   const tasks  = treeHabits.filter((h) => h.kind === 'task');
   const habits = treeHabits.filter((h) => h.kind === 'habit');
@@ -3803,7 +3853,7 @@ function computeHealth(
   birthPoints = BIRTH_CREDIT,
 ): number {
   const decay = (ms: number) => Math.pow(0.5, Math.max(0, (now - ms) / DAY_MS) / halfLifeDays);
-  const dayMs = (d: string) => new Date(d + 'T12:00').getTime();
+  const dayMs = dateOnlyAtNoonUtc;
 
   const SPRINT_DAY = 2;  // per FULL day a goal is held as the sprint focus
   const SPRINT_CAP = 10; // cap on the sprint credit (~5 days) — stays a nudge
@@ -4005,7 +4055,7 @@ function goalActionLedger(
   now: number,
 ): { actionPoints: number; evidence: number; keptDays: string[]; skippedDays: string[] } {
   const decay = (ms: number) => Math.pow(0.5, Math.max(0, (now - ms) / DAY_MS) / VA_HALF_LIFE_DAYS);
-  const dayMs = (d: string) => new Date(d + 'T12:00').getTime();
+  const dayMs = dateOnlyAtNoonUtc;
   // Consistency runs on a rolling window, so only days still inside it matter.
   const windowStart = toDateStr(new Date(now - VA_WINDOW_DAYS * DAY_MS));
   let actionPoints = 0, evidence = 0;
@@ -4257,11 +4307,35 @@ export function goalSubtreeIds(goals: Goal[], rootId: string): Set<string> {
   return expandGoalSubtrees(goals, [rootId]);
 }
 
+/** Stamp or clear the explicit inactive state on one goal. Descendants inherit
+ * inactivity through archivedGoalIdSet without having their own state changed. */
+export function setGoalInactive(goals: Goal[], id: string, inactive: boolean, now = Date.now()): Goal[] {
+  return goals.map((g) =>
+    g.id === id ? { ...g, archivedAt: inactive ? now : undefined } : g
+  );
+}
+
+/** Explicitly paused goals whose ancestors are not also paused. These are the
+ * cards shown in Inactive; each card represents its whole parked branch. */
+export function inactiveGoalRoots(goals: Goal[]): Goal[] {
+  const byId = new Map(goals.map((g) => [g.id, g]));
+  return goals.filter((g) => {
+    if (!g.archivedAt) return false;
+    const seen = new Set<string>([g.id]);
+    let parent = g.parentGoalId ? byId.get(g.parentGoalId) : undefined;
+    while (parent && !seen.has(parent.id)) {
+      if (parent.archivedAt) return false;
+      seen.add(parent.id);
+      parent = parent.parentGoalId ? byId.get(parent.parentGoalId) : undefined;
+    }
+    return true;
+  });
+}
+
 /** Ids of every inactive (paused) goal plus all their descendant sub-goals —
  * the set excluded from health, the dashboard, and the Today lists so a parked
- * goal can neither help nor hurt. Archiving is offered on top-level goals, but
- * this walks the tree so a whole branch goes quiet together. */
-function archivedGoalIdSet(goals: Goal[]): Set<string> {
+ * goal or sub-goal branch can neither help nor hurt. */
+export function archivedGoalIdSet(goals: Goal[]): Set<string> {
   return expandGoalSubtrees(goals, goals.filter((g) => g.archivedAt).map((g) => g.id));
 }
 
@@ -5440,6 +5514,14 @@ function PauseLinesIcon() {
          style={{ display: 'inline', verticalAlign: 'middle' }}>
       <line x1="9" y1="5" x2="9" y2="19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
       <line x1="15" y1="5" x2="15" y2="19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function PlayIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M8 5.5L18 12L8 18.5V5.5Z" fill="currentColor" />
     </svg>
   );
 }

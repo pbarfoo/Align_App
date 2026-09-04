@@ -15,6 +15,12 @@ create table if not exists public.principles (
 
 alter table public.principles enable row level security;
 
+revoke all on table public.principles from anon, authenticated;
+grant select, insert, update, delete on table public.principles to authenticated;
+grant select on table public.principles to service_role;
+
 drop policy if exists "own principles" on public.principles;
 create policy "own principles" on public.principles
-  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+  for all to authenticated
+  using ((select auth.uid()) = user_id)
+  with check ((select auth.uid()) = user_id);

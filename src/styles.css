@@ -832,6 +832,11 @@ h1 {
 }
 /* Dim parked goals so they read as set-aside, not active */
 .inactive-node { opacity: 0.6; }
+.inactive-parent {
+  margin: 0 10px 4px 42px;
+  color: var(--muted);
+  font-size: 11px;
+}
 @media (hover: hover) {
   .inactive-node:hover { opacity: 0.9; }
 }
@@ -891,6 +896,28 @@ h1 {
   color: var(--accent);
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+/* Pause any goal or sub-goal; in the Inactive section this becomes Reactivate. */
+.node-pause {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--line);
+  transition: color 0.18s, border-color 0.18s, background 0.18s;
+}
+@media (hover: hover) {
+  .node-pause:hover { color: var(--accent); border-color: var(--accent); }
+}
+.node-pause.on {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 /* The chosen goal gets a stronger accent frame than the position taper, so the

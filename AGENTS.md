@@ -123,19 +123,22 @@ but not completed ones, so an achieved goal kept a ticking "N days left"
 countdown and a health bar there while the Align tab hid it by default. Both
 surfaces apply the same rule now.
 
-**Paused branches: the Inactive section lists ONLY the goals you paused.** Not
-their sub-goals. This was tried the other way first (a nested list under each
-paused card) and rejected in review — "Inactive" means the goals you chose to
-pause, and the parent card stands for the whole branch, which returns intact on
-reactivation. **Known tradeoff:** a sub-goal under a paused parent is displayed
-nowhere until the parent is reactivated. Fine when the branch was parked
-deliberately; the failure mode to watch for is a goal getting paused
-unintentionally and going silent. Three goals are in that state today, one
-("Decide whether to take the MFA") with 2 open tasks.
+**Any goal or sub-goal can now be paused (2026-08-30).** Every active card has a
+pause control. Pausing a sub-goal sets only its own `archivedAt`; the shared tree
+walk makes that branch's descendants inactive without rewriting their state.
+The branch disappears from Align's active tree, health, the dashboard, and
+Today, then appears in Inactive with its parent named. Reactivating it returns
+it beneath the same parent.
 
-Do not re-add: a sub-goal count badge on collapsed goal cards (an unlabelled
-digit in the card corner — added and reverted, read as noise), or the paused
-sub-goal list described above.
+Inactive shows one card per **explicitly paused branch root**. Descendants made
+inactive only because an ancestor is paused are represented by that ancestor's
+card, not duplicated. If a child was paused separately before its parent, only
+the parent appears while both are paused; reactivating the parent reveals the
+still-paused child in Inactive. Top-level drag-to-pause/reactivate remains, and
+the button works for every level. Tests: `src/App.goalTree.test.ts`.
+
+Do not re-add a sub-goal count badge on collapsed goal cards (an unlabelled
+digit in the card corner — added and reverted, read as noise).
 
 **One shared goal-tree walk.** `expandGoalSubtrees(goals, rootIds)` +
 `goalSubtreeIds(goals, rootId)` (both exported, near `archivedGoalIdSet`). It
@@ -465,16 +468,34 @@ order across devices; it is insertion order, not priority.
   syncing is skipped for the session. Loading the app before the migration runs
   cannot brick Foundation — principles simply stay local.
 
-**Migration required:** `supabase/migrations/2026-08-22-principles.sql`
-(`public.principles`, RLS `auth.uid() = user_id`). Idempotent — safe to re-run.
+**Migration applied to production 2026-08-30:**
+`supabase/migrations/2026-08-22-principles.sql` creates
+`public.principles`, enables owner-only RLS, grants authenticated CRUD access,
+and blocks anonymous access. Patrick's five principles are seeded in production.
+The migration is idempotent and safe to re-run.
+
+## Relationship integrity (2026-08-30)
+
+Production now enforces the relationships the app already assumes:
+
+- every goal belongs to one of the same user's domains;
+- every sub-goal has an existing parent in the same user and domain;
+- a goal cannot parent itself;
+- every task/habit has an existing goal owned by the same user.
+
+Migration: `supabase/migrations/20260831020028_enforce_goal_relationships.sql`.
+Deletes do **not** cascade automatically. `deleteGoalFromDb` deletes a selected
+branch's actions first and then its explicitly selected goal rows; the database
+rejects any operation that would leave an orphan. The dormant new-user seed
+`g-comm-short` was corrected from Community to Family to match its parent.
 
 ## Verification
 
 Use a Node version compatible with the project lockfile. The bundled Codex runtime worked:
 
 ```bash
-env PATH=/Users/patrickbarfoot/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH npm test -- --run
-env PATH=/Users/patrickbarfoot/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH npm run build
+env PATH=/Users/patrick/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH npm test -- --run
+env PATH=/Users/patrick/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH npm run build
 ```
 
 Verified results before this handoff:

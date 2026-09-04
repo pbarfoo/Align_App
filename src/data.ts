@@ -284,7 +284,7 @@ export const initialGoals: Goal[] = [
   },
   {
     id: 'g-comm-short',
-    domainId: 'community',
+    domainId: 'family',
     valueIndexes: [],
     horizon: 'short',
     title: 'One unhurried evening with family each week',

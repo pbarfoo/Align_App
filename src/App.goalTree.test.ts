@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { expandGoalSubtrees, goalSubtreeIds } from './App';
+import {
+  archivedGoalIdSet,
+  expandGoalSubtrees,
+  goalSubtreeIds,
+  inactiveGoalRoots,
+  setGoalInactive,
+} from './App';
 import type { Goal } from './data';
 
 /**
@@ -72,5 +78,24 @@ describe('expandGoalSubtrees', () => {
 
   it('is empty for no roots', () => {
     expect(expandGoalSubtrees(tree, []).size).toBe(0);
+  });
+});
+
+describe('sub-goal inactivity', () => {
+  it('pauses a sub-goal branch without pausing its parent', () => {
+    const paused = setGoalInactive(tree, 'mid', true, 123);
+    expect(paused.find((goal) => goal.id === 'mid')?.archivedAt).toBe(123);
+    expect(paused.find((goal) => goal.id === 'root')?.archivedAt).toBeUndefined();
+    expect([...archivedGoalIdSet(paused)].sort()).toEqual(['leafA', 'leafB', 'mid']);
+    expect(inactiveGoalRoots(paused).map((goal) => goal.id)).toEqual(['mid']);
+  });
+
+  it('shows only the outer paused branch until its parent is reactivated', () => {
+    const midPaused = setGoalInactive(tree, 'mid', true, 100);
+    const rootPaused = setGoalInactive(midPaused, 'root', true, 200);
+    expect(inactiveGoalRoots(rootPaused).map((goal) => goal.id)).toEqual(['root']);
+
+    const rootActive = setGoalInactive(rootPaused, 'root', false);
+    expect(inactiveGoalRoots(rootActive).map((goal) => goal.id)).toEqual(['mid']);
   });
 });

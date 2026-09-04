@@ -30,7 +30,7 @@ create table if not exists public.domains (
 create table if not exists public.goals (
   id text primary key,
   user_id uuid not null references auth.users on delete cascade,
-  domain_id text,
+  domain_id text not null,
   value_indexes int[] default '{}',
   horizon text,
   title text,
@@ -52,7 +52,15 @@ create table if not exists public.goals (
   -- task / habit / sub-goal never drops the goal's health. Array of
   -- { at: unix ms (decay anchor), points: number, ref: delete-batch id }.
   -- null = nothing banked.
-  retained_credits jsonb
+  retained_credits jsonb,
+  constraint goals_user_id_id_key unique (user_id, id),
+  constraint goals_user_id_id_domain_id_key unique (user_id, id, domain_id),
+  constraint goals_domain_fkey foreign key (user_id, domain_id)
+    references public.domains (user_id, id),
+  constraint goals_parent_fkey foreign key (user_id, parent_goal_id, domain_id)
+    references public.goals (user_id, id, domain_id),
+  constraint goals_parent_not_self
+    check (parent_goal_id is null or parent_goal_id <> id)
 );
 
 -- HABITS (holds BOTH habits and tasks; discriminated by `kind`)
@@ -61,7 +69,7 @@ create table if not exists public.goals (
 create table if not exists public.habits (
   id text primary key,
   user_id uuid not null references auth.users on delete cascade,
-  goal_id text,
+  goal_id text not null,
   title text,
   kind text,                      -- 'task' | 'habit'
   done_today boolean default false,
@@ -77,8 +85,21 @@ create table if not exists public.habits (
   completions jsonb default '[]'::jsonb,
   completed boolean,
   completed_at bigint,
-  created_at bigint default (extract(epoch from now()) * 1000)::bigint
+  created_at bigint default (extract(epoch from now()) * 1000)::bigint,
+  constraint habits_goal_fkey foreign key (user_id, goal_id)
+    references public.goals (user_id, id)
 );
+
+-- Relationship integrity. Composite references keep every goal, sub-goal,
+-- task, and habit inside the same user's tree. Deletes remain explicit: the
+-- app removes tasks first, then the selected goal branch.
+create index if not exists goals_domain_lookup_idx
+  on public.goals (user_id, domain_id);
+create index if not exists goals_parent_lookup_idx
+  on public.goals (user_id, parent_goal_id, domain_id)
+  where parent_goal_id is not null;
+create index if not exists habits_goal_lookup_idx
+  on public.habits (user_id, goal_id);
 
 -- PRINCIPLES — cross-domain operating principles (Foundation tab).
 -- Deliberately NOT per-domain and NOT scored: domains.values are the tags the
@@ -195,5 +216,9 @@ create policy "own domains"               on public.domains        for all using
 create policy "own goals"                 on public.goals          for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "own habits"                on public.habits         for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 create policy "own reflections"           on public.reflections    for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
-create policy "own principles"            on public.principles     for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+revoke all on table public.principles from anon, authenticated;
+grant select, insert, update, delete on table public.principles to authenticated;
+grant select on table public.principles to service_role;
+
+create policy "own principles"            on public.principles     for all to authenticated using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
 create policy "Users manage own feedback" on public.coach_feedback for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
