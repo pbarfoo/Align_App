@@ -1928,6 +1928,29 @@ h1 {
 .dashboard-btn:hover { border-color: var(--accent); color: var(--accent); }
 .dashboard-btn svg { width: 18px; height: 18px; }
 
+/* Cross-app handoff: Goals and plans stay in Align; workspaces live in Portal. */
+.portal-btn {
+  position: fixed;
+  top: 14px;
+  right: 148px;
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+  z-index: 10;
+  transition: border-color 0.18s, color 0.18s;
+}
+.portal-btn:hover { border-color: var(--accent); color: var(--accent); }
+
 /* ---------- Goals Dashboard ---------- */
 
 /* Spider carousel */

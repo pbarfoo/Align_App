@@ -666,6 +666,15 @@ export default function App() {
       <button className="dashboard-btn" onClick={() => setDashboardOpen(true)} aria-label="Goals dashboard">
         <IconDashboard />
       </button>
+      <a
+        className="portal-btn"
+        href="https://portal-agent-pipeline.vercel.app/"
+        target="_blank"
+        rel="noreferrer"
+        aria-label="Open The Portal"
+      >
+        Portal <span aria-hidden="true">↗</span>
+      </a>
       <button className="profile-btn" onClick={() => setReviewOpen(true)} aria-label="Review">
         <IconCompass />
       </button>
