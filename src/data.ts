@@ -160,7 +160,7 @@ export const domains: Domain[] = [
     blurb: 'The work you put into the world.',
     values: ['Leadership', 'Autonomy', 'Flexibility', 'Professional Respect', 'Competence', 'Service'],
     vision:
-      'To build a respected and flexible career in film and media where I have the autonomy to teach, create meaningful work, and positively contribute to others.',
+      'To teach, lead, create factual media, and advance responsible AI—especially media trust and provenance—in a flexible job with autonomy, some work from home, and pay above the current $75K, while protecting family presence, financial stability, and professional respect.',
   },
   {
     id: 'community',

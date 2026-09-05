@@ -680,7 +680,7 @@ export default function App() {
         rel="noreferrer"
         aria-label="Open The Portal"
       >
-        Portal <span aria-hidden="true">↗</span>
+        <IconPortal />
       </a>
       <button className="profile-btn" onClick={() => setReviewOpen(true)} aria-label="Review">
         <IconCompass />
@@ -5595,6 +5595,15 @@ function IconDashboard() {
       <rect x="13" y="3" width="8" height="8" rx="1.5" />
       <rect x="3" y="13" width="8" height="8" rx="1.5" />
       <rect x="13" y="13" width="8" height="8" rx="1.5" />
+    </svg>
+  );
+}
+
+function IconPortal() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M9 15l6-6M10 9h5v5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
