@@ -1,5 +1,50 @@
 # Align App Agent Handoff
 
+## Custom-interval habits run on a grid, not a sliding window (2026-08)
+
+"Bike to work — Custom → every 1 week" behaved like a daily habit. Three
+functions all defined a custom habit's "period" as a window measured backwards
+from `now`, with nothing anchoring it to the schedule:
+
+- `isHabitScheduledToday` returned `true` outright for custom (and monthly /
+  yearly), on the "open commitment" reasoning. For a calendar cadence like
+  monthly that is its own gate, but for an interval cadence it meant the habit
+  sat on Today all seven days of the week, from the moment it was created.
+- `dateInCurrentPeriod` compared `Date.now() - completion` in MILLISECONDS, so
+  the period expired at whatever time of day the last completion sat at — the
+  row flipped out of Done mid-morning on day 7, and never lined up with the
+  day-granular schedule check.
+- `getGraceDays` flagged `today − interval` as the missed day. That date slides
+  with the calendar, so a lapsed weekly habit showed a red chip for a different,
+  never-scheduled day every morning (Sep 1, then Sep 2, then Sep 3…), and
+  logging it wrote a completion on a day the habit was never due.
+
+Fix: `nextExpectedDate(h)` anchors period cadences to a grid — one natural
+interval after the last completion, or `startDate` if never logged, whichever is
+LATER (so the `startDate` a skip pushes forward still governs, and
+`skipDayPatch` needed no change).
+
+- `isHabitScheduledToday` (custom): due from `nextExpectedDate` onward, and
+  stays due until logged. Monthly / yearly keep the calendar-period gate but
+  now also respect a future `startDate` — the Start date field the form offers
+  for those cadences was previously ignored entirely.
+- `dateInCurrentPeriod` (custom): whole days via `daysBetween`, the exact
+  complement of the schedule check, so the two can never disagree.
+- `getGraceDays` (period path): flags the latest grid occurrence a full interval
+  in the past. It names a day the habit was genuinely due and STAYS on that day
+  until logged or skipped.
+- `computeStreakFromCompletions`: the first gap is measured from today, which is
+  not a completion but the still-open current period, so it gets the same slack
+  `getGraceDays` grants (`max(graceDays, interval)`). A weekly habit no longer
+  loses its streak for being a day late, and catching up a missed week through
+  the chip no longer logs the right date but reports 0. Gaps BETWEEN completions
+  keep the tight `interval + graceDays` cap, so an irregular run still breaks.
+
+Note the remaining wrinkle (not a bug, worth knowing): "Weekly" and "Custom →
+every 1 week" are still different schedules. Weekly is anchored to a weekday;
+custom every-7-days is anchored to when you last did it, so it drifts if you log
+late. Both now surface one day a week.
+
 ## Deleting never lowers health (2026-08)
 
 Health is a tally over the items a goal currently holds, so deleting one erased
@@ -517,6 +562,49 @@ Supabase project discovered during debugging:
 - Relevant tables: `public.goals`, `public.habits`, `public.principles`
 
 Observed live data had at least one task row with `completions: {}` while most rows had `completions: []`. The code fix normalizes this locally; no live data migration has been applied.
+
+### `goals` has an outside reader (2026-08-25, widened 2026-08-28)
+
+The Portal (the sibling `Portal-Agent` repo) reads this database over Supabase's
+REST API, scoped to one `user_id`. It is **read-only** — the Portal never writes
+to Align, holds no goals collection of its own, and has no write path. A goal is
+edited here and nowhere else.
+
+It reads exactly this, and nothing else:
+
+| Table | Columns |
+| --- | --- |
+| `goals` | `id`, `title`, `domain_id`, `value_indexes`, `horizon`, `parent_goal_id`, `timeframe`, `completed_at`, `archived_at`, `sort_order`, `sprint_focus_at` |
+| `domains` | `id`, `name`, `values` |
+| `principles` | `id`, `title`, `detail`, `sort_order` |
+
+What that means here:
+
+- **`goals.id` is a foreign reference held outside this database.** Renaming a
+  goal is safe (the Portal resolves titles at read time and shows the new one);
+  changing or recycling a goal's `id` is not, and would leave a Portal record
+  pointing at nothing.
+- **Dropping or renaming any column above breaks the Portal's read**, so mirror
+  the change there. `principles` is the one exception: the Portal reads it on its
+  own error budget, so an unreadable principles table costs it that card and
+  nothing else.
+- **`sort_order` and `sprint_focus_at` are read as the priority order**, not just
+  as display order. The Portal derives a tier from them — sprint focus first,
+  then the first active goal in each domain by `sort_order`, then the rest, then
+  ended goals — and sorts its own overview by it. Reordering goals here reorders
+  the Portal's dashboard. Nothing about that derivation lives in this repo, and
+  it needs nothing from us beyond keeping those two columns meaning what they
+  mean today.
+- **`value_indexes` are read and resolved positionally against `domains.values`.**
+  The known gap that they are not re-indexed when a domain value is deleted (see
+  the DB audit above) is handled defensively on the Portal side — an index past
+  the end of the list is dropped rather than guessed at — but re-indexing on
+  value removal remains the real fix, and now has a second reader depending on
+  it.
+
+There is deliberately **no view, function, or migration** for this. The Portal
+derives everything it needs from the columns already here, so the contract is a
+column list, not an API surface to keep in sync.
 
 ## Cleanup Notes
 

@@ -849,7 +849,7 @@ function Foundation({
   setPrinciples: (p: Principle[]) => void;
   onDeletePrincipleFromDb: (id: string) => void;
 }) {
-  const [open, setOpen] = useState<DomainId | null>('self');
+  const [open, setOpen] = useState<DomainId | null>(null);
 
   const updateVision = (id: DomainId, vision: string) =>
     setDomains(domains.map((d) => (d.id === id ? { ...d, vision } : d)));
@@ -959,7 +959,7 @@ function Principles({
   setPrinciples: (p: Principle[]) => void;
   onDeleteFromDb: (id: string) => void;
 }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
 
   // sortOrder just preserves the order rows were added in, so the list reads
   // back stably across devices. It is not a priority ranking.
@@ -984,9 +984,9 @@ function Principles({
     <div className={`domain-card principles-card${open ? ' open' : ''}`}>
       <button className="domain-head" onClick={() => setOpen(!open)}>
         <span>
-          <span className="domain-name">Operating principles</span>
+          <span className="domain-name">Operating Principles</span>
           <span className="domain-blurb">
-            How you choose when two values pull against each other.
+            Frameworks I live by.
           </span>
         </span>
         <Chevron up={open} />
@@ -3922,6 +3922,7 @@ export const __test_applySprintFocus = applySprintFocus;
 export const __test_computeStreakFromCompletions = computeStreakFromCompletions;
 export const __test_skipDayPatch = skipDayPatch;
 export const __test_getGraceDays = getGraceDays;
+export const __test_isHabitDoneThisPeriod = isHabitDoneThisPeriod;
 
 /**
  * Done = weighted count ratio across sub-goals, habits, and tasks.
@@ -4809,6 +4810,13 @@ function ReviewPanel({
   const [confirmReset, setConfirmReset] = useState(false);
   const [logOpen, setLogOpen] = useState(false);
   const [collapsedDomains, setCollapsedDomains] = useState<Set<string>>(new Set());
+  /* Values stay grouped by domain; this only reorders the rows INSIDE each
+   * group. 'custom' keeps the domain's own value order. */
+  const [valueSort, setValueSort] = useState<'custom' | 'desc' | 'asc'>('custom');
+  const cycleValueSort = () =>
+    setValueSort((v) => (v === 'custom' ? 'desc' : v === 'desc' ? 'asc' : 'custom'));
+  const valueSortLabel =
+    valueSort === 'desc' ? 'Highest first' : valueSort === 'asc' ? 'Lowest first' : 'Custom order';
 
   const toggleDomain = (id: string) =>
     setCollapsedDomains((prev) => {
@@ -4837,14 +4845,35 @@ function ReviewPanel({
 
           {/* Domain-grouped value breakdown */}
           <div className="review-values-section">
+            <div className="review-sort-bar">
+              <button
+                className={`review-sort-btn${valueSort === 'custom' ? '' : ' active'}`}
+                onClick={cycleValueSort}
+                title="Reorder values within each domain"
+              >
+                <span>{valueSortLabel}</span>
+                <span className="review-sort-arrow">
+                  {valueSort === 'desc' ? '↓' : valueSort === 'asc' ? '↑' : '↕'}
+                </span>
+              </button>
+            </div>
             {domains.map((d) => {
               const domainColor = DOMAIN_COLORS[d.id] ?? 'var(--accent)';
-              const allValueRows = d.values.map((v) => ({ label: v, key: `${d.id}:${v}` }));
+              const allValueRows = d.values.map((v) => ({
+                label: v,
+                key: `${d.id}:${v}`,
+                score: valueAlignmentScore(`${d.id}:${v}`, goals, habits, reflections, domains),
+              }));
               if (!allValueRows.length) return null;
+              const sortedValueRows =
+                valueSort === 'custom'
+                  ? allValueRows
+                  : [...allValueRows].sort((a, b) =>
+                      valueSort === 'desc' ? b.score - a.score : a.score - b.score,
+                    );
               const isCollapsed = collapsedDomains.has(d.id);
-              const avgScore = allValueRows.reduce(
-                (sum, { key }) => sum + valueAlignmentScore(key, goals, habits, reflections, domains), 0,
-              ) / allValueRows.length;
+              const avgScore =
+                allValueRows.reduce((sum, { score }) => sum + score, 0) / allValueRows.length;
               const domainPct = Math.round(avgScore * 10);
               return (
                 <div key={d.id} className="review-value-domain-group">
@@ -4859,8 +4888,7 @@ function ReviewPanel({
                       <span className="review-domain-chevron">{isCollapsed ? '▾' : '▴'}</span>
                     </span>
                   </button>
-                  {!isCollapsed && allValueRows.map(({ label, key }) => {
-                    const score = valueAlignmentScore(key, goals, habits, reflections, domains);
+                  {!isCollapsed && sortedValueRows.map(({ label, key, score }) => {
                     const pct = score / 10;
                     return (
                       <div key={key} className="review-value-row">
@@ -5013,6 +5041,13 @@ function addDays(dateStr: string, n: number): string {
   return toDateStr(d);
 }
 
+/** Whole days from `a` to `b` (negative if `b` is earlier). Noon-anchored. */
+function daysBetween(a: string, b: string): number {
+  return Math.round(
+    (new Date(b + 'T12:00').getTime() - new Date(a + 'T12:00').getTime()) / 86_400_000,
+  );
+}
+
 // ☀ Evening rollover for the today-focus flag. A sun click at/after this hour
 // stamps TOMORROW's date, so a task flagged the night before carries through
 // the whole next day instead of lapsing at the coming midnight.
@@ -5126,16 +5161,14 @@ function dateInCurrentPeriod(dateStr: string, h: Habit): boolean {
       return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
     case 'yearly':
       return d.getFullYear() === now.getFullYear();
-    case 'custom': {
-      const unit = h.customUnit ?? 'weeks';
-      const interval = Math.max(1, h.customInterval ?? 1);
-      const windowMs =
-        unit === 'days'   ? interval * 86_400_000 :
-        unit === 'weeks'  ? interval * 7 * 86_400_000 :
-        unit === 'months' ? interval * 30.44 * 86_400_000 :
-        /* years */         interval * 365.25 * 86_400_000;
-      return Date.now() - d.getTime() < windowMs;
-    }
+    case 'custom':
+      // Whole DAYS, not milliseconds since `now`. A millisecond window made the
+      // period expire at whatever time of day the last completion happened to
+      // sit at, so an "every 1 week" habit flipped out of Done mid-morning on
+      // day 7 and back on day 8 — and it never lined up with the day-granular
+      // schedule check below. Quantising both to days keeps them exact
+      // complements: the period ends on precisely the day the habit falls due.
+      return daysBetween(dateStr, toDateStr(now)) < Math.round(naturalIntervalDays(h));
     case 'specific-days': {
       const scheduled = h.specificDays ?? [];
       if (!scheduled.includes(now.getDay())) return false;
@@ -5150,8 +5183,30 @@ function isHabitDoneThisPeriod(h: Habit): boolean {
   return (h.completions ?? []).some((d) => dateInCurrentPeriod(d, h));
 }
 
+/**
+ * The next date a period cadence (monthly / yearly / custom) is expected on:
+ * one natural interval after its last completion, or its start date if it has
+ * never been logged. The later of the two wins, so the startDate a skip pushes
+ * forward still governs.
+ *
+ * This is the anchor that puts period habits on a GRID tied to real events.
+ * Without it the only notion of a period was a window sliding with `now`, and
+ * an "every 1 week" habit behaved like a daily one: it sat on Today all seven
+ * days, and once a period lapsed the missed-day chip pointed at `today − 7`,
+ * a different, never-scheduled date every morning.
+ */
+function nextExpectedDate(h: Habit): string {
+  const comps = h.completions ?? [];
+  const last = comps.length ? comps.reduce((m, d) => (d > m ? d : m)) : null;
+  const fromLast = last ? addDays(last, Math.round(naturalIntervalDays(h))) : null;
+  const start = h.startDate ?? null;
+  if (fromLast && start) return fromLast > start ? fromLast : start;
+  return fromLast ?? start ?? toDateStr(new Date());
+}
+
 /** Is this habit actually scheduled to appear today? Cadence-aware. */
 function isHabitScheduledToday(h: Habit): boolean {
+  const today = toDateStr(new Date());
   const day = new Date().getDay(); // 0=Sun … 6=Sat
   switch (h.recurrence ?? 'daily') {
     case 'weekdays':
@@ -5163,10 +5218,20 @@ function isHabitScheduledToday(h: Habit): boolean {
       // logic). Shown only on that weekday; if no startDate is set, it has no
       // anchor, so fall back to showing it every day.
       return h.startDate ? new Date(h.startDate + 'T12:00').getDay() === day : true;
-    // monthly / yearly / custom are open commitments: shown until completed for
-    // the current period, then they fall into Done.
+    case 'custom':
+      // Due on its expected date and every day after until it is logged — an
+      // open commitment, but one that only OPENS when the interval has actually
+      // elapsed. Returning true unconditionally (as monthly/yearly still do,
+      // where the calendar period is its own gate) turned every custom cadence
+      // into a daily nag: "every 1 week" and "every 3 months" alike showed up
+      // every single day from the moment they were created.
+      return today >= nextExpectedDate(h);
+    // monthly / yearly are open commitments: shown until completed for the
+    // current calendar period, then they fall into Done. Their start date is
+    // the one thing that can hold them back — a habit that begins next month
+    // has no business on today's list.
     default:
-      return true;
+      return !h.startDate || today >= h.startDate;
   }
 }
 
@@ -5228,15 +5293,26 @@ function computeStreakFromCompletions(completions: string[], h: Habit): number {
   const sorted = [...completions].sort().reverse(); // newest first
   const interval = naturalIntervalDays(h);
   const graceDays = interval <= 2 ? 2 : 0; // grace only for daily-ish habits
+  // The FIRST gap is measured from today, which is not a completion — it is the
+  // still-open current period. A habit isn't behind until `getGraceDays` says
+  // so, and for a period cadence that takes a whole extra interval; holding the
+  // walk to a bare `interval` there meant a weekly habit lost its streak for
+  // being one day late, and catching up a missed week through the chip logged
+  // the right date but still reported a streak of 0. Between completions the
+  // cap stays tight, so a genuinely irregular run still breaks.
+  const openPeriodSlack = Math.max(graceDays, interval);
   let streak = 0;
   let cursor = new Date();
   cursor.setHours(0, 0, 0, 0);
+  let first = true;
   for (const d of sorted) {
     const day = new Date(d + 'T12:00');
     day.setHours(0, 0, 0, 0);
     const gapDays = Math.round((cursor.getTime() - day.getTime()) / 86_400_000);
     if (gapDays < 0) continue; // future date, skip
-    if (gapDays <= interval + graceDays) {
+    const allowed = interval + (first ? openPeriodSlack : graceDays);
+    first = false;
+    if (gapDays <= allowed) {
       streak++;
       // Advance to the matched completion itself, NOT day - interval. Using
       // day - interval let the grace window compound: every step re-granted a
@@ -5309,24 +5385,25 @@ function getGraceDays(h: Habit): string[] {
     return missed.reverse(); // oldest first so user processes in order
   }
 
-  // ---- Period cadences (monthly / yearly / custom): flag the previous period
-  // if it elapsed with no log.
-  if (isHabitDoneThisPeriod(h)) return [];            // current period satisfied
+  // ---- Period cadences (monthly / yearly / custom): flag the most recent
+  // EXPECTED date that is a full interval in the past — i.e. the last occurrence
+  // whose own period has since elapsed un-logged. The occurrences run on the
+  // grid `nextExpectedDate(h) + k × interval`, so the flagged date is a day the
+  // habit was genuinely due and it STAYS that day until it is logged or
+  // skipped. The old rule flagged `today − interval` outright: a date that
+  // advanced with the calendar, so a lapsed weekly habit showed a fresh missed
+  // chip for a different arbitrary day every morning, and logging it recorded a
+  // completion on a day the habit was never scheduled for.
   const interval = Math.round(naturalIntervalDays(h));
-  const prev = new Date(today);
-  prev.setDate(prev.getDate() - interval);
-  const prevStr = toDateStr(prev);
-  if (startDateStr && prevStr < startDateStr) return []; // started this period
-  if (skipped.has(prevStr)) return [];                    // explicitly skipped
-  // If the most recent completion already falls inside the previous period
-  // window, that period was satisfied — the current (still-open) period isn't
-  // "missed" yet, so show nothing.
-  const lastDone = (h.completions ?? []).reduce(
-    (max, d) => Math.max(max, new Date(d + 'T12:00').getTime()),
-    -Infinity,
-  );
-  if (lastDone >= prev.getTime()) return [];
-  return [prevStr];
+  const cutoff = addDays(toDateStr(today), -interval); // last fully elapsed day
+  const firstExpected = nextExpectedDate(h);
+  const elapsed = Math.floor(daysBetween(firstExpected, cutoff) / interval);
+  if (elapsed < 0) return [];        // nothing due yet, or its period is still open
+  const dueStr = addDays(firstExpected, elapsed * interval);
+  if (startDateStr && dueStr < startDateStr) return []; // before the habit began
+  if (skipped.has(dueStr)) return [];                   // explicitly skipped
+  if (done.has(dueStr)) return [];                      // that occurrence was logged
+  return [dueStr];
 }
 
 /**
