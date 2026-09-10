@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   DndContext, DragOverlay, type DragEndEvent, type DragStartEvent,
-  MouseSensor, TouchSensor,
+  KeyboardSensor, MouseSensor, TouchSensor,
   useSensor, useSensors, closestCenter, useDroppable,
 } from '@dnd-kit/core';
 import {
@@ -98,7 +98,9 @@ function goalFromRow(row: Row): Goal {
     title: row.title,
     parentGoalId: row.parent_goal_id ?? undefined,
     createdAt: row.created_at,
-    timeframe: row.timeframe,
+    // Older rows may not have a timeframe. Keep them usable and let the next
+    // ordinary save persist the safe default instead of rendering `undefined`.
+    timeframe: Number.isFinite(Number(row.timeframe)) ? Number(row.timeframe) : 1,
     completedAt: row.completed_at ?? undefined,
     sortOrder: row.sort_order ?? undefined,
     archivedAt: row.archived_at ?? undefined,
@@ -267,22 +269,6 @@ function isTransientAuthError(msg: string): boolean {
   return /jwt|token is expired|issued at future|invalid claim|bad_jwt|refresh token/i.test(msg);
 }
 
-// Report a failed write, retrying once through a refreshed token when the
-// failure was one of the transient auth cases above.
-function reportSyncError(
-  label: string,
-  error: { message: string },
-  retry: (() => void) | null,
-  setToast: (t: { msg: string }) => void,
-) {
-  console.error(`sync ${label}:`, error);
-  if (retry && isTransientAuthError(error.message)) {
-    supabase.auth.refreshSession().catch(() => {}).then(() => retry());
-    return;
-  }
-  setToast({ msg: `⚠ Save failed: ${error.message}` });
-}
-
 export default function App() {
   // Auth
   const [session, setSession] = useState<Session | null>(null);
@@ -320,6 +306,8 @@ export default function App() {
   const principlesTableOk = useRef(true);
   const [reflectOpen, setReflectOpen] = useState(false);
   const [reflections, setReflections] = useState<ReflectionEntry[]>([]);
+  const [toast, setToast] = useState<{ msg: string; action?: ToastAction } | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Overdue tasks needing triage (stale_tasks view, worst-first). Snapshot
   // from load; rows drop out client-side once the user acts on them.
   const [staleTasks, setStaleTasks] = useState<StaleTask[]>([]);
@@ -336,6 +324,33 @@ export default function App() {
   const lastLoadedAt = useRef(0);
   // Consecutive transient-auth retries for the current load (reset on success).
   const authRetries = useRef(0);
+  // Writes for a table are serialized. Supabase requests can otherwise finish
+  // out of order, allowing an older whole-array snapshot to land after a newer
+  // edit from this same tab.
+  const syncQueues = useRef<Record<string, Promise<void>>>({});
+
+  const enqueueSync = (
+    label: string,
+    write: () => PromiseLike<{ error: { message: string } | null }>,
+  ) => {
+    const previous = syncQueues.current[label] ?? Promise.resolve();
+    const run = previous.catch(() => undefined).then(async () => {
+      let retried = false;
+      while (true) {
+        const { error } = await write();
+        if (!error) return;
+        console.error(`sync ${label}:`, error);
+        if (!retried && isTransientAuthError(error.message)) {
+          retried = true;
+          await supabase.auth.refreshSession().catch(() => {});
+          continue;
+        }
+        setToast({ msg: `⚠ Save failed: ${error.message}` });
+        return;
+      }
+    });
+    syncQueues.current[label] = run.catch(() => undefined);
+  };
 
   // Load data from Supabase on sign-in. Keyed on the user id (not the whole
   // session object) so it doesn't re-run on every token refresh or auth event,
@@ -343,8 +358,10 @@ export default function App() {
   // `reloadKey` for the deliberate refetches below.
   useEffect(() => {
     if (!session) { setDataLoaded(true); return; }
+    let active = true;
     const userId = session.user.id;
     const timeout = setTimeout(() => {
+      if (!active) return;
       setToast({ msg: '⚠ Database taking too long — try refreshing' });
       setDataLoaded(true);
     }, 10000);
@@ -361,6 +378,7 @@ export default function App() {
       supabase.from('principles').select('*').eq('user_id', userId)
         .order('sort_order', { ascending: true, nullsFirst: false }),
     ]).then(([d, g, h, r, st, pr]) => {
+      if (!active) return;
       const dbError = d.error || g.error || h.error || r.error;
       if (dbError) {
         console.error('Supabase load error:', dbError.message);
@@ -456,11 +474,16 @@ export default function App() {
       lastLoadedAt.current = Date.now();
       setDataLoaded(true);
     }).catch((err) => {
+      if (!active) return;
       clearTimeout(timeout);
       console.error('Supabase load failed:', err);
       setToast({ msg: '⚠ Could not reach database — check your connection' });
       setDataLoaded(true);
     });
+    return () => {
+      active = false;
+      clearTimeout(timeout);
+    };
   }, [session?.user?.id, reloadKey]);
 
   // Re-read the DB when the tab comes back to the foreground. Without this the
@@ -491,38 +514,46 @@ export default function App() {
   // Sync domains
   useEffect(() => {
     if (!dataLoaded || hydrating.current || !session) return;
-    let retried = false;
-    const push = () => supabase.from('domains').upsert(domains.map((x) => domainToRow(x, session.user.id)), { onConflict: 'id,user_id' })
-      .then(({ error }) => { if (error) reportSyncError('domains', error, retried ? null : push, setToast); retried = true; });
-    push();
-  }, [domains]);
+    const userId = session.user.id;
+    const timer = setTimeout(() => enqueueSync(
+      'domains',
+      () => supabase.from('domains').upsert(domains.map((x) => domainToRow(x, userId)), { onConflict: 'id,user_id' }),
+    ), 250);
+    return () => clearTimeout(timer);
+  }, [domains, dataLoaded, session?.user?.id]);
 
   // Sync goals
   useEffect(() => {
     if (!dataLoaded || hydrating.current || !session || !goals.length) return;
-    let retried = false;
-    const push = () => supabase.from('goals').upsert(goals.map((x) => goalToRow(x, session.user.id)))
-      .then(({ error }) => { if (error) reportSyncError('goals', error, retried ? null : push, setToast); retried = true; });
-    push();
-  }, [goals]);
+    const userId = session.user.id;
+    const timer = setTimeout(() => enqueueSync(
+      'goals',
+      () => supabase.from('goals').upsert(goals.map((x) => goalToRow(x, userId)), { onConflict: 'id' }),
+    ), 250);
+    return () => clearTimeout(timer);
+  }, [goals, dataLoaded, session?.user?.id]);
 
   // Sync habits
   useEffect(() => {
     if (!dataLoaded || hydrating.current || !session || !habits.length) return;
-    let retried = false;
-    const push = () => supabase.from('habits').upsert(habits.map((x) => habitToRow(x, session.user.id)))
-      .then(({ error }) => { if (error) reportSyncError('habits', error, retried ? null : push, setToast); retried = true; });
-    push();
-  }, [habits]);
+    const userId = session.user.id;
+    const timer = setTimeout(() => enqueueSync(
+      'habits',
+      () => supabase.from('habits').upsert(habits.map((x) => habitToRow(x, userId)), { onConflict: 'id' }),
+    ), 250);
+    return () => clearTimeout(timer);
+  }, [habits, dataLoaded, session?.user?.id]);
 
   // Sync reflections
   useEffect(() => {
     if (!dataLoaded || hydrating.current || !session || !reflections.length) return;
-    let retried = false;
-    const push = () => supabase.from('reflections').upsert(reflections.map((x) => reflToRow(x, session.user.id)))
-      .then(({ error }) => { if (error) reportSyncError('reflections', error, retried ? null : push, setToast); retried = true; });
-    push();
-  }, [reflections]);
+    const userId = session.user.id;
+    const timer = setTimeout(() => enqueueSync(
+      'reflections',
+      () => supabase.from('reflections').upsert(reflections.map((x) => reflToRow(x, userId)), { onConflict: 'id' }),
+    ), 250);
+    return () => clearTimeout(timer);
+  }, [reflections, dataLoaded, session?.user?.id]);
 
   // Sync principles. Unlike the others this CAN legitimately go to zero rows
   // (delete the last principle), so removals are handled by deletePrinciple
@@ -530,9 +561,13 @@ export default function App() {
   useEffect(() => {
     if (!dataLoaded || hydrating.current || !session) return;
     if (!principlesTableOk.current || !principles.length) return;
-    supabase.from('principles').upsert(principles.map((x) => principleToRow(x, session.user.id)))
-      .then(({ error }) => { if (error) { console.error('sync principles:', error); setToast({ msg: `⚠ Save failed: ${error.message}` }); } });
-  }, [principles]);
+    const userId = session.user.id;
+    const timer = setTimeout(() => enqueueSync(
+      'principles',
+      () => supabase.from('principles').upsert(principles.map((x) => principleToRow(x, userId)), { onConflict: 'id' }),
+    ), 250);
+    return () => clearTimeout(timer);
+  }, [principles, dataLoaded, session?.user?.id]);
 
   // Explicit delete — upsert never removes rows.
   const deletePrincipleFromDb = (id: string) => {
@@ -571,8 +606,6 @@ export default function App() {
   const [reviewOpen, setReviewOpen] = useState(false);
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
-  const [toast, setToast] = useState<{ msg: string; action?: ToastAction } | null>(null);
-  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const flash: Flash = (msg, isError = false, action) => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -597,6 +630,7 @@ export default function App() {
           <Foundation
             domains={domains}
             setDomains={setDomains}
+            setGoals={setGoals}
             principles={principles}
             setPrinciples={setPrinciples}
             onDeletePrincipleFromDb={deletePrincipleFromDb}
@@ -836,15 +870,44 @@ function TimeBtn({ value, onChange, placeholder, clearable }: { value: string; o
 }
 
 /* ---------------- Foundation ---------------- */
+/** Return the one removed position for a simple value deletion, or null for an
+ * edit/addition. Value labels can be renamed without changing goal tags; only
+ * deletion changes the positional value_indexes contract. */
+export function removedValueIndex(previous: string[], next: string[]): number | null {
+  if (next.length !== previous.length - 1) return null;
+  for (let removed = 0; removed < previous.length; removed += 1) {
+    const without = previous.filter((_, index) => index !== removed);
+    if (without.every((value, index) => value === next[index])) return removed;
+  }
+  return null;
+}
+
+/** Keep goal tags attached to their original value when that value is removed
+ * from a domain's positional values array. */
+export function reindexGoalValuesAfterRemoval(goals: Goal[], domainId: DomainId, removedIndex: number): Goal[] {
+  return goals.map((goal) => {
+    if (goal.domainId !== domainId) return goal;
+    const valueIndexes = goal.valueIndexes
+      .filter((index) => index !== removedIndex)
+      .map((index) => (index > removedIndex ? index - 1 : index));
+    return valueIndexes.length === goal.valueIndexes.length &&
+      valueIndexes.every((index, i) => index === goal.valueIndexes[i])
+      ? goal
+      : { ...goal, valueIndexes };
+  });
+}
+
 function Foundation({
   domains,
   setDomains,
+  setGoals,
   principles,
   setPrinciples,
   onDeletePrincipleFromDb,
 }: {
   domains: Domain[];
   setDomains: (d: Domain[]) => void;
+  setGoals: React.Dispatch<React.SetStateAction<Goal[]>>;
   principles: Principle[];
   setPrinciples: (p: Principle[]) => void;
   onDeletePrincipleFromDb: (id: string) => void;
@@ -854,8 +917,14 @@ function Foundation({
   const updateVision = (id: DomainId, vision: string) =>
     setDomains(domains.map((d) => (d.id === id ? { ...d, vision } : d)));
 
-  const updateValues = (id: DomainId, values: string[]) =>
+  const updateValues = (id: DomainId, values: string[]) => {
+    const previous = domains.find((d) => d.id === id)?.values ?? [];
     setDomains(domains.map((d) => (d.id === id ? { ...d, values } : d)));
+    const removedIndex = removedValueIndex(previous, values);
+    if (removedIndex != null) {
+      setGoals((current) => reindexGoalValuesAfterRemoval(current, id, removedIndex));
+    }
+  };
 
   return (
     <div className="screen">
@@ -1255,6 +1324,7 @@ function Align({
   const sensors = useSensors(
     useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 8 } }),
     useSensor(MouseSensor, { activationConstraint: { distance: 3 } }),
+    useSensor(KeyboardSensor),
   );
 
   const handleDragStart = ({ active }: DragStartEvent) => setActiveDragId(String(active.id));
@@ -3546,18 +3616,13 @@ function valueAlignmentScore(
   const dom = domains.find((d) => d.id === domainId);
   const vi = dom ? dom.values.indexOf(valueName) : -1;
 
-  // Goals directly tagged with this value, plus sub-goals that inherit it from
-  // ANY tagged parent (long, short, ongoing).
+  // Goals directly tagged with this value, plus every descendant that inherits
+  // it from a tagged parent (long, short, ongoing).
   const tagged = goals.filter(
     (g) => g.domainId === domainId && vi >= 0 && g.valueIndexes.includes(vi),
   );
-  const taggedParentIds = new Set(tagged.map((g) => g.id));
-  const inherited = goals.filter(
-    (g) => g.parentGoalId && taggedParentIds.has(g.parentGoalId)
-      && !tagged.some((t) => t.id === g.id),
-  );
-  const allTagged = [...tagged, ...inherited];
-  const taggedGoalIds = new Set(allTagged.map((g) => g.id));
+  const taggedGoalIds = expandGoalSubtrees(goals, tagged.map((g) => g.id));
+  const allTagged = goals.filter((g) => taggedGoalIds.has(g.id));
   const taggedHabits = habits.filter((h) => taggedGoalIds.has(h.goalId));
   const hasStructure = allTagged.length > 0;
 
@@ -4352,19 +4417,21 @@ function computeGoalHealthMap(goals: Goal[], habits: Habit[]): Record<string, Go
   // parked, so they never appear in badges, the dashboard, or the coach.
   const parked = archivedGoalIdSet(goals);
   const live = goals.filter((g) => !parked.has(g.id));
+  const liveIds = new Set(live.map((g) => g.id));
+  const liveHabits = habits.filter((h) => liveIds.has(h.goalId));
   (['long', 'short', 'ongoing'] as const).forEach((horizon) => {
     const topLevel = live.filter((g) => g.horizon === horizon && !g.parentGoalId);
     const strengthById = focusStrengthByDomain(topLevel);
     live.filter((g) => g.horizon === horizon).forEach((g) => {
       const focusStrength = strengthById.get(g.id) ?? 0;
       const m = horizon === 'long'
-        ? vitalityFor(g, goals, habits, focusStrength)
+        ? vitalityFor(g, live, liveHabits, focusStrength)
         : horizon === 'ongoing'
-          ? ongoingGoalMetrics(g, goals, habits, focusStrength)
-          : stGoalMetrics(g, goals, habits, focusStrength);
+          ? ongoingGoalMetrics(g, live, liveHabits, focusStrength)
+          : stGoalMetrics(g, live, liveHabits, focusStrength);
       const nItems =
-        habits.filter((h) => h.goalId === g.id).length +
-        goals.filter((x) => x.parentGoalId === g.id).length;
+        liveHabits.filter((h) => h.goalId === g.id).length +
+        live.filter((x) => x.parentGoalId === g.id).length;
       map[g.id] = { health: Math.round(m.health * 100), nItems };
     });
   });
