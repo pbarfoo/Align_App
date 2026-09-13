@@ -16,7 +16,7 @@ const domains: Domain[] = [
     vision: '',
   },
 ];
-const KEY = 'career:Leadership'; // value index 0
+const KEY = 'career:0'; // canonical identity for value index 0
 
 function goal(overrides: Partial<Goal> = {}): Goal {
   return {
@@ -78,6 +78,17 @@ describe('value alignment — reflection-first, multi-element blend', () => {
     // Reflection scale is 0–3; a fresh 3 → full 10 (no other element present).
     expect(score([], [], [refl(3)])).toBeCloseTo(10, 5);
     expect(score([], [], [refl(0)])).toBeCloseTo(0, 5);
+  });
+
+  it('still reads legacy label-based reflection keys during migration', () => {
+    vi.setSystemTime(now);
+    const legacy: ReflectionEntry = {
+      weekNumber: 1,
+      date: now,
+      scores: { 'career:Leadership': 3 },
+      note: '',
+    };
+    expect(score([], [], [legacy])).toBeCloseTo(10, 5);
   });
 
   it('reflection is the majority voice — it dominates the blend and keeps a strong rating high despite weak behaviour', () => {

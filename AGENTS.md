@@ -1,5 +1,30 @@
 # Align App Agent Handoff
 
+## Reflection values use canonical slot keys (2026-09)
+
+Reflection scores used to be keyed by editable labels such as `family:Love`,
+while goals used positional `value_indexes`. Renaming `Love` to
+`Love/Positivity` therefore disconnected all 15 historical ratings; because no
+Family goal used the new slot either, the value-alignment blend had no inputs
+and displayed 0%.
+
+New reflections use `domain_id:value_index` keys (`family:4`) via
+`reflectionValueKey()`. `reflectionScoreForValue()` reads canonical keys first,
+then current-label keys and known historical aliases so clients remain correct
+during rollout and old exports remain readable. When a Foundation value is
+deleted, `reindexReflectionScoresAfterRemoval()` shifts canonical reflection
+keys in lockstep with `reindexGoalValuesAfterRemoval()`; renames need no data
+rewrite because slot identity does not change. The reflection form, radar,
+alignment breakdown, score calculation, and history log all use this shared
+lookup.
+
+Production data repair migration:
+`20260913135809_canonical_reflection_value_keys.sql`. It converts recognised
+current labels and six known aliases to canonical keys, preserves unknown
+historical values (notably `self:Faithfulness`), is idempotent, and prefers an
+already-canonical score if both forms exist. Tests: `App.alignment.test.ts` and
+`App.valueIndexes.test.ts`.
+
 ## Custom-interval habits run on a grid, not a sliding window (2026-08)
 
 "Bike to work — Custom → every 1 week" behaved like a daily habit. Three

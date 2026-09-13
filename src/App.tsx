@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 60727)
+Total output lines: 5848
+
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   DndContext, DragOverlay, type DragEndEvent, type DragStartEvent,
@@ -631,6 +634,7 @@ export default function App() {
             domains={domains}
             setDomains={setDomains}
             setGoals={setGoals}
+            setReflections={setReflections}
             principles={principles}
             setPrinciples={setPrinciples}
             onDeletePrincipleFromDb={deletePrincipleFromDb}
@@ -897,10 +901,50 @@ export function reindexGoalValuesAfterRemoval(goals: Goal[], domainId: DomainId,
   });
 }
 
+/** Reflection scores use the same stable slot identity as goal value tags.
+ * Labels are editable presentation; the slot is the persisted identity. */
+export function reflectionValueKey(domainId: DomainId | string, valueIndex: number): string {
+  return `${domainId}:${valueIndex}`;
+}
+
+const REFLECTION_INDEX_SUFFIX = /^\d+$/;
+
+/** Keep canonical reflection keys aligned with goal value indexes after a value
+ * is removed. Legacy label keys are left intact for backward-compatible reads;
+ * the production data migration canonicalises all currently recognised keys. */
+export function reindexReflectionScoresAfterRemoval(
+  reflections: ReflectionEntry[],
+  domainId: DomainId,
+  removedIndex: number,
+): ReflectionEntry[] {
+  const prefix = `${domainId}:`;
+  return reflections.map((reflection) => {
+    let changed = false;
+    const scores: Record<string, number> = {};
+    for (const [key, score] of Object.entries(reflection.scores)) {
+      if (!key.startsWith(prefix)) {
+        scores[key] = score;
+        continue;
+      }
+      const suffix = key.slice(prefix.length);
+      if (!REFLECTION_INDEX_SUFFIX.test(suffix)) {
+        scores[key] = score;
+        continue;
+      }
+      const index = Number(suffix);
+      changed = changed || index >= removedIndex;
+      if (index === removedIndex) continue;
+      scores[reflectionValueKey(domainId, index > removedIndex ? index - 1 : index)] = score;
+    }
+    return changed ? { ...reflection, scores } : reflection;
+  });
+}
+
 function Foundation({
   domains,
   setDomains,
   setGoals,
+  setReflections,
   principles,
   setPrinciples,
   onDeletePrincipleFromDb,
@@ -908,6 +952,7 @@ function Foundation({
   domains: Domain[];
   setDomains: (d: Domain[]) => void;
   setGoals: React.Dispatch<React.SetStateAction<Goal[]>>;
+  setReflections: React.Dispatch<React.SetStateAction<ReflectionEntry[]>>;
   principles: Principle[];
   setPrinciples: (p: Principle[]) => void;
   onDeletePrincipleFromDb: (id: string) => void;
@@ -923,6 +968,7 @@ function Foundation({
     const removedIndex = removedValueIndex(previous, values);
     if (removedIndex != null) {
       setGoals((current) => reindexGoalValuesAfterRemoval(current, id, removedIndex));
+      setReflections((current) => reindexReflectionScoresAfterRemoval(current, id, removedIndex));
     }
   };
 
@@ -3013,81 +3059,7 @@ function Today({
   // "Needs action" holds both overdue and due-today. Cap overdue (worst first)
   // at 3 so a big backlog doesn't overwhelm the card, but always surface every
   // due-today task — otherwise a full overdue list would push today's own
-  // deadlines out of sight. Overdue overflow stays reachable under More.
-  const TASK_CAP = 3;
-  const pinnedOverdue = overdueSorted.slice(0, TASK_CAP);
-  const pinnedDueToday = dueTodayNotFocused;
-  const pinnedTasks = [...pinnedOverdue, ...pinnedDueToday];
-
-  // Heuristic urgency for habits.
-  const focusGoalIds = (() => {
-    const ids = new Set<string>();
-    (['long', 'short', 'ongoing'] as const).forEach((horizon) => {
-      const seen = new Set<string>();
-      goals.forEach((g) => {
-        if (g.horizon === horizon && !g.parentGoalId && !seen.has(g.domainId)) {
-          seen.add(g.domainId);
-          ids.add(g.id);
-        }
-      });
-    });
-    return ids;
-  })();
-  const topAncestorId = (goalId: string): string | undefined => {
-    let g = goals.find((x) => x.id === goalId);
-    while (g?.parentGoalId) g = goals.find((x) => x.id === g!.parentGoalId);
-    return g?.id;
-  };
-  const habitUrgency = (h: Habit): number => {
-    let s = 0;
-    s += getGraceDays(h).length * 30;            // missed backlog
-    if (isNeglected(h)) s += 25;                  // neglected
-    const since = daysSinceLastDone(h);
-    const interval = naturalIntervalDays(h);
-    s += since === Infinity ? 10 : Math.min(15, (since / interval) * 5);
-    const top = topAncestorId(h.goalId);
-    if (top && focusGoalIds.has(top)) s += 20;    // high-focus goal thread
-    const gh = goalHealthMap[h.goalId];
-    if (gh && gh.health <= 33) s += 15;           // rescue weak goals
-    return s;
-  };
-  // ALL of today's open habits — the complete daily rhythm, urgency-sorted.
-  const habitsToday = [...openHabits].sort((a, b) => habitUrgency(b) - habitUrgency(a));
-
-  // Everything not shown in Today (future tasks + capped overflow), by domain.
-  const shownToday = new Set<string>([
-    ...focusTasks, ...pinnedTasks, ...openHabits,
-  ].map((h) => h.id));
-  const moreByDomain = domains
-    .map((d) => ({
-      domain: d,
-      items: todayItemsByDomain(d.id).filter((h) => !shownToday.has(h.id)),
-    }))
-    .filter((x) => x.items.length > 0);
-  const moreCount = moreByDomain.reduce((s, x) => s + x.items.length, 0);
-
-  const renderRow = (h: Habit) => {
-    const isDone = h.kind === 'task' ? !!h.completed : isHabitDoneThisPeriod(h);
-    const dColor = DOMAIN_COLORS[domainOf(h.goalId) ?? ''] ?? 'var(--line)';
-    const gh = goalHealthMap[h.goalId];
-    return (
-      <React.Fragment key={h.id}>
-      <div
-        className="habit-row domain-edged"
-        style={{ '--row-domain': dColor } as React.CSSProperties}
-      >
-        <button
-          className={`check${isDone ? ' on' : ''}`}
-          onClick={() => toggle(h.id)}
-          aria-label="toggle"
-        >
-          <Tick />
-        </button>
-        <div style={{ flex: 1 }}>
-          <div className={`habit-title${isDone ? ' done' : ''}`}>
-            <span
-              className={`kind-icon ${h.kind}`}
-              title={h.kind === 'task' ? 'One-off task' : 'Repeatable habit'}
+  // deadlines…727 tokens truncated…sk' ? 'One-off task' : 'Repeatable habit'}
             >
               {h.kind === 'task' ? <TaskArrow /> : <RepeatIcon />}
             </span>
@@ -3432,6 +3404,33 @@ function Today({
 }
 
 /* ---------------- Reflect ---------------- */
+/** Historical labels that were renamed in Foundation before reflection scores
+ * had a label-independent identity. Kept as a read fallback so old exports and
+ * an app opened during deployment still score correctly. */
+const LEGACY_REFLECTION_KEYS: Record<string, string[]> = {
+  'family:0': ['family:Family Leadership'],
+  'family:3': ['family:Stability'],
+  'family:4': ['family:Love'],
+  'community:0': ['community:Community Leadership'],
+  'community:1': ['community:Friendship'],
+  'community:3': ['community:Positivity'],
+};
+
+export function reflectionScoreForValue(
+  reflection: ReflectionEntry,
+  domainId: DomainId | string,
+  valueIndex: number,
+  valueName: string,
+): number | undefined {
+  const canonical = reflectionValueKey(domainId, valueIndex);
+  const keys = [canonical, `${domainId}:${valueName}`, ...(LEGACY_REFLECTION_KEYS[canonical] ?? [])];
+  for (const key of keys) {
+    const score = reflection.scores[key];
+    if (score !== undefined) return score;
+  }
+  return undefined;
+}
+
 function Reflect({
   domains,
   onClose,
@@ -3446,12 +3445,17 @@ function Reflect({
   const [step, setStep] = useState<'score' | 'insight'>('score');
 
   const rows = domains.flatMap((d) =>
-    d.values.map((v) => ({ d, v, key: `${d.id}:${v}` })),
+    d.values.map((v, valueIndex) => ({ d, v, key: reflectionValueKey(d.id, valueIndex) })),
   );
 
   const labelFor = (key: string) => {
-    const [did, vi] = key.split(':');
-    return domains.find((d) => d.id === did)?.values[Number(vi)] ?? key;
+    const separator = key.indexOf(':');
+    const did = key.slice(0, separator);
+    const suffix = key.slice(separator + 1);
+    if (REFLECTION_INDEX_SUFFIX.test(suffix)) {
+      return domains.find((d) => d.id === did)?.values[Number(suffix)] ?? key;
+    }
+    return suffix || key;
   };
 
   const handleSave = () => {
@@ -3612,9 +3616,15 @@ function valueAlignmentScore(
 
   const colonIdx = key.indexOf(':');
   const domainId = key.slice(0, colonIdx);
-  const valueName = key.slice(colonIdx + 1);
+  const valueRef = key.slice(colonIdx + 1);
   const dom = domains.find((d) => d.id === domainId);
-  const vi = dom ? dom.values.indexOf(valueName) : -1;
+  const candidateIndex = dom
+    ? REFLECTION_INDEX_SUFFIX.test(valueRef) ? Number(valueRef) : dom.values.indexOf(valueRef)
+    : -1;
+  const vi = dom && candidateIndex >= 0 && candidateIndex < dom.values.length
+    ? candidateIndex
+    : -1;
+  const valueName = dom?.values[vi] ?? valueRef;
 
   // Goals directly tagged with this value, plus every descendant that inherits
   // it from a tagged parent (long, short, ongoing).
@@ -3649,8 +3659,10 @@ function valueAlignmentScore(
   const confidence = evidence / (evidence + VA_CONFIDENCE_K); // 0 when no evidence
 
   // --- Element 1: Reflection (the anchor) --------------------------------
-  const hasRefl = reflections.some((r) => r.scores[key] !== undefined);
-  const reflection = hasRefl ? decayedAvg(key, reflections) / 3 : null;
+  const hasRefl = vi >= 0 && reflections.some(
+    (r) => reflectionScoreForValue(r, domainId, vi, valueName) !== undefined,
+  );
+  const reflection = hasRefl ? decayedAvg(domainId, vi, valueName, reflections) / 3 : null;
 
   // --- Element 2: Lived actions (recent value-expressing behaviour) -------
   // A saturating, time-decayed tally of completions on tagged goals — its OWN
@@ -4758,15 +4770,25 @@ function GoalsDashboard({
 
 /* ---------------- decay helper ---------------- */
 /** Exponential-decay weighted average — recent weeks count more (~4-week half-life). */
-function decayedAvg(key: string, reflections: ReflectionEntry[]): number {
-  const scored = reflections.filter((x) => x.scores[key] !== undefined);
+function decayedAvg(
+  domainId: string,
+  valueIndex: number,
+  valueName: string,
+  reflections: ReflectionEntry[],
+): number {
+  const scored = reflections
+    .map((reflection) => ({
+      reflection,
+      score: reflectionScoreForValue(reflection, domainId, valueIndex, valueName),
+    }))
+    .filter((x): x is { reflection: ReflectionEntry; score: number } => x.score !== undefined);
   if (!scored.length) return 0;
   const now = Date.now();
   const WEEK_MS = 7 * 86_400_000;
   let wSum = 0, wTotal = 0;
-  for (const r of scored) {
+  for (const { reflection: r, score } of scored) {
     const w = Math.exp(-0.17 * Math.max(0, (now - r.date) / WEEK_MS));
-    wSum  += r.scores[key] * w;
+    wSum  += score * w;
     wTotal += w;
   }
   return wTotal > 0 ? wSum / wTotal : 0;
@@ -4786,9 +4808,9 @@ function RadarChart({
   reflections: ReflectionEntry[];
 }) {
   const axes = domains.flatMap((d) =>
-    d.values.map((v) => ({
+    d.values.map((v, valueIndex) => ({
       label: v,
-      key: `${d.id}:${v}`,
+      key: reflectionValueKey(d.id, valueIndex),
       color: DOMAIN_COLORS[d.id] ?? 'var(--muted)',
     })),
   );
@@ -4926,10 +4948,10 @@ function ReviewPanel({
             </div>
             {domains.map((d) => {
               const domainColor = DOMAIN_COLORS[d.id] ?? 'var(--accent)';
-              const allValueRows = d.values.map((v) => ({
+              const allValueRows = d.values.map((v, valueIndex) => ({
                 label: v,
-                key: `${d.id}:${v}`,
-                score: valueAlignmentScore(`${d.id}:${v}`, goals, habits, reflections, domains),
+                key: reflectionValueKey(d.id, valueIndex),
+                score: valueAlignmentScore(reflectionValueKey(d.id, valueIndex), goals, habits, reflections, domains),
               }));
               if (!allValueRows.length) return null;
               const sortedValueRows =
@@ -4976,7 +4998,7 @@ function ReviewPanel({
               );
             })}
             <div className="review-decay-note">
-              Score 0–100%: reflection 50%, goal &amp; habit activity 50%
+              Score 0–100%: reflection 55%, lived actions 25%, goal health 12%, consistency 8%
             </div>
           </div>
 
@@ -4999,13 +5021,15 @@ function ReviewPanel({
                     </div>
                     {domains.map((d) => {
                       const color = DOMAIN_COLORS[d.id] ?? 'var(--accent)';
-                      const hasScores = d.values.some((v) => r.scores[`${d.id}:${v}`] != null);
+                      const hasScores = d.values.some((v, valueIndex) =>
+                        reflectionScoreForValue(r, d.id, valueIndex, v) != null
+                      );
                       if (!hasScores) return null;
                       return (
                         <div key={d.id} className="review-log-domain">
                           <div className="review-log-domain-label" style={{ color }}>{d.name}</div>
-                          {d.values.map((v) => {
-                            const score = r.scores[`${d.id}:${v}`];
+                          {d.values.map((v, valueIndex) => {
+                            const score = reflectionScoreForValue(r, d.id, valueIndex, v);
                             if (score == null) return null;
                             return (
                               <div key={v} className="review-log-value-row">
