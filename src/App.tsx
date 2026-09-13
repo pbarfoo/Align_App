@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 60727)
-Total output lines: 5848
-
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   DndContext, DragOverlay, type DragEndEvent, type DragStartEvent,
@@ -3059,7 +3056,81 @@ function Today({
   // "Needs action" holds both overdue and due-today. Cap overdue (worst first)
   // at 3 so a big backlog doesn't overwhelm the card, but always surface every
   // due-today task — otherwise a full overdue list would push today's own
-  // deadlines…727 tokens truncated…sk' ? 'One-off task' : 'Repeatable habit'}
+  // deadlines out of sight. Overdue overflow stays reachable under More.
+  const TASK_CAP = 3;
+  const pinnedOverdue = overdueSorted.slice(0, TASK_CAP);
+  const pinnedDueToday = dueTodayNotFocused;
+  const pinnedTasks = [...pinnedOverdue, ...pinnedDueToday];
+
+  // Heuristic urgency for habits.
+  const focusGoalIds = (() => {
+    const ids = new Set<string>();
+    (['long', 'short', 'ongoing'] as const).forEach((horizon) => {
+      const seen = new Set<string>();
+      goals.forEach((g) => {
+        if (g.horizon === horizon && !g.parentGoalId && !seen.has(g.domainId)) {
+          seen.add(g.domainId);
+          ids.add(g.id);
+        }
+      });
+    });
+    return ids;
+  })();
+  const topAncestorId = (goalId: string): string | undefined => {
+    let g = goals.find((x) => x.id === goalId);
+    while (g?.parentGoalId) g = goals.find((x) => x.id === g!.parentGoalId);
+    return g?.id;
+  };
+  const habitUrgency = (h: Habit): number => {
+    let s = 0;
+    s += getGraceDays(h).length * 30;            // missed backlog
+    if (isNeglected(h)) s += 25;                  // neglected
+    const since = daysSinceLastDone(h);
+    const interval = naturalIntervalDays(h);
+    s += since === Infinity ? 10 : Math.min(15, (since / interval) * 5);
+    const top = topAncestorId(h.goalId);
+    if (top && focusGoalIds.has(top)) s += 20;    // high-focus goal thread
+    const gh = goalHealthMap[h.goalId];
+    if (gh && gh.health <= 33) s += 15;           // rescue weak goals
+    return s;
+  };
+  // ALL of today's open habits — the complete daily rhythm, urgency-sorted.
+  const habitsToday = [...openHabits].sort((a, b) => habitUrgency(b) - habitUrgency(a));
+
+  // Everything not shown in Today (future tasks + capped overflow), by domain.
+  const shownToday = new Set<string>([
+    ...focusTasks, ...pinnedTasks, ...openHabits,
+  ].map((h) => h.id));
+  const moreByDomain = domains
+    .map((d) => ({
+      domain: d,
+      items: todayItemsByDomain(d.id).filter((h) => !shownToday.has(h.id)),
+    }))
+    .filter((x) => x.items.length > 0);
+  const moreCount = moreByDomain.reduce((s, x) => s + x.items.length, 0);
+
+  const renderRow = (h: Habit) => {
+    const isDone = h.kind === 'task' ? !!h.completed : isHabitDoneThisPeriod(h);
+    const dColor = DOMAIN_COLORS[domainOf(h.goalId) ?? ''] ?? 'var(--line)';
+    const gh = goalHealthMap[h.goalId];
+    return (
+      <React.Fragment key={h.id}>
+      <div
+        className="habit-row domain-edged"
+        style={{ '--row-domain': dColor } as React.CSSProperties}
+      >
+        <button
+          className={`check${isDone ? ' on' : ''}`}
+          onClick={() => toggle(h.id)}
+          aria-label="toggle"
+        >
+          <Tick />
+        </button>
+        <div style={{ flex: 1 }}>
+          <div className={`habit-title${isDone ? ' done' : ''}`}>
+            <span
+              className={`kind-icon ${h.kind}`}
+              title={h.kind === 'task' ? 'One-off task' : 'Repeatable habit'}
             >
               {h.kind === 'task' ? <TaskArrow /> : <RepeatIcon />}
             </span>
