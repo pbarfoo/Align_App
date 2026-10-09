@@ -274,6 +274,8 @@ export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [dataLoaded, setDataLoaded] = useState(false);
+  const [cloudCheck, setCloudCheck] = useState<{ status: 'checking' | 'connected' | 'error'; goals?: number }>({ status: 'checking' });
+  const [cloudCheckKey, setCloudCheckKey] = useState(0);
 
   useEffect(() => {
     // Hard timeout so a paused/unreachable Supabase project can't hang the app forever.
@@ -607,6 +609,24 @@ export default function App() {
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
 
+  // A read-only connection check also confirms that this account's goals are
+  // available in the cloud, without reloading or overwriting local edits.
+  useEffect(() => {
+    if (!profileOpen || !session) return;
+    let active = true;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    setCloudCheck({ status: 'checking' });
+    Promise.resolve(supabase.from('goals').select('id', { count: 'exact', head: true })
+      .eq('user_id', session.user.id).abortSignal(controller.signal))
+      .then(({ count, error }) => {
+        if (active) setCloudCheck(error ? { status: 'error' } : { status: 'connected', goals: count ?? 0 });
+      }, () => {
+        if (active) setCloudCheck({ status: 'error' });
+      }).finally(() => clearTimeout(timeout));
+    return () => { active = false; clearTimeout(timeout); controller.abort(); };
+  }, [profileOpen, session?.user?.id, cloudCheckKey]);
+
   const flash: Flash = (msg, isError = false, action) => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
     setToast({ msg: isError ? `⚠ ${msg}` : msg, action });
@@ -734,6 +754,18 @@ export default function App() {
               <div className="user-dropdown-backdrop" onClick={() => setProfileOpen(false)} />
               <div className="user-dropdown">
                 <div className="user-dropdown-email">{session.user.email}</div>
+                <div className="user-dropdown-email" role="status" aria-live="polite">
+                  {cloudCheck.status === 'checking' ? 'Checking cloud connection…'
+                    : cloudCheck.status === 'connected' ? `Cloud connected · ${cloudCheck.goals} saved goals`
+                    : 'Cloud unavailable — check your connection and retry'}
+                </div>
+                <button
+                  className="user-dropdown-signout"
+                  disabled={cloudCheck.status === 'checking'}
+                  onClick={() => { setCloudCheck({ status: 'checking' }); setCloudCheckKey((k) => k + 1); }}
+                >
+                  Check cloud connection
+                </button>
                 <button
                   className="user-dropdown-signout"
                   onClick={() => { supabase.auth.signOut(); setProfileOpen(false); }}
