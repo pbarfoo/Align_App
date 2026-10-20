@@ -1813,6 +1813,33 @@ function Align({
               showDragHandle
               health={goalHealthMap[goal.id]}
             />
+            {/* Add form always renders — even while the goal is collapsed —
+                otherwise tapping + on a collapsed goal appears to do nothing. */}
+            {addingFor === goal.id && (
+              addingForKind === null ? (
+                <div className="inline-add short add-form">
+                  <div className="seg">
+                    <button type="button" onClick={() => setAddingForKind('short')}>Sub-goal</button>
+                    <button type="button" onClick={() => setAddingForKind('action')}>Habit / Task</button>
+                  </div>
+                  <button className="mini-ghost" onClick={() => { setAddingFor(null); setAddingForKind(null); }}>Cancel</button>
+                </div>
+              ) : addingForKind === 'short' ? (
+                <AddGoalForm
+                  domainValues={domain.values}
+                  forceOpen
+                  onClose={() => { setAddingFor(null); setAddingForKind(null); }}
+                  indent="short"
+                  onAdd={(idxs, title, horizon, timeframe) => addGoal(idxs, title, horizon, timeframe, goal.id)}
+                />
+              ) : (
+                <AddActionForm
+                  goalId={goal.id}
+                  onAdd={addAction}
+                  onClose={() => { setAddingFor(null); setAddingForKind(null); }}
+                />
+              )
+            )}
             {!collapsedGoals.has(goal.id) && habits
               .filter((h) => {
                 if (h.goalId !== goal.id) return false;
@@ -1896,33 +1923,7 @@ function Align({
                 );
               })}
             {!collapsedGoals.has(goal.id) && renderSubTree(goal.id, 0)}
-            {/* Add form always renders — even while the goal is collapsed —
-                otherwise tapping + on a collapsed goal appears to do nothing. */}
-            {addingFor === goal.id && (
-              addingForKind === null ? (
-                <div className="inline-add short add-form">
-                  <div className="seg">
-                    <button type="button" onClick={() => setAddingForKind('short')}>Sub-goal</button>
-                    <button type="button" onClick={() => setAddingForKind('action')}>Habit / Task</button>
-                  </div>
-                  <button className="mini-ghost" onClick={() => { setAddingFor(null); setAddingForKind(null); }}>Cancel</button>
-                </div>
-              ) : addingForKind === 'short' ? (
-                <AddGoalForm
-                  domainValues={domain.values}
-                  forceOpen
-                  onClose={() => { setAddingFor(null); setAddingForKind(null); }}
-                  indent="short"
-                  onAdd={(idxs, title, horizon, timeframe) => addGoal(idxs, title, horizon, timeframe, goal.id)}
-                />
-              ) : (
-                <AddActionForm
-                  goalId={goal.id}
-                  onAdd={addAction}
-                  onClose={() => { setAddingFor(null); setAddingForKind(null); }}
-                />
-              )
-            )}
+
           </div>
           </SortableGoal>
           );
