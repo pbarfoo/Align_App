@@ -155,7 +155,7 @@ export const domains: Domain[] = [
     values: ['Leadership', 'Autonomy', 'Flexibility', 'Professional Respect', 'Competence', 'Service',
       'Presence', 'Integrity', 'Love/Positivity', 'Community'],
     vision:
-      'Teach, lead, create factual media, and advance responsible AI in a flexible, autonomous career that supports family, stability, and professional respect.\n\nTo contribute beyond home through friendship, service, stewardship, and community leadership — building relationships, strengthening shared places, and using my gifts to help others flourish.',
+      'Teach, lead, create factual media, and advance responsible AI in a flexible, autonomous career that supports family, stability, and professional respect.',
   },
   {
     id: 'self',
