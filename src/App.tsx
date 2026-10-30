@@ -1738,7 +1738,7 @@ function Align({
               setEditValuesFor(null);
             }}
           >
-            {d.name.split(' ')[0]}
+            {d.name}
           </button>
         ))}
       </div>
@@ -3625,7 +3625,7 @@ function Reflect({
           {rows.map(({ d, v, key }) => (
             <div key={key} className="reflect-value-row">
               <div className="reflect-value-label">
-                <span className="domain">{d.name.split(' ')[0]}</span>
+                <span className="domain">{d.name}</span>
                 <span className="value">{v}</span>
               </div>
               <div className="scale">

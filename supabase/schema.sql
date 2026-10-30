@@ -19,7 +19,8 @@ create table if not exists public.domains (
   blurb text,
   values text[] default '{}',
   vision text,
-  primary key (user_id, id)
+  primary key (user_id, id),
+  constraint domains_canonical_id_check check (id in ('family', 'career', 'self'))
 );
 
 -- GOALS
