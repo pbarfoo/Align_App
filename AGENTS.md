@@ -3,9 +3,10 @@
 ## Three-domain structure (2026-10-30)
 
 The only top-level domains are Family & Friends (`family`), Career (`career`),
-and Self (`self`), in that order. FOGs is a Career project tree. Finances, housing,
-and household administration belong to Self. Keep existing goal IDs and parent
-relationships, including completed and inactive work. Community values merge into
+and Self (`self`), in that order. FOGs is a Career project tree. Financial Security
+and Admin & Housekeeping, with their complete subtrees, belong to Family & Friends.
+Housing remains in Self. Keep existing goal IDs and parent relationships, including
+completed and inactive work. Community values merge into
 Career: Leadership/Service use existing slots; Presence, Integrity, Love/Positivity,
 and Community are appended. Original and retired reflection ratings are retained;
 existing Career ratings take precedence for shared slots. Family value slots are
