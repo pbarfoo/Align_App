@@ -150,10 +150,10 @@ export const domains: Domain[] = [
     id: 'career',
     name: 'Career',
     blurb: 'Professional work, learning, creative practice, and volunteer leadership.',
-    // FOGs slots keep their own reflection history, including ratings that
-    // differ from Career's Leadership and Service ratings in the same week.
+    // Shared Leadership/Service values use existing slots. Distinct former
+    // Community values are appended, preserving the original Career indexes.
     values: ['Leadership', 'Autonomy', 'Flexibility', 'Professional Respect', 'Competence', 'Service',
-      'Leadership (FOGs)', 'Presence (FOGs)', 'Integrity (FOGs)', 'Love/Positivity (FOGs)', 'Community (FOGs)', 'Service (FOGs)'],
+      'Presence', 'Integrity', 'Love/Positivity', 'Community'],
     vision:
       'Teach, lead, create factual media, and advance responsible AI in a flexible, autonomous career that supports family, stability, and professional respect.\n\nTo contribute beyond home through friendship, service, stewardship, and community leadership — building relationships, strengthening shared places, and using my gifts to help others flourish.',
   },

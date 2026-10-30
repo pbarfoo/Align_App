@@ -318,6 +318,9 @@ export default function App() {
   // don't immediately re-upsert it (which could overwrite newer data written
   // by another session/tab).
   const hydrating = useRef(false);
+  // Sign-in can arrive after the no-session render marked the UI ready. Do
+  // not sync seed/default state until this exact account has loaded successfully.
+  const loadedForUser = useRef<string | null>(null);
 
   // Bumped to force a re-read of the DB (see the visibility effect below).
   const [reloadKey, setReloadKey] = useState(0);
@@ -359,7 +362,9 @@ export default function App() {
   // which would re-read stale data and clobber in-progress local edits — plus
   // `reloadKey` for the deliberate refetches below.
   useEffect(() => {
+    loadedForUser.current = null;
     if (!session) { setDataLoaded(true); return; }
+    setDataLoaded(false);
     let active = true;
     const userId = session.user.id;
     const timeout = setTimeout(() => {
@@ -474,6 +479,7 @@ export default function App() {
       if (!alreadySeeded) supabase.auth.updateUser({ data: { seeded: true } });
       clearTimeout(timeout);
       lastLoadedAt.current = Date.now();
+      loadedForUser.current = userId;
       setDataLoaded(true);
     }).catch((err) => {
       if (!active) return;
@@ -515,7 +521,7 @@ export default function App() {
 
   // Sync domains
   useEffect(() => {
-    if (!dataLoaded || hydrating.current || !session) return;
+    if (!dataLoaded || hydrating.current || !session || loadedForUser.current !== session.user.id) return;
     const userId = session.user.id;
     const timer = setTimeout(() => enqueueSync(
       'domains',
@@ -526,7 +532,7 @@ export default function App() {
 
   // Sync goals
   useEffect(() => {
-    if (!dataLoaded || hydrating.current || !session || !goals.length) return;
+    if (!dataLoaded || hydrating.current || !session || loadedForUser.current !== session.user.id || !goals.length) return;
     const userId = session.user.id;
     const timer = setTimeout(() => enqueueSync(
       'goals',
@@ -537,7 +543,7 @@ export default function App() {
 
   // Sync habits
   useEffect(() => {
-    if (!dataLoaded || hydrating.current || !session || !habits.length) return;
+    if (!dataLoaded || hydrating.current || !session || loadedForUser.current !== session.user.id || !habits.length) return;
     const userId = session.user.id;
     const timer = setTimeout(() => enqueueSync(
       'habits',
@@ -548,7 +554,7 @@ export default function App() {
 
   // Sync reflections
   useEffect(() => {
-    if (!dataLoaded || hydrating.current || !session || !reflections.length) return;
+    if (!dataLoaded || hydrating.current || !session || loadedForUser.current !== session.user.id || !reflections.length) return;
     const userId = session.user.id;
     const timer = setTimeout(() => enqueueSync(
       'reflections',
@@ -561,7 +567,7 @@ export default function App() {
   // (delete the last principle), so removals are handled by deletePrinciple
   // below rather than by a length guard here.
   useEffect(() => {
-    if (!dataLoaded || hydrating.current || !session) return;
+    if (!dataLoaded || hydrating.current || !session || loadedForUser.current !== session.user.id) return;
     if (!principlesTableOk.current || !principles.length) return;
     const userId = session.user.id;
     const timer = setTimeout(() => enqueueSync(

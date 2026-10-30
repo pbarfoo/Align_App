@@ -19,6 +19,15 @@ describe('LifeOS domain model', () => {
     ]);
   });
 
+  it('merges Community values into Career without duplicate or project-specific labels', () => {
+    const values = domains.find((domain) => domain.id === 'career')!.values;
+    expect(values).toEqual([
+      'Leadership', 'Autonomy', 'Flexibility', 'Professional Respect', 'Competence', 'Service',
+      'Presence', 'Integrity', 'Love/Positivity', 'Community',
+    ]);
+    expect(new Set(values).size).toBe(values.length);
+  });
+
   it('keeps every seeded sub-goal in the same domain as its parent', () => {
     const byId = new Map(initialGoals.map((goal) => [goal.id, goal]));
     for (const goal of initialGoals) {

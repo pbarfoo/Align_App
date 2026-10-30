@@ -5,11 +5,13 @@
 The only top-level domains are Family & Friends (`family`), Career (`career`),
 and Self (`self`), in that order. FOGs is a Career project tree. Finances, housing,
 and household administration belong to Self. Keep existing goal IDs and parent
-relationships, including completed and inactive work. Community value slots
-are appended to Career with a FOGs qualifier so historical ratings never collide;
-Family value slots are copied to Self for the moved home/finance trees. Migration
-assertions must pass before removing Community. Never rebuild live state from
-seed data.
+relationships, including completed and inactive work. Community values merge into
+Career: Leadership/Service use existing slots; Presence, Integrity, Love/Positivity,
+and Community are appended. Original and retired reflection ratings are retained;
+existing Career ratings take precedence for shared slots. Family value slots are
+copied to Self for the moved home/finance trees. Migration assertions must pass
+before removing Community; the database rejects obsolete domain IDs. Never
+rebuild live state from seed data.
 
 
 ## Reflection values use canonical slot keys (2026-09)
