@@ -2,21 +2,20 @@ import { describe, expect, it } from 'vitest';
 import { domains, initialGoals, sortDomains } from './data';
 
 describe('LifeOS domain model', () => {
-  it('exposes exactly the four canonical domain names', () => {
+  it('exposes exactly the three canonical domain names', () => {
     expect(new Set(domains.map((domain) => domain.name))).toEqual(
-      new Set(['Self', 'Career', 'Community', 'Family']),
+      new Set(['Family & Friends', 'Career', 'Self']),
     );
-    expect(domains.find((domain) => domain.id === 'family')?.name).toBe('Family');
-    expect(domains.find((domain) => domain.id === 'community')?.name).toBe('Community');
+    expect(domains.find((domain) => domain.id === 'family')?.name).toBe('Family & Friends');
+    expect(domains).toHaveLength(3);
   });
 
   it('restores the app order after domains load in arbitrary database order', () => {
-    const shuffled = [domains[3], domains[0], domains[2], domains[1]];
+    const shuffled = [domains[2], domains[0], domains[1]];
     expect(sortDomains(shuffled).map((domain) => domain.id)).toEqual([
-      'self',
       'family',
       'career',
-      'community',
+      'self',
     ]);
   });
 

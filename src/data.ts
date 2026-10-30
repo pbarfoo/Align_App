@@ -1,4 +1,4 @@
-export type DomainId = 'career' | 'self' | 'family' | 'community';
+export type DomainId = 'career' | 'self' | 'family';
 
 export interface Domain {
   id: DomainId;
@@ -139,17 +139,9 @@ export interface Habit {
 
 export const domains: Domain[] = [
   {
-    id: 'self',
-    name: 'Self',
-    blurb: 'Your mind, body, and inner life.',
-    values: ['Physical Health', 'Growth', 'Maturity', 'Balance', 'Joy', 'Challenges'],
-    vision:
-      'To become physically healthy, emotionally steady, and genuinely at ease — growing continuously without burning out.',
-  },
-  {
     id: 'family',
-    name: 'Family',
-    blurb: 'The people and home you protect first.',
+    name: 'Family & Friends',
+    blurb: 'Family, friendships, and meaningful relationships.',
     values: ['Leadership', 'Financial Security', 'Presence', 'Integrity', 'Love/Positivity'],
     vision:
       'To be a present, loving husband and father who leads his family with integrity, warmth, and a long view — creating a stable, generous home.',
@@ -157,22 +149,26 @@ export const domains: Domain[] = [
   {
     id: 'career',
     name: 'Career',
-    blurb: 'The work you put into the world.',
-    values: ['Leadership', 'Autonomy', 'Flexibility', 'Professional Respect', 'Competence', 'Service'],
+    blurb: 'Professional work, learning, creative practice, and volunteer leadership.',
+    // FOGs slots keep their own reflection history, including ratings that
+    // differ from Career's Leadership and Service ratings in the same week.
+    values: ['Leadership', 'Autonomy', 'Flexibility', 'Professional Respect', 'Competence', 'Service',
+      'Leadership (FOGs)', 'Presence (FOGs)', 'Integrity (FOGs)', 'Love/Positivity (FOGs)', 'Community (FOGs)', 'Service (FOGs)'],
     vision:
-      'Teach, lead, create factual media, and advance responsible AI in a flexible, autonomous career that supports family, stability, and professional respect.',
+      'Teach, lead, create factual media, and advance responsible AI in a flexible, autonomous career that supports family, stability, and professional respect.\n\nTo contribute beyond home through friendship, service, stewardship, and community leadership — building relationships, strengthening shared places, and using my gifts to help others flourish.',
   },
   {
-    id: 'community',
-    name: 'Community',
-    blurb: 'The people and communities you serve beyond home.',
-    values: ['Leadership', 'Presence', 'Integrity', 'Love/Positivity', 'Community', 'Service'],
+    id: 'self',
+    name: 'Self',
+    blurb: 'Health, personal growth, finances, housing, and personal interests.',
+    values: ['Physical Health', 'Growth', 'Maturity', 'Balance', 'Joy', 'Challenges',
+      'Leadership', 'Financial Security', 'Presence', 'Integrity', 'Love/Positivity'],
     vision:
-      'To contribute beyond home through friendship, service, stewardship, and community leadership — building relationships, strengthening shared places, and using my gifts to help others flourish.',
+      'To become physically healthy, emotionally steady, and genuinely at ease — growing continuously without burning out.',
   },
 ];
 
-const domainOrder: DomainId[] = ['self', 'family', 'career', 'community'];
+const domainOrder: DomainId[] = ['family', 'career', 'self'];
 
 export const sortDomains = (items: Domain[]): Domain[] =>
   [...items].sort((a, b) => domainOrder.indexOf(a.id) - domainOrder.indexOf(b.id));

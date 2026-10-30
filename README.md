@@ -4,7 +4,9 @@ A personal goal-alignment app that connects daily habits and tasks to long-term 
 
 ## What is Align?
 
-Align helps you stay on track with what matters most. You start by defining your core **values** and long-term **vision** across three life domains — **Career**, **Self**, and **Family/Others** — then set goals that reflect those values and break them down into short-term goals, tasks, and daily habits. A live **Health** score reflects how consistently you're executing — it rewards completing items and decays when you go stale.
+Align helps you stay on track with what matters most. You start by defining your core **values** and long-term **vision** across three life domains — **Family & Friends**, **Career**, and **Self** — then set goals that reflect those values and break them down into short-term goals, tasks, and daily habits. A live **Health** score reflects how consistently you're executing — it rewards completing items and decays when you go stale.
+
+FOGs (Friends of the Gardens) is a project within Career. Self includes finances, housing, and personal administration.
 
 ## Features
 

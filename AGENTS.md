@@ -1,5 +1,17 @@
 # Align App Agent Handoff
 
+## Three-domain structure (2026-10-30)
+
+The only top-level domains are Family & Friends (`family`), Career (`career`),
+and Self (`self`), in that order. FOGs is a Career project tree. Finances, housing,
+and household administration belong to Self. Keep existing goal IDs and parent
+relationships, including completed and inactive work. Community value slots
+are appended to Career with a FOGs qualifier so historical ratings never collide;
+Family value slots are copied to Self for the moved home/finance trees. Migration
+assertions must pass before removing Community. Never rebuild live state from
+seed data.
+
+
 ## Reflection values use canonical slot keys (2026-09)
 
 Reflection scores used to be keyed by editable labels such as `family:Love`,
