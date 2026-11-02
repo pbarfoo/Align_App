@@ -23,10 +23,11 @@ jobs:
           # Public client key; database access remains subject to grants and RLS.
           SUPABASE_PUBLISHABLE_KEY: sb_publishable_gfK8IhVJb_o8ufk1JDzAog_WZxQc2Vo
         run: |
-          # Query a real table without changing data or returning row contents.
+          # Execute a read-only database function that returns only 1.
           # Publishable keys belong in apikey, not a Bearer JWT header.
           curl --fail --show-error --silent --max-time 20 \
             --retry 3 --retry-delay 5 --retry-max-time 90 \
-            "$SUPABASE_URL/rest/v1/domains?select=id&limit=1" \
+            "$SUPABASE_URL/rest/v1/rpc/keep_alive_ping" \
             -H "apikey: $SUPABASE_PUBLISHABLE_KEY" \
-            -o /dev/null
+            -o "$RUNNER_TEMP/keep-alive-response.txt"
+          test "$(cat "$RUNNER_TEMP/keep-alive-response.txt")" = "1"
