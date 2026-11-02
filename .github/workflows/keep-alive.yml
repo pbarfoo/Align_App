@@ -4,6 +4,10 @@ on:
   schedule:
     - cron: '0 10 * * *'  # daily at 10:00 UTC
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/keep-alive.yml'
 
 permissions:
   contents: read
@@ -14,10 +18,18 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Ping Supabase
+        env:
+          SUPABASE_URL: https://hossofghephkcncecesp.supabase.co
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
-          # Hit a real table so the Postgres DB registers activity (prevents auto-pause),
-          # not just the REST gateway. HEAD with limit=0 keeps it cheap.
-          curl --fail --show-error --silent --max-time 20 "${{ secrets.SUPABASE_URL }}/rest/v1/domains?select=id&limit=1" \
-            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
-            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
+          if [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "::error::SUPABASE_ANON_KEY is missing from repository Actions secrets."
+            exit 1
+          fi
+          # Query a real table without changing data or returning row contents.
+          curl --fail --show-error --silent --max-time 20 \
+            --retry 3 --retry-delay 5 --retry-max-time 90 \
+            "$SUPABASE_URL/rest/v1/domains?select=id&limit=1" \
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
             -o /dev/null
