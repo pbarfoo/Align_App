@@ -20,16 +20,13 @@ jobs:
       - name: Ping Supabase
         env:
           SUPABASE_URL: https://hossofghephkcncecesp.supabase.co
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          # Public client key; database access remains subject to grants and RLS.
+          SUPABASE_PUBLISHABLE_KEY: sb_publishable_gfK8IhVJb_o8ufk1JDzAog_WZxQc2Vo
         run: |
-          if [ -z "$SUPABASE_ANON_KEY" ]; then
-            echo "::error::SUPABASE_ANON_KEY is missing from repository Actions secrets."
-            exit 1
-          fi
           # Query a real table without changing data or returning row contents.
+          # Publishable keys belong in apikey, not a Bearer JWT header.
           curl --fail --show-error --silent --max-time 20 \
             --retry 3 --retry-delay 5 --retry-max-time 90 \
             "$SUPABASE_URL/rest/v1/domains?select=id&limit=1" \
-            -H "apikey: $SUPABASE_ANON_KEY" \
-            -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+            -H "apikey: $SUPABASE_PUBLISHABLE_KEY" \
             -o /dev/null
